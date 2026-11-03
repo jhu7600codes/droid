@@ -1,0 +1,28 @@
+{
+  "name": "droid",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jhu7600codes/droid.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/jhu7600codes/droid/issues"
+  },
+  "homepage": "https://github.com/jhu7600codes/droid#readme",
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "fast-xml-parser": "^5.12.0",
+    "pngjs": "^7.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "wawoff2": "^2.0.1"
+  }
+}
