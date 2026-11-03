@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<body style="margin:0;background:#000;height:100vh;overflow:hidden">
+  <canvas id="c" style="width:100%;height:100%;image-rendering:pixelated;display:block"></canvas>
+  <script>
+    // the small js loader: instantiate the c module with the droid import table, blit its framebuffer
+    const cv = document.getElementById('c')
+    droid.wasm.instantiate('demo.wasm').then((inst) => {
+      const ex = inst.exports
+      const scale = 3
+      const ptr = ex.init(Math.ceil(innerWidth / scale), Math.ceil(innerHeight / scale))
+      const w = ex.width(), h = ex.height()
+      cv.width = w; cv.height = h
+      const ctx = cv.getContext('2d')
+      const img = new ImageData(new Uint8ClampedArray(ex.memory.buffer, ptr, w * h * 4), w, h)
+      let running = true
+      droid.on('pause', () => { running = false })
+      droid.on('resume', () => { if (!running) { running = true; requestAnimationFrame(loop) } })
+      function loop(t) {
+        if (!running) return
+        ex.frame(t | 0)
+        ctx.putImageData(img, 0, 0)
+        requestAnimationFrame(loop)
+      }
+      requestAnimationFrame(loop)
+      cv.onclick = (e) => ex.tap((e.offsetX / scale) | 0, (e.offsetY / scale) | 0)
+    }, (e) => droid.dialog({ title: 'Wasm demo', message: 'Could not start: ' + e.message }))
+  </script>
+</body>
+</html>

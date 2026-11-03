@@ -1,6 +1,5 @@
 // droid shell entry: builds the screen, shows the boot animation, starts the system apps
 // (systemui, wallpaper, launcher), then the setup wizard on first boot or the lockscreen.
-import './theme/holo.css'
 import './shell/shell.css'
 import { loadHolo } from './shell/density'
 import { loadIndex, setBucket } from './shell/assets'

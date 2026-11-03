@@ -1,0 +1,17 @@
+{
+  "id": "com.droid.wasmdemo",
+  "name": "Wasm demo",
+  "version": "1.0",
+  "versioncode": 1,
+  "type": "wasm",
+  "main": "main",
+  "icon": "icon.svg",
+  "dpk": "0.1",
+  "wasm": { "module": "demo.wasm", "memory": { "initial": 2 } },
+  "permissions": ["vibrate"],
+  "orientation": "any",
+  "activities": {
+    "main": { "entry": "index.html", "label": "Wasm demo", "launcher": true }
+  },
+  "description": "C compiled to wasm, drawing with the droid import table."
+}

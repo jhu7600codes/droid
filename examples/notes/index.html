@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+<head><link rel="stylesheet" href="style.css"></head>
+<body>
+  <ul class="h-list" id="list"></ul>
+  <p class="empty t-2" id="empty">No notes yet. Tap NEW in the menu.</p>
+  <script type="module">
+    import { load, save, preview } from './notes.js'
+    const list = document.getElementById('list')
+    async function render() {
+      const notes = await load()
+      document.getElementById('empty').style.display = notes.length ? 'none' : ''
+      list.innerHTML = ''
+      notes.forEach((n, i) => {
+        const li = document.createElement('li')
+        li.className = 'h-item'
+        li.innerHTML = `<div class="lines"><span class="title"></span><span class="summary"></span></div>`
+        li.querySelector('.title').textContent = preview(n.text)
+        li.querySelector('.summary').textContent = new Date(n.time).toLocaleString()
+        li.onclick = () => edit(i)
+        li.oncontextmenu = async (e) => {
+          e.preventDefault()
+          const r = await droid.dialog({ title: preview(n.text), items: ['Copy', 'Delete'] })
+          if (r.index === 0) { await droid.system.clipboard.write(n.text); droid.toast('Copied') }
+          if (r.index === 1) { notes.splice(i, 1); await save(notes); render() }
+        }
+        list.append(li)
+        const d = document.createElement('li'); d.className = 'h-divider'; list.append(d)
+      })
+    }
+    async function edit(i) {
+      const r = await droid.intent.startforresult({ package: 'com.droid.notes', activity: 'edit', extras: { index: i } })
+      if (r.code === droid.intent.OK) { render(); droid.toast('Saved') }
+    }
+    droid.actionbar.menu([{ id: 'new', title: 'New' }, { id: 'clear', title: 'Delete all' }, { id: 'about', title: 'About' }])
+    droid.on('menu', async ({ id }) => {
+      if (id === 'new') edit(-1)
+      if (id === 'clear') {
+        const r = await droid.dialog({ title: 'Delete all notes?', message: 'This can\'t be undone.', cancel: 'Cancel', ok: 'Delete' })
+        if (r.button === 'ok') { await save([]); render() }
+      }
+      if (id === 'about') droid.dialog({ title: 'Notes', message: 'A droid example app (dpk spec 0.1).' })
+    })
+    droid.on('resume', render)
+    render()
+  </script>
+</body>
+</html>

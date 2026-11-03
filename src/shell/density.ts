@@ -33,6 +33,7 @@ function sheet(id: string, href: string) {
 export function loadHolo(bucket: Bucket) {
   sheet('aosp-fonts', ASSETS + 'fonts/fonts.css')
   sheet('aosp-colors', ASSETS + 'css/colors.css')
+  sheet('holo-base', 'assets/theme/holo.css')
   sheet('aosp-holo', `${ASSETS}css/holo-${bucket}.css`)
   document.documentElement.dataset.density = bucket
   return bucket
@@ -40,3 +41,5 @@ export function loadHolo(bucket: Bucket) {
 
 export const dpiOf = (b: Bucket) => BUCKETS[b]
 export const assetUrl = (rel: string) => ASSETS + rel
+// stylesheets a dpk app gets (absolute, the app runs in a sandbox with another base url)
+export const appStyles = (bucket: Bucket) => [ASSETS + 'fonts/fonts.css', ASSETS + 'css/colors.css', 'assets/theme/holo.css', `${ASSETS}css/holo-${bucket}.css`].map((u) => new URL(u, document.baseURI).href)

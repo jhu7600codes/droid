@@ -12,7 +12,7 @@ const srv = createServer((req, res) => {
   let p = join('dist', decodeURIComponent(req.url.split('?')[0]))
   if (existsSync(p) && statSync(p).isDirectory()) p = join(p, 'index.html')
   if (!existsSync(p)) { res.writeHead(404); return res.end() }
-  res.writeHead(200, { 'content-type': types[extname(p)] || 'application/octet-stream' })
+  res.writeHead(200, { 'content-type': types[extname(p)] || 'application/octet-stream', 'access-control-allow-origin': '*' })
   res.end(readFileSync(p))
 }).listen(0)
 export const base = `http://localhost:${srv.address().port}/`

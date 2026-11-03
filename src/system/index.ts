@@ -4,5 +4,6 @@ import wallpaper from './wallpaper'
 import systemui from './systemui'
 import launcher from './launcher'
 import setupwizard from './setupwizard'
+import packageinstaller from './packageinstaller'
 
-export const systemApps: SystemApp[] = [wallpaper, systemui, launcher, setupwizard]
+export const systemApps: SystemApp[] = [wallpaper, systemui, launcher, setupwizard, packageinstaller]

@@ -1,0 +1,17 @@
+.pi-head { display: flex; align-items: center; gap: 12px; height: 72px; padding: 0 16px; font-size: 22px; flex: none; }
+.pi-head img { width: 48px; height: 48px; }
+.pi-line { height: 2px; background: #33b5e5; flex: none; }
+.pi-body { padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.pi-q { font-size: 16px; line-height: 1.4; }
+.pi-meta { font-size: 13px; color: #8a94a3; }
+.pi-perm { display: flex; align-items: center; gap: 8px; font-size: 15px; padding: 6px 0; }
+.pi-dot { width: 6px; height: 6px; border-radius: 50%; background: #33b5e5; margin: 0 6px; }
+.pi-progress, .pi-done { display: flex; align-items: center; gap: 16px; font-size: 18px; padding: 24px 0; }
+.pi-done img { width: 32px; height: 32px; }
+.pi-buttons { display: flex; border-top: 1px solid rgba(255, 255, 255, .12); flex: none; }
+.pi-buttons > * { flex: 1; min-height: 48px; font-size: 14px; text-transform: uppercase; }
+.pi-buttons > * + * { border-left: 1px solid rgba(255, 255, 255, .12) !important; }
+.dpk { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.dpk-frame { flex: 1; border: 0; width: 100%; display: block; background: transparent; }
+.ab-menu-scrim { position: absolute; inset: 0; z-index: 5; }
+.ab-menu { position: absolute; top: 4px; right: 4px; }

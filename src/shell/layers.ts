@@ -10,6 +10,8 @@ export function createLayers(screen: HTMLElement) {
     const el = document.createElement('div')
     el.id = n
     el.className = 'layer'
+    // every layer is its own stacking context, so window z-indexes never escape above the bars
+    el.style.zIndex = String(LAYERS.indexOf(n))
     screen.appendChild(el)
     layers[n] = el
   }

@@ -1,6 +1,6 @@
 /* systemui: status bar (25dp), nav bar (48dp), shade, quick settings, recents, lockscreen */
 
-#screen > #statusbar { bottom: auto; height: var(--sb); background: #000; transition: background .3s, transform .25s; z-index: 1; }
+#screen > #statusbar { bottom: auto; height: var(--sb); background: #000; transition: background .3s, transform .25s; }
 #screen > #statusbar.see-through { background: linear-gradient(rgba(0, 0, 0, .55), rgba(0, 0, 0, 0)); }
 .sb { display: flex; height: 100%; align-items: center; padding: 0 6px; touch-action: none; }
 .sb-left { flex: 1; display: flex; gap: 4px; align-items: center; overflow: hidden; height: 100%; }
@@ -30,7 +30,6 @@
 #screen[data-form="tablet"] .nav > .nav-gap:first-child { flex: 0 0 72px; }
 
 /* shade */
-#shade { z-index: 2; }
 #shade:not(.open) { visibility: hidden; }
 #shade:not(.open) * { pointer-events: none !important; }
 .shade-scrim { position: absolute; inset: 0; background: #000; opacity: 0; }
@@ -76,7 +75,6 @@
 .qs-label { font-size: 12px; color: #fff; line-height: 1.2; text-transform: uppercase; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* recents */
-#recents { z-index: 3; }
 .recents { position: absolute; inset: 0; bottom: var(--nb); background: rgba(0, 0, 0, .85); opacity: 0; pointer-events: none !important; transition: opacity .2s; }
 #screen[data-nav="right"] .recents { bottom: 0; right: var(--nb); }
 .recents.shown { opacity: 1; pointer-events: auto !important; }
@@ -94,7 +92,6 @@
 
 /* lockscreen: only the wallpaper shows behind it */
 #screen.locked > #windows { visibility: hidden; }
-#lock { z-index: 4; }
 .lock {
   position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
   padding: calc(var(--sb) + 24px) 16px calc(var(--nb) + 16px); background: rgba(0, 0, 0, .35); touch-action: none;

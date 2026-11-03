@@ -1,0 +1,11 @@
+{
+  "id": "com.droid.hello",
+  "name": "Hello",
+  "version": "1.0",
+  "versioncode": 1,
+  "type": "web",
+  "main": "main",
+  "activities": {
+    "main": { "entry": "index.html", "label": "Hello", "launcher": true }
+  }
+}
