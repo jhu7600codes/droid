@@ -1,10 +1,13 @@
 {
   "name": "droid",
-  "version": "1.0.0",
+  "version": "4.4.0",
   "description": "",
-  "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "vite",
+    "build": "vite build",
+    "import-aosp": "node tools/import-aosp/import.mjs",
+    "css": "node tools/import-aosp/css.mjs",
+    "shots": "node tools/screens/shot.mjs"
   },
   "repository": {
     "type": "git",
@@ -12,7 +15,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/jhu7600codes/droid/issues"
   },
@@ -24,5 +27,7 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "wawoff2": "^2.0.1"
-  }
+  },
+  "private": true,
+  "type": "module"
 }

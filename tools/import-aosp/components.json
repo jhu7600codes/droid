@@ -1,6 +1,6 @@
 [
-  { "sel": ".h-btn", "theme": "dark", "drawable": "btn_default_holo_dark", "minsize": true },
-  { "sel": ".h-btn", "theme": "light", "drawable": "btn_default_holo_light", "minsize": true },
+  { "sel": ".h-btn", "theme": "dark", "drawable": "btn_default_holo_dark" },
+  { "sel": ".h-btn", "theme": "light", "drawable": "btn_default_holo_light" },
   { "sel": ".h-btn-borderless", "theme": "dark", "drawable": "item_background_holo_dark", "padding": false },
   { "sel": ".h-btn-borderless", "theme": "light", "drawable": "item_background_holo_light", "padding": false },
   { "sel": ".h-btn-group", "theme": "dark", "drawable": "btn_group_holo_dark", "padding": false },

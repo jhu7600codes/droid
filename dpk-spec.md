@@ -362,7 +362,7 @@ danen account:
 
 ## 23. camera and gallery
 
-camera and gallery are stock system apps (section 14), rebuilt from the aosp kitkat apps (`packages/apps/Camera2` and `packages/apps/Gallery2`, apache 2.0) with their original ui and icons as closely as possible.
+camera and gallery are stock system apps (section 14), rebuilt from the aosp kitkat apps (`packages/apps/Camera2` and `packages/apps/Gallery2`, apache 2.0) with their original ui and icons as closely as possible. user visible names are just "camera" and "gallery": `camera2` and `gallery2` are only aosp's internal project names and never show up in the ui, the launcher, the app id or the manifest `name`.
 
 camera:
 - uses the real device camera through the browser (`getUserMedia`), so it needs the `camera` permission, and `microphone` for video
