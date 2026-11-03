@@ -1,0 +1,19 @@
+.app-head { display: flex; align-items: center; gap: 16px; padding: 16px; }
+.app-head img { width: 64px; height: 64px; }
+.app-btns { display: flex; gap: 8px; padding: 0 16px 8px; }
+.app-btns .h-btn { flex: 1; }
+.lic-text { padding: 8px 16px; }
+.lic-text pre { white-space: pre-wrap; font: 11px/1.4 monospace; color: #bbb; user-select: text; -webkit-user-select: text; }
+
+/* tablet landscape and desktop: two panes, the main list stays on the left like kitkat tablets */
+#screen[data-form="tablet"][data-orientation="landscape"] .settings-root > .page-layer:first-child,
+#screen[data-form="desktop"] .settings-root > .page-layer:first-child { right: auto; width: 38%; visibility: visible; border-right: 1px solid #222; }
+#screen[data-form="tablet"][data-orientation="landscape"] .settings-root > .page-layer:not(:first-child),
+#screen[data-form="desktop"] .settings-root > .page-layer:not(:first-child) { left: 38%; }
+#screen[data-form="tablet"][data-orientation="landscape"] .settings-root,
+#screen[data-form="desktop"] .settings-root { background: #000 url(../../../assets/brand/droid-logo.svg) no-repeat 69% 50% / 120px; }
+.upd { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 32px 24px; text-align: center; }
+.upd-logo { width: 96px; height: 96px; }
+.upd-ver { font-size: 28px; font-weight: 300; }
+.upd-sub { font-size: 13px; color: #888; }
+.upd-msg { font-size: 15px; color: #ddd; line-height: 1.4; max-width: 360px; }

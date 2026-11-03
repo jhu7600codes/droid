@@ -1,0 +1,2 @@
+{ "id": "com.droid.notes", "name": "Notes", "author": "droid examples", "category": "productivity", "icon": "icon.svg", "dpk": "repo:public/examples/notes.dpk",
+  "description": "Quick notes in holo light. Shows two activities, results, menus, dialogs, saved state and notifications." }

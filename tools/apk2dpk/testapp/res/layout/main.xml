@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical" android:layout_width="match_parent" android:layout_height="match_parent" android:padding="16dp">
+    <TextView android:id="@+id/title" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="@string/hello" android:textSize="22sp" android:textColor="@color/accent" />
+    <TextView android:id="@+id/text" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="12dp" android:textSize="18sp" />
+    <EditText android:id="@+id/name" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Your name" />
+    <LinearLayout android:orientation="horizontal" android:layout_width="match_parent" android:layout_height="wrap_content">
+        <Button android:id="@+id/button" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="@string/clicked" />
+        <Button android:id="@+id/open" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="@string/open" />
+    </LinearLayout>
+    <CheckBox android:id="@+id/check" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Use native add" android:checked="true" />
+    <ListView android:id="@+id/list" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
+</LinearLayout>

@@ -1,0 +1,32 @@
+.st-tabs { background: #222; }
+.st-body { padding-bottom: 16px; }
+.st-msg { padding: 32px 16px; text-align: center; color: #888; font-size: 15px; }
+.st-banner { display: flex; align-items: center; gap: 16px; margin: 12px; padding: 16px; background: linear-gradient(120deg, #0099cc, #1b3a4b); }
+.st-banner img { width: 64px; height: 64px; }
+.st-banner-t { font-size: 22px; font-weight: 300; }
+.st-banner-s { font-size: 13px; color: #cfe8f3; margin-top: 4px; }
+.st-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; padding: 8px 12px; }
+.st-card { background: #1c1c1c; padding: 12px 8px; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; box-shadow: 0 1px 2px #000; }
+.st-card.pressed { background: #2c3f48; }
+.st-card img { width: 64px; height: 64px; }
+.st-name { font-size: 14px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-author { font-size: 12px; color: #999; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-head { display: flex; gap: 16px; padding: 16px; align-items: center; }
+.st-head img { width: 80px; height: 80px; }
+.st-h-name { font-size: 22px; font-weight: 300; }
+.st-h-author { font-size: 14px; color: #33b5e5; }
+.st-h-meta { font-size: 12px; color: #999; margin-top: 4px; }
+.st-btns { display: flex; gap: 8px; padding: 0 16px 8px; }
+.st-btns .h-btn { flex: 1; }
+.st-primary { color: #fff !important; text-transform: uppercase; font-size: 15px !important; }
+.st-shots { display: flex; gap: 8px; overflow-x: auto; padding: 8px 16px; touch-action: pan-x; }
+.st-shots img { height: 240px; }
+.st-desc { padding: 8px 16px; font-size: 15px; line-height: 1.45; color: #ddd; white-space: pre-line; }
+.st-report { margin: 8px 16px; color: #ff4444; }
+.st-updall { margin: 12px; width: calc(100% - 24px); }
+.svc { padding: 24px; display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+.svc-logo { width: 72px; height: 72px; align-self: center; }
+.svc-title { font-size: 20px; font-weight: 300; text-align: center; margin-bottom: 8px; }
+.svc-err { color: #ff4444; font-size: 14px; min-height: 18px; }
+.svc-switch { color: #33b5e5; align-self: center; }
+.svc-fine { font-size: 12px; color: #888; text-align: center; line-height: 1.4; }

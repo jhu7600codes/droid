@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>holo test</title>
+
+<style>
+  body { margin: 0; }
+  .page { display: flex; flex-wrap: wrap; gap: 16px; padding: 16px; background: #222; min-height: 100vh; }
+  .phone { width: 320px; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+  .row { display: flex; align-items: center; gap: 8px; padding: 8px 16px; flex-wrap: wrap; }
+  .demo-dialog { position: relative; height: 300px; }
+  .np { width: 260px; height: 80px; margin: 8px 16px; display: flex; align-items: center; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="page" id="page"></div>
+<script type="module" src="./src/test/holo-test.ts"></script>
+</body>
+</html>

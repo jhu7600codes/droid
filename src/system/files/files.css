@@ -1,0 +1,9 @@
+.f-icon { width: 40px; height: 40px; flex: none; border-radius: 2px; background: #33b5e5; color: #000; font-size: 10px; font-weight: 700; text-transform: uppercase; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 4px; }
+.f-icon.f-dir { background: none; border: 0; position: relative; }
+.f-icon.f-dir::before { content: ''; position: absolute; left: 4px; right: 4px; top: 10px; bottom: 6px; background: #ffbb33; border-radius: 2px; }
+.f-icon.f-dir::after { content: ''; position: absolute; left: 4px; width: 14px; top: 6px; height: 6px; background: #ffbb33; border-radius: 2px 2px 0 0; }
+.f-icon.f-jpg, .f-icon.f-png { background: #99cc00; }
+.f-icon.f-webm, .f-icon.f-mp4 { background: #ff4444; }
+.f-icon.f-dpk { background: #aa66cc; }
+.f-empty { padding: 24px 16px; color: #888; font-size: 14px; }
+.f-text { white-space: pre-wrap; font: 12px/1.4 monospace; max-height: 50vh; overflow: auto; margin: 0; user-select: text; }

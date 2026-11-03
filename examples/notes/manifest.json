@@ -1,0 +1,21 @@
+{
+  "id": "com.droid.notes",
+  "name": "Notes",
+  "version": "1.0",
+  "versioncode": 1,
+  "type": "web",
+  "main": "list",
+  "icon": "icon.svg",
+  "theme": "holo-light",
+  "dpk": "0.1",
+  "permissions": ["notifications", "clipboard"],
+  "activities": {
+    "list": { "entry": "index.html", "label": "Notes", "launcher": true },
+    "edit": { "entry": "edit.html", "label": "Edit note" }
+  },
+  "intent-filters": [
+    { "activity": "edit", "actions": ["send"], "mimetypes": ["text/plain"] }
+  ],
+  "author": "droid examples",
+  "description": "A tiny notes app showing prefs, activities, results, menus and dialogs."
+}

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>droid boot</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #boot { position: fixed; inset: 0; background: #000; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 4vmin; cursor: pointer;
+    transition: opacity .4s ease; }
+  #boot.out { opacity: 0; pointer-events: none; }
+  #logo { width: 26vmin; height: 26vmin; opacity: 0; transform: translateY(2vmin) scale(.96); }
+  #word { font-family: "roboto", "helvetica neue", arial, sans-serif; font-weight: 300;
+    font-size: 9vmin; letter-spacing: .14em; margin-right: -.14em; opacity: 0;
+    color: transparent; -webkit-background-clip: text; background-clip: text;
+    background-image: linear-gradient(100deg, #3a3a3a 0%, #3a3a3a 38%, #0099cc 46%, #33b5e5 50%, #ffffff 53%, #33b5e5 56%, #0099cc 60%, #3a3a3a 68%, #3a3a3a 100%);
+    background-size: 300% 100%; background-position: 100% 0; }
+  #bar { position: absolute; left: 0; bottom: 0; height: .6vmin; width: 0; background: #33b5e5; opacity: 0; }
+
+  #boot.go #logo { animation: logo-in .9s .5s cubic-bezier(.2,.7,.2,1) forwards; }
+  #boot.go #word { animation: word-in .7s 1.2s ease forwards, sweep 2.2s 1.6s linear infinite; }
+  #boot.go #bar { animation: bar-in .4s 1.6s ease forwards, bar-run 4s 1.6s ease-in-out infinite; }
+  #boot.go #eye { animation: blink 3.2s 2.4s infinite; }
+  #eye { transform-box: fill-box; transform-origin: center; }
+
+  @keyframes logo-in { to { opacity: 1; transform: none; } }
+  @keyframes word-in { to { opacity: 1; } }
+  @keyframes sweep { from { background-position: 100% 0; } to { background-position: 0% 0; } }
+  @keyframes bar-in { to { opacity: 1; } }
+  @keyframes bar-run { 0% { left: 0; width: 0; } 50% { left: 20%; width: 60%; } 100% { left: 100%; width: 0; } }
+  @keyframes blink { 0%, 92%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    #boot.go #logo, #boot.go #word, #boot.go #bar { animation: none; opacity: 1; transform: none; }
+    #boot.go #word { background-position: 50% 0; }
+    #boot.go #eye { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div id="boot">
+  <svg id="logo" viewBox="0 0 100 100" role="img" aria-label="droid">
+    <path d="M10 100 C8 84 20 70 40 68 L74 64 C92 66 96 84 96 100 Z" fill="#4a4f57"/>
+    <path d="M58 100 C60 86 74 76 92 80 L96 100 Z" fill="#0099cc"/>
+    <path d="M27 38 Q17 40 11 44 Q17 47.5 28 47 Z" fill="#ffbb33"/>
+    <path d="M26 38 C30 28 40 22 52 22 C62 22 68 30 69 40 C70 52 70 60 76 66 Q54 86 28 76 C34 66 34 54 28 47 Z" fill="#0099cc"/>
+    <path d="M26 38 C30 28 40 22 52 22 C62 22 68 30 69 40 C68 50 58 56 45 56 C36 55 30 51 28 47 Z" fill="#33b5e5"/>
+    <ellipse cx="27.5" cy="40.5" rx="3.2" ry="2.6" fill="#7fd4f0"/>
+    <path d="M28 76 Q54 86 76 66" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="45" cy="33" r="5" fill="#fff"/>
+    <g id="eye"><circle cx="45" cy="33" r="3.8" fill="#000"/><circle cx="46.2" cy="31.8" r="1.1" fill="#fff"/></g>
+  </svg>
+  <div id="word">droid</div>
+  <div id="bar"></div>
+</div>
+<script>
+  var boot = document.getElementById('boot');
+  function start() {
+    boot.classList.remove('go', 'out');
+    void boot.offsetWidth;
+    boot.classList.add('go');
+  }
+  /* real use: call droidboot.finish() when the system is ready.
+     it fades the screen out and fires a "droid:booted" event on document. */
+  window.droidboot = {
+    start: start,
+    finish: function () {
+      boot.classList.add('out');
+      setTimeout(function () { document.dispatchEvent(new CustomEvent('droid:booted')); }, 400);
+    }
+  };
+  /* demo only: tap to replay */
+  boot.addEventListener('click', start);
+  start();
+</script>
+</body>
+</html>

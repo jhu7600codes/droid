@@ -1,0 +1,12 @@
+{
+  "name": "droid-proxy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "the droid proxy: fetch, websocket and page relay for droid (dpk spec section 18)",
+  "license": "MIT",
+  "main": "server.mjs",
+  "scripts": { "start": "node server.mjs", "test": "node test.mjs" },
+  "engines": { "node": ">=22" },
+  "dependencies": { "undici": "^7.10.0", "ws": "^8.18.0" }
+}

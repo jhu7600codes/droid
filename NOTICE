@@ -1,0 +1,12 @@
+droid
+copyright (c) 2026 jhu7600codes. droid's own code is mit licensed (see LICENSE).
+
+this project includes resources from the android open source project (aosp),
+tag android-4.4.4_r2, licensed under the apache license, version 2.0:
+  - framework and systemui drawables, colors and values (frameworks/base)
+  - roboto fonts (frameworks/base/data/fonts)
+they live in assets/aosp/, assets/aosp/manifest.json lists the source of every file,
+and the original NOTICE files are kept as assets/aosp/NOTICE-* and assets/aosp/fonts/NOTICE.
+the apache 2.0 license text is in LICENSE-APACHE-2.0.
+
+the android robot, the android wordmark and google apps and branding are not included.

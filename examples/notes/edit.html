@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head><link rel="stylesheet" href="style.css"></head>
+<body>
+  <textarea id="t" class="editor" placeholder="Note"></textarea>
+  <script type="module">
+    import { load, save } from './notes.js'
+    const t = document.getElementById('t')
+    const intent = droid.intent.current() || {}
+    const index = intent.extras?.index ?? -1
+    let notes = []
+    droid.on('create', async (saved) => {
+      notes = await load()
+      // a shared text ("send" intent) becomes a new note
+      t.value = saved?.text ?? (index >= 0 ? notes[index].text : intent.extras?.text || '')
+      t.focus()
+    })
+    // state survives being killed in the background
+    droid.on('pause', () => ({ text: t.value }))
+    async function done() {
+      const note = { text: t.value, time: Date.now() }
+      if (index >= 0) notes[index] = note
+      else if (t.value.trim()) notes.unshift(note)
+      await save(notes)
+      await droid.intent.setresult(droid.intent.OK)
+      droid.system.notify({ id: 'saved', title: 'Note saved', text: t.value.slice(0, 40) }).catch(() => {})
+      droid.app.finish(droid.intent.OK)
+    }
+    droid.actionbar.menu([{ id: 'done', title: 'Done' }, { id: 'discard', title: 'Discard' }])
+    droid.on('menu', ({ id }) => (id === 'done' ? done() : droid.app.finish()))
+    // back saves, like most kitkat note apps
+    droid.on('back', () => { done(); return true })
+  </script>
+</body>
+</html>

@@ -1,0 +1,144 @@
+/* holo layout and type. the look itself (images, states) comes from the generated
+   assets/aosp/css/holo-<density>.css. units: 1px here = 1dp (and 1sp at font scale 1). */
+
+:root {
+  --holo-blue: #33b5e5;       /* holo_blue_light */
+  --holo-blue-dark: #0099cc;
+  --sp: 1px;                  /* font scale lives here */
+  --t-large: calc(22 * var(--sp));
+  --t-medium: calc(18 * var(--sp));
+  --t-small: calc(14 * var(--sp));
+  --t-micro: calc(12 * var(--sp));
+}
+
+.holo-dark, .holo-light {
+  font-family: 'Roboto', sans-serif;
+  font-size: var(--t-medium);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.holo-dark { background: #000; color: #fff; --text-2: #bebebe; --text-dis: #4c4c4c; }
+.holo-light { background: #f3f3f3; color: #000; --text-2: #323232; --text-dis: #b2b2b2; }
+.holo-dark *, .holo-light * { box-sizing: border-box; }
+
+/* text appearances */
+.t-large { font-size: var(--t-large); }
+.t-medium { font-size: var(--t-medium); }
+.t-small { font-size: var(--t-small); }
+.t-micro { font-size: var(--t-micro); }
+.t-light { font-weight: 300; }
+.t-2 { color: var(--text-2); }
+
+/* buttons (Widget.Holo.Button: minHeight 48dp, minWidth 64dp, textAppearanceMedium) */
+.h-btn, .h-btn-borderless {
+  font: inherit; font-size: var(--t-medium);
+  min-height: 48px; min-width: 64px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: inherit; outline: none; cursor: default; margin: 0;
+}
+.h-btn:disabled, .h-btn.disabled { color: var(--text-dis); }
+.h-btn-borderless { padding: 0 16px; }
+
+/* checkbox, radio: the input itself draws the image */
+.h-check, .h-radio { appearance: none; -webkit-appearance: none; margin: 0; outline: none; flex: none; }
+
+/* switch: <label class="h-switch"><input type=checkbox><span class="track"><span class="thumb">OFF</span></span></label> */
+.h-switch { display: inline-flex; align-items: center; position: relative; height: 48px; }
+.h-switch input { position: absolute; opacity: 0; width: 0; height: 0; margin: 0; }
+/* like Switch.java: thumb slot = text + 2 * 12dp, the thumb image is drawn 14dp wider on each side */
+.h-switch .track { position: relative; width: 104px; height: 32px; display: block; }
+.h-switch .thumb {
+  position: absolute; top: 0; bottom: 0; left: -12px; width: 78px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--t-small); text-transform: uppercase; color: #bebebe;
+  transition: left .15s ease-out;
+}
+.h-switch:has(input:checked) .thumb, .h-switch.checked .thumb { left: 38px; color: #fff; }
+.holo-light .h-switch .thumb { color: #555; }
+.holo-light .h-switch:has(input:checked) .thumb { color: #fff; }
+
+/* text field */
+.h-edit {
+  font: inherit; font-size: var(--t-medium); color: inherit; background: none;
+  min-height: 48px; width: 100%; outline: none; caret-color: var(--holo-blue);
+  user-select: text; -webkit-user-select: text;
+}
+.h-edit::placeholder { color: var(--text-dis); }
+.h-edit::selection { background: rgba(51, 181, 229, .4); }
+.h-spinner { display: flex; align-items: center; min-height: 48px; font-size: var(--t-medium); }
+
+/* lists (listPreferredItemHeight 64dp, small 48dp) */
+.h-list { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.h-list > .h-item {
+  display: flex; align-items: center; gap: 16px;
+  min-height: 64px; padding: 0 16px !important;
+}
+.h-list > .h-item.small { min-height: 48px; }
+.h-item .lines { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.h-item .title { font-size: var(--t-medium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.h-item .summary { font-size: var(--t-small); color: var(--text-2); }
+.h-list > .h-divider { height: 1px; margin: 0 16px; padding: 0 !important; }
+.h-section {
+  font-size: var(--t-small); font-weight: 700; text-transform: uppercase; color: var(--holo-blue);
+  min-height: 32px; display: flex; align-items: flex-end; margin: 0 16px; padding: 0 8px 4px !important;
+}
+.holo-light .h-section { color: var(--holo-blue-dark); }
+
+/* action bar (48dp) */
+.h-actionbar { display: flex; align-items: center; height: 48px; padding: 0 !important; flex: none; }
+.h-actionbar .h-ab-item { height: 100%; display: flex; align-items: center; justify-content: center; min-width: 56px; padding: 0 8px !important; }
+.h-actionbar .h-ab-home { display: flex; align-items: center; height: 100%; padding: 0 8px 0 0 !important; }
+.h-actionbar .h-ab-home img { width: 32px; height: 32px; margin: 0 8px 0 0; }
+.h-actionbar .h-ab-title { font-size: var(--t-medium); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.h-actionbar .h-ab-item img, .h-actionbar .h-ab-item i { width: 32px; height: 32px; display: block; }
+.h-tabs { display: flex; height: 48px; }
+.h-tab { flex: 1; display: flex; align-items: center; justify-content: center; font-size: var(--t-small); font-weight: 700; text-transform: uppercase; padding: 0 !important; }
+
+/* dialogs (holo alert dialog: blue title 22sp, blue divider, borderless button bar) */
+.h-dialog { display: flex; flex-direction: column; min-width: 280px; max-width: 100%; }
+.h-dialog .d-title { font-size: var(--t-large); color: var(--holo-blue); min-height: 64px; display: flex; align-items: center; padding: 0 16px; }
+.h-dialog .d-title-line { height: 2px; background: var(--holo-blue); flex: none; }
+.h-dialog .d-body { padding: 16px; font-size: var(--t-medium); }
+.h-dialog .d-body.list { padding: 0; }
+.h-dialog .d-buttons { display: flex; min-height: 48px; border-top: 1px solid rgba(255, 255, 255, .12); }
+.holo-light .h-dialog .d-buttons { border-top-color: rgba(0, 0, 0, .12); }
+.h-dialog .d-buttons > * { flex: 1; font-size: var(--t-small); min-height: 48px; }
+.h-dialog .d-buttons > * + * { border-left: 1px solid rgba(255, 255, 255, .12) !important; }
+.holo-light .h-dialog .d-buttons > * + * { border-left-color: rgba(0, 0, 0, .12) !important; }
+.h-scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, .6); display: flex; align-items: center; justify-content: center; padding: 16px; }
+
+/* overflow menu */
+.h-menu { display: flex; flex-direction: column; min-width: 196px; }
+.h-menu > * { min-height: 48px; display: flex; align-items: center; padding: 0 16px !important; font-size: var(--t-medium); }
+
+/* toast */
+.h-toast { display: inline-block; font-size: var(--t-small); color: #fff; max-width: 90%; }
+
+/* progress bar (horizontal: 16dp tall box, 9-patch track) */
+.h-progress { position: relative; height: 16px; display: block; }
+.h-progress > .bar, .h-progress > .bar2 { position: absolute; left: 0; top: 0; bottom: 0; }
+.h-seek { position: relative; height: 48px; display: block; touch-action: none; }
+.h-seek > .track, .h-seek > .fill { position: absolute; left: 16px; right: 16px; top: 22px; height: 4px; }
+.h-seek > .fill { right: auto; }
+.h-seek > .knob { position: absolute; top: 8px; margin-left: -16px; }
+
+/* round spinners: outer and inner rings turn at different speeds like ProgressBar.Holo */
+.h-spin, .h-spin-large { position: relative; display: inline-block; animation: h-spin 3.5s linear infinite; }
+.h-spin > i, .h-spin-large > i { position: absolute; inset: 0; animation: h-spin-back 2.3s linear infinite; }
+@keyframes h-spin { to { transform: rotate(360deg); } }
+@keyframes h-spin-back { to { transform: rotate(-720deg); } }
+
+/* converted android apps (src/runtime/android): layouts inflated into these */
+.an-root { min-height: 100%; }
+.an-linear { display: flex; flex-direction: column; min-width: 0; }
+.an-frame { position: relative; display: flex; flex-direction: column; }
+.an-scroll { overflow-y: auto; }
+.an-text { display: block; font-size: var(--t-medium); white-space: pre-wrap; }
+.an-check { display: flex; align-items: center; gap: 8px; min-height: 48px; font-size: var(--t-medium); }
+.an-image { object-fit: contain; }
+.an-list { overflow-y: auto; }
+.an-list .h-item { min-height: 48px; }
+.an-view { min-width: 0; }
+.an-linear > .h-btn { margin: 2px; }

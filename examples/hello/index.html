@@ -1,0 +1,12 @@
+<!doctype html>
+<html>
+<body style="margin:0;padding:16px;font-family:Roboto,sans-serif">
+  <h1 class="t-large t-light">Hello, droid</h1>
+  <p class="t-small t-2">A whole app in two files.</p>
+  <button class="h-btn" id="b">Say hi</button>
+  <script>
+    document.getElementById('b').onclick = () => droid.toast('Hi from a dpk!')
+    droid.on('resume', () => console.log('resumed'))
+  </script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+{ "id": "com.droid.hello", "name": "Hello", "author": "droid examples", "category": "demo", "icon": "icon.svg", "dpk": "repo:public/examples/hello.dpk",
+  "description": "The smallest droid app: two files, one button, one toast. Read its source to start writing your own dpk." }
