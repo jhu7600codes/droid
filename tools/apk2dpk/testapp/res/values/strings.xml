@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Hello JNI</string>
+    <string name="second">Second screen</string>
+    <string name="clicked">Clicked</string>
+    <string name="hello">Old 32-bit apk, running in droid</string>
+    <string name="open">Open second screen</string>
+    <color name="accent">#ff33b5e5</color>
+</resources>
