@@ -2,7 +2,8 @@
 // handles 'install' (data = blob url of a .dpk) and 'uninstall' (data = package:<id>).
 import type { SystemApp, ActivityContext, Activity } from '../../shell/types'
 import { RESULT_OK } from '../../shell/types'
-import { h, pressable, dialog, toast } from '../../shell/ui'
+import { h, pressable, dialog, toast, progress } from '../../shell/ui'
+import { listZip } from '../../runtime/zip'
 import { img } from '../../shell/assets'
 import { kernel } from '../../shell/kernel'
 import { wm } from '../../shell/wm'
@@ -25,7 +26,22 @@ function installer(ctx: ActivityContext): Activity {
   const src = ctx.intent.data!
   ;(async () => {
     let p: Parsed
-    try { p = await parseDpk(await (await fetch(src)).arrayBuffer()) }
+    let converted: string[] | null = null
+    try {
+      let buf = await (await fetch(src)).arrayBuffer()
+      // an old android apk: convert it to a dpk first (spec section 10)
+      if (listZip(buf).some((e) => e.path === 'AndroidManifest.xml') && !listZip(buf).some((e) => e.path === 'manifest.json')) {
+        const stop = progress('Converting the apk…')
+        try {
+          const { convertApk } = await import('../../runtime/android/convert')
+          const runtime = await (await fetch('runtime/android-runtime.js')).text()
+          const r = await convertApk(buf, runtime)
+          buf = r.dpk.buffer.slice(r.dpk.byteOffset, r.dpk.byteOffset + r.dpk.length) as ArrayBuffer
+          converted = r.report
+        } finally { stop() }
+      }
+      p = await parseDpk(buf)
+    }
     catch (e) {
       await dialog({ title: 'Parse error', message: `There was a problem parsing the package. ${(e as Error).message}` })
       return ctx.finish()
@@ -38,6 +54,7 @@ function installer(ctx: ActivityContext): Activity {
     const perms = (m.permissions || []).map(permName)
     const q = { install: 'Do you want to install this application?', update: 'Do you want to install an update to this existing application? Your existing data will not be lost.', same: 'This version is already installed. Install it again?', downgrade: 'A newer version is installed. Replace it with this older version?' }[kind]
     body.append(h('div.pi-q', {}, q), h('div.pi-meta', {}, `Version ${m.version}${m.author ? ' · ' + m.author : ''} · ${(p.size / 1024).toFixed(0)} KB`))
+    if (converted) body.append(h('div.pi-meta', {}, `Converted from an android apk (${(m as any).runtime} runtime). ${converted.join('. ')}`))
     if (perms.length) {
       body.append(h('div.h-section', {}, 'It will get access to'))
       for (const pm of perms) body.append(h('div.pi-perm', {}, h('span.pi-dot'), h('span', {}, permissionText(pm))))
@@ -82,7 +99,7 @@ const app: SystemApp = {
     id: 'droid.packageinstaller', name: 'Package installer', version: '4.4', versioncode: 19, type: 'web', main: 'install',
     activities: { install: { label: 'Package installer' }, uninstall: { label: 'Uninstall' } }, system: true,
     'intent-filters': [
-      { activity: 'install', actions: ['install', 'view'], mimetypes: ['application/x-dpk'] },
+      { activity: 'install', actions: ['install', 'view'], mimetypes: ['application/x-dpk', 'application/vnd.android.package-archive'] },
       { activity: 'uninstall', actions: ['uninstall'], schemes: ['package'] },
     ],
     permissions: ['system.apps'],

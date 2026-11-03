@@ -60,7 +60,7 @@ function files(ctx: ActivityContext): Activity {
   async function openFile(path: string) {
     const b = await shared.read(path)
     if (!b) return
-    if (path.endsWith('.dpk')) return openDpk(b)
+    if (/\.(dpk|apk)$/.test(path)) return openDpk(b)
     const type = b.type || mimeOf(path)
     if (/^text\/|json|xml/.test(type)) {
       const text = await b.text()

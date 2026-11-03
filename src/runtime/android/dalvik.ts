@@ -37,6 +37,8 @@ export class JavaThrow extends Error {
 // framework classes written in js (src/runtime/android/framework.ts registers them)
 export interface ShimClass { super?: string; interfaces?: string[]; methods?: Record<string, NativeFn>; statics?: Record<string, any>; flags?: number }
 
+// dalvik registers are untyped: a null reference is often a plain 0 from const/4
+const obj = (v: any) => (v === 0 ? null : v)
 const defaultFor = (t: string) => (t === 'J' ? 0n : 'ZBSCIFD'.includes(t) ? 0 : null)
 const toInt = (x: number) => (isNaN(x) ? 0 : x >= 2147483647 ? 2147483647 : x <= -2147483648 ? -2147483648 : Math.trunc(x) | 0)
 const toLong = (x: number) => (isNaN(x) ? 0n : x >= 9.223372036854776e18 ? 9223372036854775807n : x <= -9.223372036854776e18 ? -9223372036854775808n : BigInt(Math.trunc(x)))
@@ -244,7 +246,8 @@ export class VM {
             case 0x0a: case 0x0b: case 0x0c: r[AA] = result; pc += 1; break
             case 0x0d: r[AA] = exc; pc += 1; break
             case 0x0e: return undefined
-            case 0x0f: case 0x10: case 0x11: return r[AA]
+            case 0x0f: case 0x10: return r[AA]
+            case 0x11: return obj(r[AA])
             case 0x12: r[A] = conv(kinds, pc, (B << 28) >> 28); pc += 1; break
             case 0x13: r[AA] = conv(kinds, pc, s16(ins[pc + 1])); pc += 2; break
             case 0x14: r[AA] = conv(kinds, pc, s32at(pc + 1)); pc += 3; break
@@ -262,8 +265,8 @@ export class VM {
               if (v != null && !this.instanceOf(v, c)) throw this.error('Ljava/lang/ClassCastException;', `${this.classOf(v).name} cannot be cast to ${c.name}`)
               pc += 2; break
             }
-            case 0x20: r[A] = this.instanceOf(r[B], this.cls(dex.types[ins[pc + 1]])) ? 1 : 0; pc += 2; break
-            case 0x21: { const arr = r[B]; if (arr == null) throw npe(); r[A] = arr.data.length; pc += 1; break }
+            case 0x20: r[A] = this.instanceOf(obj(r[B]), this.cls(dex.types[ins[pc + 1]])) ? 1 : 0; pc += 2; break
+            case 0x21: { const arr = obj(r[B]); if (arr == null) throw npe(); r[A] = arr.data.length; pc += 1; break }
             case 0x22: { const c = this.cls(dex.types[ins[pc + 1]]); this.init(c); r[AA] = new JObject(c); pc += 2; break }
             case 0x23: r[A] = this.newArray(dex.types[ins[pc + 1]], r[B]); pc += 2; break
             case 0x24: case 0x25: {
@@ -286,7 +289,7 @@ export class VM {
               }
               pc += 3; break
             }
-            case 0x27: { const e = r[AA]; if (e == null) throw npe(); throw new JavaThrow(e) }
+            case 0x27: { const e = obj(r[AA]); if (e == null) throw npe(); throw new JavaThrow(e) }
             case 0x28: pc += s8(AA); break
             case 0x29: pc += s16(ins[pc + 1]); break
             case 0x2a: pc += s32at(pc + 1); break
@@ -322,21 +325,21 @@ export class VM {
               pc += t ? s16(ins[pc + 1]) : 2; break
             }
             case 0x44: case 0x45: case 0x46: case 0x47: case 0x48: case 0x49: case 0x4a: {
-              const arr = r[ins[pc + 1] & 0xff] as JArray, i = r[ins[pc + 1] >> 8]
+              const arr = obj(r[ins[pc + 1] & 0xff]) as JArray, i = r[ins[pc + 1] >> 8]
               if (arr == null) throw npe()
               if (i < 0 || i >= arr.data.length) throw this.error('Ljava/lang/ArrayIndexOutOfBoundsException;', `length=${arr.data.length}; index=${i}`)
               r[AA] = arr.data[i]
               pc += 2; break
             }
             case 0x4b: case 0x4c: case 0x4d: case 0x4e: case 0x4f: case 0x50: case 0x51: {
-              const arr = r[ins[pc + 1] & 0xff] as JArray, i = r[ins[pc + 1] >> 8]
+              const arr = obj(r[ins[pc + 1] & 0xff]) as JArray, i = r[ins[pc + 1] >> 8]
               if (arr == null) throw npe()
               if (i < 0 || i >= arr.data.length) throw this.error('Ljava/lang/ArrayIndexOutOfBoundsException;', `length=${arr.data.length}; index=${i}`)
-              ;(arr.data as any)[i] = op === 0x4e ? (r[AA] ? 1 : 0) : r[AA]
+              ;(arr.data as any)[i] = op === 0x4d ? obj(r[AA]) : r[AA]
               pc += 2; break
             }
             case 0x52: case 0x53: case 0x54: case 0x55: case 0x56: case 0x57: case 0x58: {
-              const o = r[B]
+              const o = obj(r[B])
               if (o == null) throw npe()
               const f = dex.fields[ins[pc + 1]]
               const v = o.f[f.name]
@@ -344,9 +347,9 @@ export class VM {
               pc += 2; break
             }
             case 0x59: case 0x5a: case 0x5b: case 0x5c: case 0x5d: case 0x5e: case 0x5f: {
-              const o = r[B]
+              const o = obj(r[B])
               if (o == null) throw npe()
-              o.f[dex.fields[ins[pc + 1]].name] = r[A]
+              o.f[dex.fields[ins[pc + 1]].name] = op === 0x5b ? obj(r[A]) : r[A]
               pc += 2; break
             }
             case 0x60: case 0x61: case 0x62: case 0x63: case 0x64: case 0x65: case 0x66: {
@@ -361,7 +364,7 @@ export class VM {
               const f = dex.fields[ins[pc + 1]]
               const c = this.staticOwner(f.cls, f.name)
               this.init(c)
-              c.staticValues[f.name] = r[AA]
+              c.staticValues[f.name] = op === 0x69 ? obj(r[AA]) : r[AA]
               pc += 2; break
             }
             case 0x6e: case 0x6f: case 0x70: case 0x71: case 0x72: case 0x74: case 0x75: case 0x76: case 0x77: case 0x78: {
@@ -419,7 +422,7 @@ export class VM {
   private wrapJsError(e: unknown): JavaThrow {
     if (e instanceof JavaThrow) return e
     if (e instanceof RangeError && /call stack/i.test(e.message)) return this.error('Ljava/lang/StackOverflowError;', 'stack overflow')
-    console.error('runtime error', e)
+    console.error('runtime error', (e as Error)?.stack?.split('\n').slice(0, 4).join(' / '))
     return this.error('Ljava/lang/RuntimeException;', 'droid runtime: ' + ((e as Error)?.message || String(e)))
   }
 
@@ -443,8 +446,8 @@ export class VM {
     const isStatic = kind === 3
     const args: any[] = []
     let i = isStatic ? 0 : 1
-    for (const p of ref.proto.params) { args.push(raw[i]); i += p === 'J' || p === 'D' ? 2 : 1 }
-    const self = isStatic ? null : raw[0]
+    for (const p of ref.proto.params) { args.push(p[0] === 'L' || p[0] === '[' ? obj(raw[i]) : raw[i]); i += p === 'J' || p === 'D' ? 2 : 1 }
+    const self = isStatic ? null : obj(raw[0])
     let target: JMethod | null
     if (kind === 3) {
       const c = this.cls(ref.cls)
@@ -487,7 +490,8 @@ export class VM {
       const j = i - 11
       if (j >= 8) { const s = BigInt(Number(y) & 63); return j === 8 ? L(x << s) : j === 9 ? x >> s : L(BigInt.asUintN(64, x) >> s) }
       if ((j === 3 || j === 4) && y === 0n) throw this.error('Ljava/lang/ArithmeticException;', 'divide by zero')
-      return L([x + y, x - y, x * y, x / y, x % y, x & y, x | y, x ^ y][j])
+      const X = x as bigint, Y = y as bigint
+      switch (j) { case 0: return L(X + Y); case 1: return L(X - Y); case 2: return L(X * Y); case 3: return L(X / Y); case 4: return L(X % Y); case 5: return x & y; case 6: return x | y; default: return x ^ y }
     }
     const f = i <= 26
     const j = f ? i - 22 : i - 27

@@ -146,7 +146,7 @@ function settingsApp(ctx: ActivityContext): Activity {
     return () => { r.dispose(); off() }
   }
   const pickDpk = () => {
-    const i = h('input', { type: 'file', accept: '.dpk,application/x-dpk', style: { display: 'none' } }) as HTMLInputElement
+    const i = h('input', { type: 'file', accept: '.dpk,.apk,application/x-dpk,application/vnd.android.package-archive', style: { display: 'none' } }) as HTMLInputElement
     i.addEventListener('change', () => { if (i.files?.[0]) openDpk(i.files[0]) })
     document.body.append(i)
     i.click()

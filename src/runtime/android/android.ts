@@ -398,9 +398,9 @@ export function registerAndroid(vm: VM, env: Env) {
   def('Landroid/app/Application;', 'Landroid/content/ContextWrapper;', { 'onCreate()V': noop })
   def('Landroid/content/res/Resources;', OBJ, {
     'getString(I)Ljava/lang/String;': (v, s, [id]) => resString(id),
-    'getColor(I)I': (v, s, [id]) => res(id)?.data | 0,
+    'getColor(I)I': (v, s, [id]) => (res(id)?.data ?? 0) | 0,
     'getDimension(I)F': (v, s, [id]) => dimen(res(id)) * env.density,
-    'getInteger(I)I': (v, s, [id]) => res(id)?.data | 0,
+    'getInteger(I)I': (v, s, [id]) => (res(id)?.data ?? 0) | 0,
     'getBoolean(I)Z': (v, s, [id]) => (res(id)?.data ? 1 : 0),
     'getDisplayMetrics()Landroid/util/DisplayMetrics;': () => { const m = new JObject(vm.cls('Landroid/util/DisplayMetrics;')); m.f.density = env.density; m.f.widthPixels = Math.round(innerWidth * env.density); m.f.heightPixels = Math.round(innerHeight * env.density); m.f.densityDpi = Math.round(env.density * 160); return m },
     'getIdentifier(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I': (v, s, [name, type]) => { for (const [id, e] of env.res.entries) if (e.name === name && e.type === type) return id | 0; return 0 },

@@ -129,3 +129,16 @@
 .h-spin > i, .h-spin-large > i { position: absolute; inset: 0; animation: h-spin-back 2.3s linear infinite; }
 @keyframes h-spin { to { transform: rotate(360deg); } }
 @keyframes h-spin-back { to { transform: rotate(-720deg); } }
+
+/* converted android apps (src/runtime/android): layouts inflated into these */
+.an-root { min-height: 100%; }
+.an-linear { display: flex; flex-direction: column; min-width: 0; }
+.an-frame { position: relative; display: flex; flex-direction: column; }
+.an-scroll { overflow-y: auto; }
+.an-text { display: block; font-size: var(--t-medium); white-space: pre-wrap; }
+.an-check { display: flex; align-items: center; gap: 8px; min-height: 48px; font-size: var(--t-medium); }
+.an-image { object-fit: contain; }
+.an-list { overflow-y: auto; }
+.an-list .h-item { min-height: 48px; }
+.an-view { min-width: 0; }
+.an-linear > .h-btn { margin: 2px; }

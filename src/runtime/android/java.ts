@@ -64,7 +64,7 @@ export function registerJava(vm: VM) {
 
   def(OBJ, undefined, {
     '<init>()V': () => {},
-    'toString()Ljava/lang/String;': (v, s) => `${s.cls.name.slice(1, -1).replace(/\//g, '.')}@${(identityHash(s) >>> 0).toString(16)}`,
+    'toString()Ljava/lang/String;': (v, s) => (s instanceof JObject || s instanceof JArray ? `${s.cls.name.slice(1, -1).replace(/\//g, '.')}@${(identityHash(s) >>> 0).toString(16)}` : jstr(v, s)),
     'hashCode()I': (v, s) => identityHash(s),
     'equals(Ljava/lang/Object;)Z': (v, s, [o]) => (s === o ? 1 : 0),
     'getClass()Ljava/lang/Class;': (v, s) => v.classObject(v.classOf(s)),
@@ -214,6 +214,13 @@ export function registerJava(vm: VM) {
   }, { statics: { PI: Math.PI, E: Math.E } })
   vm.shims.set('Ljava/lang/StrictMath;', vm.shims.get('Ljava/lang/Math;')!)
 
+  def('Ljava/io/PrintStream;', OBJ, {
+    'println(Ljava/lang/String;)V': (v, s, [x]) => vm.log(String(x)),
+    'println(Ljava/lang/Object;)V': (v, s, [x]) => vm.log(jstr(vm, x)),
+    'println(I)V': (v, s, [x]) => vm.log(String(x)),
+    'println()V': () => vm.log(''),
+    'print(Ljava/lang/String;)V': (v, s, [x]) => vm.log(String(x)),
+  })
   const start = performance.now()
   def('Ljava/lang/System;', OBJ, {
     'currentTimeMillis()J': () => BigInt(Date.now()),
@@ -232,13 +239,6 @@ export function registerJava(vm: VM) {
   })
   const out = new JObject(vm.cls('Ljava/io/PrintStream;'))
   vm.shims.get('Ljava/lang/System;')!.statics = { out, err: out }
-  def('Ljava/io/PrintStream;', OBJ, {
-    'println(Ljava/lang/String;)V': (v, s, [x]) => vm.log(String(x)),
-    'println(Ljava/lang/Object;)V': (v, s, [x]) => vm.log(jstr(vm, x)),
-    'println(I)V': (v, s, [x]) => vm.log(String(x)),
-    'println()V': () => vm.log(''),
-    'print(Ljava/lang/String;)V': (v, s, [x]) => vm.log(String(x)),
-  })
 
   // throwables
   def('Ljava/lang/Throwable;', OBJ, {

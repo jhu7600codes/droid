@@ -20,7 +20,7 @@ export async function startRuntime() {
   }
   screenEl.addEventListener('dragover', (e) => e.preventDefault())
   screenEl.addEventListener('drop', (e) => {
-    const f = [...(e.dataTransfer?.files || [])].find((x) => x.name.endsWith('.dpk'))
+    const f = [...(e.dataTransfer?.files || [])].find((x) => /\.(dpk|apk)$/.test(x.name))
     if (!f) return
     e.preventDefault()
     openDpk(f)

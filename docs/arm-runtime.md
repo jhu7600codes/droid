@@ -1,6 +1,12 @@
 # milestone 8 plan: arm runtime and apk conversion (spec section 10)
 
-status: planned, waiting for jhu's go (see "needs a decision").
+status: first version done. the test apk (tools/apk2dpk/testapp: two activities, layouts, a list, prefs, a menu,
+java work with longs, doubles and exceptions, and an armeabi-v7a jni library calling libc and liblog) converts
+and runs in droid. `node tools/apk2dpk/convert.mjs app.apk` converts on the command line; opening an .apk in droid
+converts it in the package installer.
+
+next steps: thumb-2 (most real ndk libraries are thumb), vfp floats, more framework (canvas, custom views,
+sqlite, http), gles -> webgl, audio, threads. game engines (unity, cocos2d-x) after that.
 
 ## pieces
 1. apk reader (ts): zip, binary xml (AndroidManifest.xml, res/layout/*.xml), resources.arsc (strings,
@@ -33,7 +39,7 @@ status: planned, waiting for jhu's go (see "needs a decision").
 honest expectation: a simple old java apk (and one with a small jni lib) runs at the end of this milestone.
 real games built on engines (cocos2d-x, unity) need gles, audio, threads and vfp: that is follow-up work.
 
-## needs a decision
+## test inputs (decided: google build tools)
 to test on a real apk i need to build one: javac is here, but making classes.dex and the binary resources
 needs google's d8 and aapt2 (from dl.google.com maven) or a public android.jar. downloading and running those
 was blocked in this session. options:
