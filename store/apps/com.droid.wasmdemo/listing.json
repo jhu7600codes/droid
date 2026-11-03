@@ -1,0 +1,2 @@
+{ "id": "com.droid.wasmdemo", "name": "Wasm demo", "author": "droid examples", "category": "demo", "icon": "icon.svg", "dpk": "repo:public/examples/wasmdemo.dpk",
+  "description": "A plasma effect written in C and compiled to WebAssembly, using the droid import table. Tap it." }

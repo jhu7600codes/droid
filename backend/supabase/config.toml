@@ -1,0 +1,3 @@
+# the danen function does its own auth (danen sessions), so supabase's jwt check is off for it
+[functions.danen]
+verify_jwt = false

@@ -71,3 +71,5 @@ img { -webkit-user-drag: none; }
 .h-actionbar .h-ab-home .h-ab-up { margin-right: -4px; }
 .h-actionbar .h-ab-home img { width: 32px; height: 32px; }
 #screen.no-anim *, #screen.no-anim *::before { animation-duration: 0s !important; transition-duration: 0s !important; }
+.h-dialog .d-body { white-space: pre-line; }
+.st-report { color: #ff4444 !important; }

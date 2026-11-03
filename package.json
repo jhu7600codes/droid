@@ -4,11 +4,12 @@
   "description": "",
   "scripts": {
     "dev": "vite",
-    "build": "node tools/pack-dpk/examples.mjs && vite build",
+    "build": "node tools/pack-dpk/examples.mjs && vite build && node tools/store/build-catalog.mjs",
     "import-aosp": "node tools/import-aosp/import.mjs",
     "css": "node tools/import-aosp/css.mjs",
     "shots": "node tools/screens/shot.mjs",
-    "pack-dpk": "node tools/pack-dpk/pack.mjs"
+    "pack-dpk": "node tools/pack-dpk/pack.mjs",
+    "store-check": "node tools/store/build-catalog.mjs --check"
   },
   "repository": {
     "type": "git",

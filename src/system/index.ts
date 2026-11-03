@@ -11,5 +11,7 @@ import camera from './camera'
 import gallery from './gallery'
 import files from './files'
 import browser from './browser'
+import services from './services'
+import store from './store'
 
-export const systemApps: SystemApp[] = [wallpaper, systemui, launcher, setupwizard, packageinstaller, settings, networks, camera, gallery, files, browser]
+export const systemApps: SystemApp[] = [wallpaper, systemui, launcher, setupwizard, packageinstaller, settings, networks, camera, gallery, files, browser, services, store]

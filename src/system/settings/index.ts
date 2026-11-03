@@ -261,13 +261,20 @@ function settingsApp(ctx: ActivityContext): Activity {
     const p = page(el, { title: 'Danen account', icon: 'assets/brand/droid-d-icon.svg', up: pop })
     const r = prefs(p.content, () => {
       const a = account.get()
+      const backend: Pref = { type: 'item', title: 'danen backend', summary: () => (settings.get('danen.backend') as string) || 'Not set (accounts stay on this device)', onclick: async () => {
+        const d = await dialog({ title: 'danen backend', kind: 'input', value: (settings.get('danen.backend') as string) || '', placeholder: 'https://<project>.supabase.co/functions/v1/danen' })
+        if (d.button === 'ok') settings.set('danen.backend', (d.value || '').trim())
+      } }
       if (!a) return [
         { type: 'item', title: 'Add a danen account', summary: 'Sign in or create one', onclick: () => wm.start({ action: 'danen-account' }) },
+        backend,
       ]
       return [
         { type: 'item', title: a.nickname, summary: a.username + (a.remote ? '' : ' · only on this device') },
         { type: 'check', title: 'Sync settings and app data', key: 'danen.sync' },
-        { type: 'item', title: 'Sync now', onclick: () => window.dispatchEvent(new Event('danen:sync-now')) },
+        { type: 'item', title: 'Sync now', summary: () => { const t = settings.get('danen.lastSync') as number; return t ? 'Last synced ' + new Date(t).toLocaleString() : 'Never synced' }, onclick: () => window.dispatchEvent(new Event('danen:sync-now')) },
+        { type: 'check', title: 'Check for app updates', get: () => settings.get('danen.updates') !== false, set: (v) => settings.set('danen.updates', v) },
+        backend,
         { type: 'item', title: 'Remove account', onclick: async () => {
           const d = await dialog({ title: 'Remove account?', message: 'Removing this account deletes it from this device. It stays on the danen backend if it was synced.', cancel: 'Cancel', ok: 'Remove' })
           if (d.button === 'ok') { account.signOut(); r.render() }

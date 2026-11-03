@@ -37,3 +37,14 @@ self.addEventListener('fetch', (e) => {
     }
   })())
 })
+
+// web push from the danen backend: { title, body, pkg }
+self.addEventListener('push', (e) => {
+  let d = {}
+  try { d = e.data ? e.data.json() : {} } catch (err) { d = { title: 'droid', body: e.data && e.data.text() } }
+  e.waitUntil(self.registration.showNotification(d.title || 'droid', { body: d.body || '', icon: 'icons/icon-192.png', data: d }))
+})
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close()
+  e.waitUntil(self.clients.matchAll({ type: 'window' }).then((cs) => (cs[0] ? cs[0].focus() : self.clients.openWindow('./'))))
+})
