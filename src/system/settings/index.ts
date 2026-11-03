@@ -24,6 +24,7 @@ const fmtBytes = (n: number) => (n > 1 << 30 ? (n / (1 << 30)).toFixed(2) + ' GB
 type Build = (parent: HTMLElement, pop: () => void, arg?: any) => (() => void) | void
 
 function settingsApp(ctx: ActivityContext): Activity {
+  ctx.root.classList.add('settings-root')
   const stack = pageStack(ctx.root)
   const open = (b: Build, arg?: any) => stack.push((el, pop) => b(el, pop, arg))
   const sub = (title: string, list: () => Pref[], icon = ic(S, 'ic_settings_home')): Build => (el, pop) => {

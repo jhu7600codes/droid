@@ -47,6 +47,7 @@ watch((s) => {
   info = s
   apply(screen, s)
   if (bucketChanged) { loadHolo(s.bucket); setBucket(s.bucket) }
+  wm.relayout()
   wm.configchange()
 })
 registerSw()

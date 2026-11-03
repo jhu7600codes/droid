@@ -122,7 +122,8 @@ export function desktopLayout(tasks: Task[], front: Task | undefined) {
   // the home task is the desktop itself: full screen under the windows
   for (const t of tasks) if (t.home) for (const r of t.stack) {
     r.el.classList.toggle('visible', r === t.stack[t.stack.length - 1])
-    Object.assign(r.el.style, { left: '0', top: '0', width: '100%', height: '100%', zIndex: '1' })
+    // the start menu lives in the launcher window, so it comes above the app windows while open
+    Object.assign(r.el.style, { left: '0', top: '0', width: '100%', height: '100%', zIndex: r.el.classList.contains('drawer-open') ? '5000' : '1' })
   }
   layoutAll()
 }

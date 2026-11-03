@@ -35,7 +35,8 @@ async function draw() {
   else if (w.startsWith('shared:')) { el.style.backgroundImage = `url("${await shared.url(w.slice(7))}")`; el.style.backgroundColor = '#000' }
   else { el.style.backgroundImage = `url("${url(w)}")`; el.style.backgroundColor = '#000' }
   // wider than the screen so pages can scroll it (like android's wallpaper offsets)
-  el.style.backgroundSize = 'auto 100%'
+  const wide = (layers.wallpaper.clientWidth || 1) > (layers.wallpaper.clientHeight || 1)
+  el.style.backgroundSize = wide ? 'cover' : 'auto 100%'
   setWallpaperOffset(offset, false)
 }
 
@@ -75,6 +76,7 @@ const app: SystemApp = {
   service() {
     draw()
     settings.on('wallpaper', draw)
+    new ResizeObserver(() => draw()).observe(layers.wallpaper)
   },
 }
 app.icon = ''

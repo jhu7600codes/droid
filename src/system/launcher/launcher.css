@@ -50,3 +50,21 @@
 .l-grid .ic { width: auto; padding: 12px 0; }
 .launcher { transition: opacity .2s; }
 .drawer-open .launcher { opacity: 0; }
+
+.l-search-in { display: none; }
+/* tablet: a bigger grid */
+#screen[data-form="tablet"] .l-page { grid-template-columns: repeat(6, 1fr); grid-template-rows: repeat(5, 1fr); padding: 16px 48px; }
+#screen[data-form="tablet"][data-orientation="landscape"] .l-page { grid-template-columns: repeat(7, 1fr); grid-template-rows: repeat(4, 1fr); }
+#screen[data-form="tablet"] .l-hotseat { padding: 0 25%; }
+#screen[data-form="tablet"] .ic img { width: 64px; height: 64px; }
+/* desktop: icons on the desktop, the drawer becomes a start menu over the taskbar */
+#screen[data-form="desktop"] .launcher { padding: 8px 0 var(--nb); }
+#screen[data-form="desktop"] .l-search, #screen[data-form="desktop"] .l-indicator, #screen[data-form="desktop"] .l-hotseat { display: none; }
+#screen[data-form="desktop"] .l-page { grid-template-columns: repeat(auto-fill, 96px); grid-template-rows: repeat(auto-fill, 104px); grid-auto-flow: column; justify-content: start; }
+#screen[data-form="desktop"] .l-page:not([data-page="0"]) { display: none; }
+#screen[data-form="desktop"] .drawer-open .launcher { opacity: 1; }
+#screen[data-form="desktop"] .l-drawer { inset: auto; left: 0; bottom: var(--nb); width: 420px; height: min(560px, calc(100% - 60px)); transform: translateY(16px); transform-origin: bottom left; background: rgba(20, 20, 20, .96); box-shadow: 0 0 24px rgba(0, 0, 0, .7); border: 1px solid #333; }
+#screen[data-form="desktop"] .l-drawer.open { transform: none; }
+#screen[data-form="desktop"] .l-search-in { display: block; margin: 8px 12px 0; width: calc(100% - 24px); flex: none; }
+#screen[data-form="desktop"] .l-tabs { display: none; }
+#screen[data-form="desktop"] .l-grid { grid-template-columns: repeat(4, 1fr); }

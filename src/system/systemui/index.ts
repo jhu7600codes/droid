@@ -112,6 +112,37 @@ function navBar() {
   })
 }
 
+// ---------- desktop taskbar (spec section 17): systemui becomes the taskbar ----------
+function taskBar() {
+  const bar = h('div.taskbar')
+  const start = pressable(h('div.tb-start', { title: 'Start' }, h('img', { src: 'assets/brand/droid-d-icon.svg' })))
+  start.addEventListener('click', () => document.dispatchEvent(new Event('droid:startmenu')))
+  const nav = (name: string, title: string, fn: () => void) => pressable(h('div.tb-nav', { title, onclick: fn }, h('img', { src: img(SUI, name) })))
+  const tasks = h('div.tb-tasks')
+  const tray = pressable(h('div.tb-tray'))
+  tray.addEventListener('click', () => shade.open(false))
+  bar.append(start, nav('ic_sysbar_back', 'Back', () => wm.back()), nav('ic_sysbar_home', 'Show desktop', () => wm.home()), nav('ic_sysbar_recent', 'Task view', () => recents.toggle()), tasks, tray)
+  const render = () => {
+    tasks.innerHTML = ''
+    for (const t of wm.tasks) {
+      if (t.home) continue
+      const top = t.stack[t.stack.length - 1]
+      const b = pressable(h('div.tb-task' + (t === wm.front() ? '.on' : ''), { title: top?.title || t.label }, h('img', { src: t.icon }), h('span', {}, top?.title || t.label)))
+      // click: focus, or minimize when it is already in front (like a desktop taskbar)
+      b.addEventListener('click', () => (t === wm.front() ? wm.minimize(t) : wm.switchTo(t, false)))
+      b.addEventListener('auxclick', (e) => { if ((e as MouseEvent).button === 1) wm.removeTask(t) })
+      tasks.append(b)
+    }
+    const d = new Date()
+    tray.innerHTML = signalIcons() + batteryIcon() + `<span class="tb-clock">${fmtTime(d)}<br><small>${d.toLocaleDateString(settings.get('locale') || 'en')}</small></span>`
+  }
+  render()
+  wm.on('change', render)
+  setInterval(render, 15000)
+  settings.on('*', render)
+  layers.navbar.append(bar)
+}
+
 // ---------- shade + quick settings ----------
 const shade = {
   open: (_qs = false) => {},
@@ -208,7 +239,8 @@ function buildShade() {
   const apply = (f: number, anim: boolean) => {
     openFrac = f
     panel.style.transition = scrim.style.transition = anim ? 'transform .25s cubic-bezier(.1,.7,.3,1), opacity .25s' : 'none'
-    panel.style.transform = `translateY(${(f - 1) * 100}%)`
+    // desktop: the panel comes up from the taskbar instead of down from the status bar
+    panel.style.transform = screenEl.dataset.form === 'desktop' ? `translateY(${(1 - f) * 110}%)` : `translateY(${(f - 1) * 100}%)`
     scrim.style.opacity = String(f * 0.7)
     root.classList.toggle('open', f > 0)
   }
@@ -308,6 +340,7 @@ const app: SystemApp = {
     }
     const render = statusBar()
     navBar()
+    taskBar()
     buildShade()
     recents.init()
     lockscreen.init()

@@ -69,6 +69,10 @@ function launcher(ctx: ActivityContext): Activity & { translucent: boolean; home
   ctx.root.append(root)
 
   const drawer = allApps(ctx, (cell) => { addToHome(cell); }, () => layout)
+  const onStart = () => (drawer.isOpen() ? drawer.close() : drawer.open())
+  document.addEventListener('droid:startmenu', onStart)
+  // clicking a window or the desktop closes the start menu
+  document.addEventListener('pointerdown', (e) => { if (drawer.isOpen() && screenEl.dataset.form === 'desktop' && !(e.target as HTMLElement).closest('.l-drawer, .tb-start')) drawer.close() }, true)
 
   function render() {
     strip.innerHTML = ''
@@ -280,7 +284,11 @@ function allApps(ctx: ActivityContext, onAdd: (c: Cell) => void, _layout: () => 
   const tabs = h('div.l-tabs', {}, h('div.l-tab.selected', {}, 'Apps'), h('div.l-tab', {}, 'Widgets'))
   tabs.lastChild!.addEventListener('click', () => toast('Widgets come with a later droid version'))
   const grid = h('div.l-grid')
-  el.append(tabs, grid)
+  // the start menu (desktop mode) has a search field on top
+  const q = h('input.h-edit.l-search-in', { placeholder: 'Search apps', oninput: () => filter() }) as HTMLInputElement
+  q.addEventListener('keydown', (e) => { if (e.key === 'Enter') (grid.querySelector('.ic:not([hidden])') as HTMLElement | null)?.click() })
+  const filter = () => grid.querySelectorAll<HTMLElement>('.ic').forEach((ic) => (ic.hidden = !ic.textContent!.toLowerCase().includes(q.value.toLowerCase())))
+  el.append(tabs, q, grid)
   ctx.root.append(el)
   let open = false
   const refresh = () => {
@@ -290,6 +298,7 @@ function allApps(ctx: ActivityContext, onAdd: (c: Cell) => void, _layout: () => 
       const cell = { pkg: l.app.manifest.id, activity: l.activity }
       let t = 0
       ic.addEventListener('click', () => { api.close(); launch(cell, ic) })
+      ic.addEventListener('dblclick', (e) => e.preventDefault())
       ic.addEventListener('pointerdown', () => { ic.classList.add('pressed'); t = window.setTimeout(() => { api.close(); onAdd(cell) }, 500) })
       for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) ic.addEventListener(ev, () => { ic.classList.remove('pressed'); clearTimeout(t) })
       ic.addEventListener('contextmenu', (e) => e.preventDefault())
@@ -298,8 +307,8 @@ function allApps(ctx: ActivityContext, onAdd: (c: Cell) => void, _layout: () => 
   }
   refresh()
   const api = {
-    open() { open = true; el.classList.add('open'); ctx.root.classList.add('drawer-open'); grid.scrollTop = 0 },
-    close() { open = false; el.classList.remove('open'); ctx.root.classList.remove('drawer-open') },
+    open() { open = true; el.classList.add('open'); ctx.root.classList.add('drawer-open'); wm.relayout(); grid.scrollTop = 0; q.value = ''; filter(); if (screenEl.dataset.form === 'desktop') setTimeout(() => q.focus(), 50) },
+    close() { open = false; el.classList.remove('open'); ctx.root.classList.remove('drawer-open'); wm.relayout() },
     isOpen: () => open,
     refresh,
   }

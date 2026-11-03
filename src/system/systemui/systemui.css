@@ -26,8 +26,6 @@
 #screen[data-nav="right"] .nav-btn { width: auto; height: 80px; }
 #screen[data-nav="right"] .nav-gap { flex-direction: column; justify-content: flex-start; }
 #screen[data-nav="right"] .nav-gap .nav-btn { height: 56px; }
-#screen[data-form="tablet"] .nav { justify-content: flex-start; }
-#screen[data-form="tablet"] .nav > .nav-gap:first-child { flex: 0 0 72px; }
 
 /* shade */
 #shade:not(.open) { visibility: hidden; }
@@ -116,3 +114,26 @@
 .pin-keys { display: grid; grid-template-columns: repeat(3, 96px); }
 .pin-key { height: 64px; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 300; }
 .pin-key.pressed { background: rgba(51, 181, 229, .4); }
+
+/* desktop: the nav bar becomes a taskbar */
+.taskbar { display: none; height: 100%; align-items: stretch; background: rgba(16, 16, 16, .92); border-top: 1px solid #333; }
+#screen[data-form="desktop"] .nav { display: none; }
+#screen[data-form="desktop"] .taskbar { display: flex; }
+#screen[data-form="desktop"] > #navbar { top: auto; left: 0; right: 0; width: auto; height: var(--nb); background: transparent; }
+.tb-start { width: 48px; display: flex; align-items: center; justify-content: center; }
+.tb-start img { width: 28px; height: 28px; }
+.tb-start.pressed, .tb-start:hover, .tb-nav:hover, .tb-task:hover, .tb-tray:hover { background: rgba(255, 255, 255, .1); }
+.tb-nav { width: 44px; display: flex; align-items: center; justify-content: center; }
+.tb-nav img { height: 32px; }
+.tb-tasks { flex: 1; display: flex; gap: 2px; overflow: hidden; padding-left: 6px; }
+.tb-task { display: flex; align-items: center; gap: 6px; padding: 0 10px; max-width: 180px; font-size: 13px; color: #ddd; border-bottom: 2px solid transparent; }
+.tb-task.on { background: rgba(51, 181, 229, .18); border-bottom-color: #33b5e5; }
+.tb-task img { width: 22px; height: 22px; flex: none; }
+.tb-task span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-tray { display: flex; align-items: center; gap: 4px; padding: 0 10px; }
+.tb-tray img { height: 22px; }
+.tb-clock { font-size: 12px; text-align: center; line-height: 1.1; margin-left: 6px; color: #eee; }
+.tb-clock small { font-size: 10px; color: #aaa; }
+#screen[data-form="desktop"] .shade-panel { left: auto; right: 8px; top: auto; bottom: 48px; width: 400px; max-height: 70%; transform-origin: bottom; }
+#screen[data-form="desktop"] .shade-handle { display: none; }
+#screen[data-form="desktop"] .recents { bottom: var(--nb); }
