@@ -4,6 +4,7 @@ import { kernel, type AppEntry } from './kernel'
 import type { Activity, ActivityContext, Intent, Result, LifecycleEvent } from './types'
 import { RESULT_CANCELED } from './types'
 import { dialog } from './ui'
+import { isDesktop, desktopLayout, leaveDesktop, isMinimized, initDesktop, restore, minimize } from './desktop'
 
 export interface ActivityRecord {
   id: number
@@ -56,19 +57,33 @@ function moveTo(r: ActivityRecord, target: 'resume' | 'pause' | 'stop' | 'destro
 const front = () => tasks[tasks.length - 1]
 const top = () => front()?.stack[front().stack.length - 1]
 
+let wasDesktop = false
 function layout() {
-  // only the top activity of the front task is visible (plus the one animating out)
-  for (const t of tasks) {
-    t.stack.forEach((r, i) => {
-      const visible = t === front() && i === t.stack.length - 1
-      r.el.classList.toggle('visible', visible)
-      r.el.style.zIndex = String(tasks.indexOf(t) * 100 + i)
+  if (isDesktop()) {
+    wasDesktop = true
+    desktopLayout(tasks, front())
+    // desktop: the focused window is resumed, other visible windows are paused (they lost focus)
+    for (const t of tasks) t.stack.forEach((r, i) => {
+      const top = i === t.stack.length - 1
+      if (top && t === front()) moveTo(r, 'resume')
+      else if (top && !isMinimized(t)) { if (r.state !== 'pause') { moveTo(r, 'resume'); moveTo(r, 'pause') } }
+      else if (r.state === 'resume' || r.state === 'start' || r.state === 'pause') moveTo(r, 'stop')
     })
-  }
-  for (const t of tasks) for (const r of t.stack) {
-    const visible = r.el.classList.contains('visible')
-    if (visible) moveTo(r, 'resume')
-    else if (r.state === 'resume' || r.state === 'start') moveTo(r, 'stop')
+  } else {
+    if (wasDesktop) { leaveDesktop(tasks); wasDesktop = false }
+    // only the top activity of the front task is visible (plus the one animating out)
+    for (const t of tasks) {
+      t.stack.forEach((r, i) => {
+        const visible = t === front() && i === t.stack.length - 1
+        r.el.classList.toggle('visible', visible)
+        r.el.style.zIndex = String(tasks.indexOf(t) * 100 + i)
+      })
+    }
+    for (const t of tasks) for (const r of t.stack) {
+      const visible = r.el.classList.contains('visible')
+      if (visible) moveTo(r, 'resume')
+      else if (r.state === 'resume' || r.state === 'start' || r.state === 'pause') moveTo(r, 'stop')
+    }
   }
   document.documentElement.dataset.front = top()?.app.manifest.id || ''
   emit('change')
@@ -133,7 +148,16 @@ async function choose(matches: { app: AppEntry; activity: string }[]) {
 }
 
 export const wm = {
-  init(el: HTMLElement) { layer = el },
+  init(el: HTMLElement) {
+    layer = el
+    initDesktop({
+      focus: (t) => { if (front() !== t) wm.switchTo(t, false) },
+      close: (t) => wm.removeTask(t),
+      resized: (t) => { layout(); t.stack.forEach((r) => r.impl.configchange?.()) },
+    })
+  },
+  relayout: () => layout(),
+  minimize(t: Task) { minimize(t); const h = tasks.find((x) => x.home); if (h) { tasks.splice(tasks.indexOf(h), 1); tasks.push(h) } layout() },
   tasks,
   front,
   top,
@@ -219,6 +243,7 @@ export const wm = {
     document.dispatchEvent(new Event('droid:home'))
     const h = tasks.find((t) => t.home)
     if (!h) return
+    if (isDesktop()) { tasks.forEach((t) => !t.home && minimize(t)); tasks.splice(tasks.indexOf(h), 1); tasks.push(h); layout(); return }
     if (front() === h) { h.stack.slice(1).forEach((r) => finish(r)); (h.stack[0].impl as any).home?.(); return }
     const old = top()
     tasks.splice(tasks.indexOf(h), 1)
@@ -229,11 +254,12 @@ export const wm = {
   },
 
   // recents: bring a task to the front
-  switchTo(t: Task) {
+  switchTo(t: Task, anim = true) {
+    restore(t)
     tasks.splice(tasks.indexOf(t), 1)
     tasks.push(t)
     layout()
-    animate(top()!.el, 'win-open')
+    if (anim) animate(top()!.el, 'win-open')
   },
   removeTask(t: Task) {
     if (t.home) return
