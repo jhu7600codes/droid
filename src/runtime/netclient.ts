@@ -9,7 +9,23 @@ export function proxyConfig() {
   return url ? { url, token } : null
 }
 
+import { state } from '../shell/net'
+
+// on vte: count the bytes, and slow things down when "slow network" is on (cosmetic)
+async function vte(r: Response) {
+  if (state().kind !== 'vte') return r
+  if (settings.get('vte.slow')) await new Promise((ok) => setTimeout(ok, 600 + Math.random() * 900))
+  const n = +(r.headers.get('content-length') || 0)
+  settings.set('vte.used', ((settings.get('vte.used') as number) || 0) + n)
+  return r
+}
+
 export async function proxiedFetch(pkg: string, url: string, init: { method: string; headers: Record<string, string>; body?: ArrayBuffer | string }) {
+  if (state().kind === 'none' && settings.get('airplane')) throw new DpkError('offline', 'airplane mode is on')
+  return vte(await rawFetch(pkg, url, init))
+}
+
+async function rawFetch(pkg: string, url: string, init: { method: string; headers: Record<string, string>; body?: ArrayBuffer | string }) {
   const opts: RequestInit = { method: init.method, headers: init.headers, body: init.method === 'GET' || init.method === 'HEAD' ? undefined : init.body, credentials: 'omit', mode: 'cors', redirect: 'follow' }
   try {
     return await fetch(url, opts)

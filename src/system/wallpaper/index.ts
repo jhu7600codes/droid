@@ -5,6 +5,7 @@ import { layers } from '../../shell/layers'
 import { img } from '../../shell/assets'
 import { settings } from '../../shell/settings'
 import { h, pressable, toast } from '../../shell/ui'
+import { shared } from '../../shell/storage'
 import './wallpaper.css'
 
 // stock static wallpapers: the kitkat default plus the backgrounds from aosp's basic wallpapers
@@ -27,10 +28,11 @@ export function setWallpaperOffset(f: number, anim: boolean) {
   el.style.backgroundPosition = `${f * 100}% center`
 }
 
-function draw() {
+async function draw() {
   const w = settings.get('wallpaper') as string
   const el = layers.wallpaper
   if (w.startsWith('#')) { el.style.backgroundImage = 'none'; el.style.backgroundColor = w }
+  else if (w.startsWith('shared:')) { el.style.backgroundImage = `url("${await shared.url(w.slice(7))}")`; el.style.backgroundColor = '#000' }
   else { el.style.backgroundImage = `url("${url(w)}")`; el.style.backgroundColor = '#000' }
   // wider than the screen so pages can scroll it (like android's wallpaper offsets)
   el.style.backgroundSize = 'auto 100%'
@@ -53,8 +55,8 @@ function picker(ctx: ActivityContext): Activity {
   const fromGallery = pressable(h('div.wp-tile.wp-pick', {}, 'Gallery'))
   fromGallery.addEventListener('click', async () => {
     const r = await ctx.startForResult({ action: 'pick', type: 'image/*' })
-    const data = r.data as { url?: string } | undefined
-    if (data?.url) { settings.set('wallpaper', data.url); ctx.finish() }
+    const data = r.data as { path?: string } | undefined
+    if (data?.path) { settings.set('wallpaper', 'shared:' + data.path); ctx.finish() }
   })
   grid.append(fromGallery)
   ctx.root.append(h('div.app.app-dark', {}, h('div.h-actionbar', {}, h('span.h-ab-item.h-ab-home', {}, h('span.h-ab-title', { style: { paddingLeft: '16px' } }, 'Choose wallpaper'))), h('div.content', {}, grid)))

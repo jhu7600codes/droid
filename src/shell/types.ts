@@ -90,6 +90,7 @@ export interface ActivityContext {
 export interface SystemApp {
   manifest: Manifest
   icon: string // image url
+  iconRef?: [string, string] // aosp image (package, name), resolved at boot for the density
   activities: Record<string, (ctx: ActivityContext) => Activity>
   // background part of a system app (systemui, services): started once at boot
   service?: () => void | Promise<void>

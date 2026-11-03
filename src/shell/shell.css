@@ -53,3 +53,21 @@ html, body { margin: 0; height: 100%; background: #000; overflow: hidden; oversc
 .app-dark { background: #000; }
 .scroll-y { overflow-y: auto; touch-action: pan-y; }
 img { -webkit-user-drag: none; }
+
+/* appkit */
+.page-layer { position: absolute; inset: 0; }
+.page-layer.covered { visibility: hidden; }
+.page-in { animation: page-in .2s ease-out; }
+.page-out { animation: page-out .18s ease-in forwards; }
+@keyframes page-in { from { opacity: 0; transform: translateX(24px); } }
+@keyframes page-out { to { opacity: 0; transform: translateX(24px); } }
+.prefs .pref-icon { width: 32px; height: 32px; margin-left: -4px; }
+.prefs .h-item.disabled { opacity: .4; }
+.prefs .pref-slider .lines { gap: 4px; padding: 8px 0; }
+.pref-range { width: 100%; accent-color: #33b5e5; }
+.pref-custom { padding: 8px 16px; }
+.ab-menu-scrim { position: absolute; inset: 0; z-index: 5; }
+.ab-menu { position: absolute; top: 4px; right: 4px; }
+.h-actionbar .h-ab-home .h-ab-up { margin-right: -4px; }
+.h-actionbar .h-ab-home img { width: 32px; height: 32px; }
+#screen.no-anim *, #screen.no-anim *::before { animation-duration: 0s !important; transition-duration: 0s !important; }

@@ -1,0 +1,6 @@
+.app-head { display: flex; align-items: center; gap: 16px; padding: 16px; }
+.app-head img { width: 64px; height: 64px; }
+.app-btns { display: flex; gap: 8px; padding: 0 16px 8px; }
+.app-btns .h-btn { flex: 1; }
+.lic-text { padding: 8px 16px; }
+.lic-text pre { white-space: pre-wrap; font: 11px/1.4 monospace; color: #bbb; user-select: text; -webkit-user-select: text; }

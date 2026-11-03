@@ -17,8 +17,8 @@ const srv = createServer((req, res) => {
 }).listen(0)
 export const base = `http://localhost:${srv.address().port}/`
 mkdirSync(out, { recursive: true })
-const b = await chromium.launch()
-const ctx = await b.newContext({ viewport: { width: +W, height: +H }, deviceScaleFactor: +DPR, hasTouch: false })
+const b = await chromium.launch({ args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] })
+const ctx = await b.newContext({ viewport: { width: +W, height: +H }, deviceScaleFactor: +DPR, hasTouch: false, permissions: ['camera', 'microphone'] })
 const page = await ctx.newPage()
 const errs = []
 page.on('console', (m) => ['error', 'warning'].includes(m.type()) && errs.push(m.type() + ': ' + m.text()))

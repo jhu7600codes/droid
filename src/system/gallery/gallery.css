@@ -1,0 +1,17 @@
+.g-albums { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px; padding: 4px; }
+.g-album { position: relative; aspect-ratio: 1; background: #111; overflow: hidden; }
+.g-cover { position: absolute; inset: 0; background: #222 center / cover; display: flex; align-items: center; justify-content: center; }
+.g-album-label { position: absolute; left: 0; right: 0; bottom: 0; padding: 6px 8px; background: rgba(0, 0, 0, .6); display: flex; justify-content: space-between; font-size: 14px; }
+.g-count { color: #bbb; }
+.g-badge { position: absolute; top: 4px; left: 4px; width: 32px; height: 32px; }
+.g-album.pressed::after, .g-cell.pressed::after { content: ''; position: absolute; inset: 0; background: rgba(51, 181, 229, .4); }
+.g-empty { grid-column: 1 / -1; padding: 32px 16px; text-align: center; color: #888; font-size: 15px; }
+.g-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 2px; padding: 2px; }
+.g-cell { position: relative; aspect-ratio: 1; background: #222 center / cover; display: flex; align-items: center; justify-content: center; }
+.g-play { width: 48px; height: 48px; }
+.g-viewer { position: absolute; inset: 0; background: #000; overflow: hidden; touch-action: none; }
+.g-strip { position: absolute; inset: 0; display: flex; will-change: transform; }
+.g-slide { flex: 0 0 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.g-full { max-width: 100%; max-height: 100%; object-fit: contain; transform-origin: center; }
+.g-ab { position: absolute; top: 0; left: 0; right: 0; background: rgba(0, 0, 0, .5) !important; transition: opacity .2s; }
+.g-viewer.bare .g-ab { opacity: 0; pointer-events: none; }

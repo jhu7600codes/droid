@@ -5,5 +5,10 @@ import systemui from './systemui'
 import launcher from './launcher'
 import setupwizard from './setupwizard'
 import packageinstaller from './packageinstaller'
+import settings from './settings'
+import networks from './networks'
+import camera from './camera'
+import gallery from './gallery'
+import files from './files'
 
-export const systemApps: SystemApp[] = [wallpaper, systemui, launcher, setupwizard, packageinstaller]
+export const systemApps: SystemApp[] = [wallpaper, systemui, launcher, setupwizard, packageinstaller, settings, networks, camera, gallery, files]

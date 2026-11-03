@@ -59,6 +59,7 @@ export const EXCLUDE = [
   /^ic_google/i,
   /google/i,
   /market/i, // play store icon in launcher3
+  /you_?tube/i,
   /platlogo/, // kitkat easter egg: android branding
   /_android(\.|_|$)/, // loading_tile_android and friends
 ]

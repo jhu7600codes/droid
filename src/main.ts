@@ -2,7 +2,7 @@
 // (systemui, wallpaper, launcher), then the setup wizard on first boot or the lockscreen.
 import './shell/shell.css'
 import { loadHolo } from './shell/density'
-import { loadIndex, setBucket } from './shell/assets'
+import { loadIndex, setBucket, img } from './shell/assets'
 import { measure, apply, watch } from './shell/screen'
 import { createLayers, layers } from './shell/layers'
 import { boot } from './shell/boot'
@@ -24,7 +24,10 @@ async function start() {
   await loadIndex(info.bucket)
   initUi(layers.overlay)
   wm.init(layers.windows)
-  for (const a of systemApps) kernel.register({ manifest: a.manifest, icon: a.icon, system: true, impl: a })
+  for (const a of systemApps) {
+    if (a.iconRef) a.icon = img(...a.iconRef)
+    kernel.register({ manifest: a.manifest, icon: a.icon, system: true, impl: a })
+  }
   for (const a of systemApps) await a.service?.()
   wm.startHome()
   // apps that are installed dpks (milestone 3)
@@ -47,5 +50,13 @@ watch((s) => {
   wm.configchange()
 })
 registerSw()
+// brightness and battery saver apply to the whole screen
+const look = () => {
+  screen.style.filter = settings.get('brightness') < 1 ? `brightness(${settings.get('brightness')})` : ''
+  screen.classList.toggle('no-anim', !!settings.get('battery.saver'))
+}
+look()
+settings.on('brightness', look)
+settings.on('battery.saver', look)
 // debugging from the console
 ;(window as any).droid_shell = { kernel, wm, settings, screen: () => info }

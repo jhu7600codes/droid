@@ -35,6 +35,7 @@ export default defineConfig({
       closeBundle() {
         cpSync(resolve(__dirname, 'assets'), join(dist, 'assets'), { recursive: true })
         cpSync(resolve(__dirname, 'public'), dist, { recursive: true })
+        for (const f of ['LICENSE', 'NOTICE', 'LICENSE-APACHE-2.0']) cpSync(resolve(__dirname, f), join(dist, 'legal', f))
         const files = walk(dist).map((p) => relative(dist, p).split('\\').join('/'))
         const shell = files.filter((f) => /^(index\.html|manifest\.webmanifest|app\/|assets\/brand\/|assets\/aosp\/(css|fonts)\/|assets\/aosp\/[^/]+\.json$|icons\/)/.test(f))
         const version = new Date().toISOString().replace(/\D/g, '').slice(0, 12)
