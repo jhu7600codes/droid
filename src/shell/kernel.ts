@@ -67,9 +67,9 @@ export const kernel = {
     for (const app of apps.values()) {
       for (const f of app.manifest['intent-filters'] || []) {
         if (!i.action || !f.actions.includes(i.action)) continue
+        // a filter with schemes needs a matching scheme, one with mime types needs a matching type
         if (f.schemes && (!scheme || !f.schemes.includes(scheme))) continue
-        if (f.mimetypes && i.type && !f.mimetypes.some((m) => mimeMatch(m, i.type!))) continue
-        if (f.mimetypes && !i.type && !scheme) continue
+        if (f.mimetypes && (!i.type || !f.mimetypes.some((m) => mimeMatch(m, i.type!)))) continue
         out.push({ app, activity: f.activity })
       }
     }

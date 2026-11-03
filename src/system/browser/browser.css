@@ -1,0 +1,36 @@
+/* aosp kitkat browser look: dark title bar, url field, thin blue progress */
+.br-bar { height: 48px; display: flex; align-items: center; background: #222; flex: none; padding-left: 8px; }
+.br.incognito .br-bar { background: #3a3a3a; }
+.br-fav { width: 24px; height: 24px; margin-right: 6px; flex: none; }
+.br-url { flex: 1; min-width: 0; height: 36px; background: transparent; border: 0; border-bottom: 1px solid #555; color: #fff; font: 16px Roboto, sans-serif; outline: none; padding: 0 4px; user-select: text; -webkit-user-select: text; }
+.br-url:focus { border-bottom: 2px solid #33b5e5; }
+.br-btn { width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; position: relative; flex: none; }
+.br-btn img { width: 32px; height: 32px; }
+.br-btn.pressed { background: rgba(51, 181, 229, .4); }
+.br-count { position: absolute; font-size: 11px; font-weight: 700; color: #fff; top: 17px; left: 0; right: 0; text-align: center; }
+.br.editing .br-tabs, .br.editing .br-btn:last-child { display: none; }
+.br-progress { height: 3px; background: #33b5e5; transform-origin: left; transform: scaleX(0); flex: none; }
+.br-progress.on { animation: br-prog 6s cubic-bezier(.1, .8, .2, 1) forwards; }
+@keyframes br-prog { from { transform: scaleX(.05); } to { transform: scaleX(.9); } }
+.br-pages { flex: 1; position: relative; background: #fff; }
+.br-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: none; background: #fff; }
+.br-frame.on { display: block; }
+.br-hint, .br-find { display: none; align-items: center; gap: 8px; padding: 0 0 0 12px; background: #333; font-size: 13px; color: #ddd; flex: none; min-height: 40px; }
+.br-hint.on, .br-find.on { display: flex; }
+.br-hint span { flex: 1; }
+.br-find .h-edit { flex: 1; min-height: 40px; font-size: 15px; }
+.br-menu { min-width: 240px; }
+.br-switcher { position: absolute; inset: 0; background: rgba(0, 0, 0, .92); display: flex; flex-direction: column; z-index: 6; }
+.br-sw-bar { height: 48px; display: flex; background: #222; flex: none; }
+.br-cards { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; touch-action: pan-y; }
+.br-card { display: flex; align-items: center; gap: 10px; background: #2b2b2b; padding: 12px; border-left: 4px solid transparent; }
+.br-card.cur { border-left-color: #33b5e5; }
+.br-card.inc { background: #444; }
+.br-card img { width: 24px; height: 24px; }
+.br-card-t { flex: 1; min-width: 0; font-size: 15px; }
+.br-card-t > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.br-card-u { font-size: 12px; color: #999; }
+.br-card .br-x { width: 32px; height: 32px; }
+.br-lib { position: absolute; inset: 0; background: #000; display: flex; flex-direction: column; z-index: 6; }
+.br-lib-body { flex: 1; overflow-y: auto; touch-action: pan-y; }
+.br-empty { padding: 24px 16px; color: #888; }
