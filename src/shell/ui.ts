@@ -1,7 +1,12 @@
 // holo toasts and dialogs drawn by the shell (spec section 9, ui helpers).
 // they live in the #overlay layer above the windows.
 
+import { sound } from './sound'
+import { settings } from './settings'
+
 let layer: HTMLElement
+// kitkat's touch sound on taps (settings > sound > touch sounds)
+const touchSound = () => { if (settings.get('sound.touch')) sound.play('Effect_Tick', 0.5) }
 let toastBox: HTMLElement
 export function initUi(overlay: HTMLElement) {
   layer = overlay
@@ -31,6 +36,7 @@ export function h<K extends keyof HTMLElementTagNameMap>(spec: K | string, props
 
 // pressed state for touch: android shows the pressed drawable on touch down
 export function pressable(el: HTMLElement) {
+  el.addEventListener('click', touchSound)
   const on = () => el.classList.add('pressed')
   const off = () => el.classList.remove('pressed')
   el.addEventListener('pointerdown', on)

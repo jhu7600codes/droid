@@ -21,13 +21,19 @@ export const sources = [
     id: 'frameworks_base',
     repo: 'platform/frameworks/base',
     // sparse paths (no-cone patterns)
-    paths: ['/NOTICE', '/core/res/res/drawable*/', '/core/res/res/color/', '/core/res/res/values/', '/packages/SystemUI/res/', '/packages/Keyguard/res/', '/data/fonts/'],
+    paths: ['/NOTICE', '/core/res/res/drawable*/', '/core/res/res/color/', '/core/res/res/values/', '/packages/SystemUI/res/', '/packages/Keyguard/res/', '/data/fonts/', '/data/sounds/effects/ogg/', '/data/sounds/notifications/ogg/', '/data/sounds/alarms/ogg/'],
     res: [
       { from: 'core/res/res', to: 'framework' },
       { from: 'packages/SystemUI/res', to: 'systemui' },
       { from: 'packages/Keyguard/res', to: 'keyguard' },
     ],
     fonts: { from: 'data/fonts', pick: /^Roboto.*\.ttf$/ },
+    // ui sounds (not the _48k / _120 variants), a few notification and alarm sounds
+    sounds: [
+      { from: 'data/sounds/effects/ogg', to: '', pick: /^(?!.*_(48k|120|14|49)\.ogg$).*\.ogg$/ },
+      { from: 'data/sounds/notifications/ogg', to: 'notifications/', pick: /^(Tejat|Tethys|Pixiedust|Hojus|Deneb|Polaris|Capella|Altair|Antares)\.ogg$/ },
+      { from: 'data/sounds/alarms/ogg', to: 'alarms/', pick: /^(Cesium|Oxygen|Osmium|Helium|Argon|Barium|Carbon)\.ogg$/ },
+    ],
     notice: 'NOTICE',
   },
   app('launcher3', 'packages/apps/Launcher3', 'res'),

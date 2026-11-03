@@ -51,6 +51,14 @@ watch((s) => {
   wm.configchange()
 })
 registerSw()
+// offline-first (spec section 21): once the service worker runs, quietly fetch the essential set
+// (shell, system apps, this density's images) unless it is done already or the connection is metered
+import('./shell/offline').then(async ({ offline }) => {
+  if (!('serviceWorker' in navigator) || settings.get('offline.level')) return
+  await navigator.serviceWorker.ready
+  if (await offline.metered()) return
+  setTimeout(() => offline.download('essential', () => {}), 15000)
+})
 // brightness and battery saver apply to the whole screen
 const look = () => {
   screen.style.filter = settings.get('brightness') < 1 ? `brightness(${settings.get('brightness')})` : ''

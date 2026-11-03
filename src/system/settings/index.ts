@@ -16,6 +16,7 @@ import { permissionText } from '../../runtime/bridge'
 import { openDpk } from '../../runtime'
 import * as store from '../../runtime/db'
 import { applyUpdate } from '../../shell/sw-client'
+import { sound as sfx } from '../../shell/sound'
 import { licensesPage } from './licenses'
 import './settings.css'
 
@@ -57,6 +58,7 @@ function settingsApp(ctx: ActivityContext): Activity {
 
   const sound = sub('Sound', () => [
     { type: 'slider', title: 'Volume', min: 0, max: 1, step: 0.05, get: () => (settings.get('sound.volume') as number) ?? 0.8, set: (v) => settings.set('sound.volume', v), label: (v) => Math.round(v * 100) + '%' },
+    { type: 'list', title: 'Default notification sound', options: ['Tejat', 'Tethys', 'Hojus', 'Deneb', 'Polaris', 'Capella', 'Altair', 'Antares'].map((n) => [n, n] as [string, string]), get: () => (settings.get('sound.notification') as string) || 'Tejat', set: (v) => { settings.set('sound.notification', v); sfx.play('notifications/' + v) } },
     { type: 'header', title: 'System' },
     { type: 'check', title: 'Touch sounds', key: 'sound.touch' },
     { type: 'check', title: 'Screen lock sound', key: 'sound.lock' },
@@ -302,7 +304,7 @@ function settingsApp(ctx: ActivityContext): Activity {
     fetch('version.json').then((r) => r.json()).then((v) => { ver = v.version; r.render() }).catch(() => {})
     let taps = 0
     const r = prefs(p.content, () => [
-      { type: 'item', title: 'System updates', summary: settings.get('ota.ready') ? 'An update is ready. Tap to restart and install.' : 'droid is up to date (updates download in the background)', onclick: () => { if (settings.get('ota.ready')) applyUpdate(); else wm.start({ action: 'system-update' }) } },
+      { type: 'item', title: 'System updates', summary: settings.get('ota.ready') ? 'An update is ready. Tap to restart and install.' : 'Updates download in the background', onclick: () => open(update) },
       { type: 'item', title: 'Status', summary: () => { const s = netState(); return `Network: ${s.kind === 'none' ? 'none' : s.name} · ${navigator.onLine ? 'online' : 'offline'}` } },
       { type: 'item', title: 'Legal information', summary: 'Open source licenses', onclick: () => open(licensesPage) },
       { type: 'item', title: 'Model number', summary: 'droid (by danen)' },
@@ -346,8 +348,35 @@ function settingsApp(ctx: ActivityContext): Activity {
     return r.dispose
   }
 
-  const pages: Record<string, Build> = { main, display, storage, battery, apps, location, security, language, backup, account: accountPage, users: accountPage, about, more, bluetooth, sound, datetime: dateTime }
-  const want = ctx.intent.extras?.page as string | undefined
+  // system updates (ota style): a new version downloads in the background and installs on the next boot
+  const update: Build = (el, pop) => {
+    const p = page(el, { title: 'System updates', icon: ic(S, 'ic_settings_about'), up: stack.depth() > 1 ? pop : () => ctx.finish() })
+    const box = h('div.upd')
+    p.content.append(box)
+    const draw = async () => {
+      box.innerHTML = ''
+      const mine = await fetch('version.json').then((r) => r.json()).catch(() => null)
+      box.append(h('img.upd-logo', { src: 'assets/brand/droid-logo.svg' }), h('div.upd-ver', {}, 'droid 4.4'), h('div.upd-sub', {}, mine ? `build ${mine.version}` : ''))
+      if (settings.get('ota.ready')) {
+        box.append(h('div.upd-msg', {}, 'A system update has been downloaded. droid will restart to install it.'), pressable(h('button.h-btn', { onclick: () => applyUpdate() }, 'Restart & install')))
+        return
+      }
+      const status = h('div.upd-msg', {}, navigator.onLine ? 'Checking for updates…' : 'You are offline. Updates are checked when you are online.')
+      box.append(status)
+      if (!navigator.onLine) return
+      const reg = await navigator.serviceWorker?.getRegistration().catch(() => undefined)
+      await reg?.update().catch(() => {})
+      setTimeout(() => {
+        if (settings.get('ota.ready')) draw()
+        else status.textContent = reg?.installing ? 'Downloading an update in the background…' : 'Your system is up to date.'
+      }, 1500)
+    }
+    draw()
+    return settings.on('ota.ready', () => draw())
+  }
+
+  const pages: Record<string, Build> = { update, main, display, storage, battery, apps, location, security, language, backup, account: accountPage, users: accountPage, about, more, bluetooth, sound, datetime: dateTime }
+  const want = (ctx.intent.action === 'system-update' ? 'update' : ctx.intent.extras?.page) as string | undefined
   open(main)
   if (want === 'app' && ctx.intent.extras?.pkg) open(appInfo, ctx.intent.extras.pkg)
   else if (want === 'wifi') wifi()
@@ -363,7 +392,7 @@ const app: SystemApp = {
   manifest: {
     id: 'droid.settings', name: 'Settings', version: '4.4', versioncode: 19, type: 'web', main: 'main',
     activities: { main: { label: 'Settings', launcher: true, 'launch-mode': 'single-top' } }, role: 'settings', system: true,
-    'intent-filters': [{ activity: 'main', actions: ['settings'] }],
+    'intent-filters': [{ activity: 'main', actions: ['settings', 'system-update'] }],
     permissions: ['system.settings', 'system.apps', 'system.networks', 'system.wallpaper'],
   },
   icon: '',

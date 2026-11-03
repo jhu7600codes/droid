@@ -6,6 +6,7 @@ import { h, pressable } from '../../shell/ui'
 import { settings } from '../../shell/settings'
 import { wm } from '../../shell/wm'
 import { kernel } from '../../shell/kernel'
+import { sound } from '../../shell/sound'
 
 const KG = 'keyguard'
 let locked = false
@@ -111,6 +112,7 @@ function bouncer(then?: () => void) {
 
 function unlock(then?: () => void) {
   locked = false
+  if (settings.get('sound.lock') !== false) sound.play('Unlock')
   root.classList.add('unlocking')
   screenEl.classList.remove('locked')
   setTimeout(() => { root.style.display = 'none'; root.classList.remove('unlocking') }, 300)
@@ -128,6 +130,7 @@ export const lockscreen = {
   },
   lock() {
     if (settings.get('lock.type') === 'none') return
+    if (!locked && settings.get('sound.lock') !== false && settings.get('setup.done')) sound.play('Lock')
     locked = true
     root.style.display = ''
     screenEl.classList.add('locked')

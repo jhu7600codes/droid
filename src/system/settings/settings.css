@@ -12,3 +12,8 @@
 #screen[data-form="desktop"] .settings-root > .page-layer:not(:first-child) { left: 38%; }
 #screen[data-form="tablet"][data-orientation="landscape"] .settings-root,
 #screen[data-form="desktop"] .settings-root { background: #000 url(../../../assets/brand/droid-logo.svg) no-repeat 69% 50% / 120px; }
+.upd { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 32px 24px; text-align: center; }
+.upd-logo { width: 96px; height: 96px; }
+.upd-ver { font-size: 28px; font-weight: 300; }
+.upd-sub { font-size: 13px; color: #888; }
+.upd-msg { font-size: 15px; color: #ddd; line-height: 1.4; max-width: 360px; }

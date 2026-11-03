@@ -6,6 +6,7 @@ import { img } from '../../shell/assets'
 import { settings } from '../../shell/settings'
 import { h, pressable, toast } from '../../shell/ui'
 import { shared } from '../../shell/storage'
+import { LIVE, startLive, stopLive } from './live'
 import './wallpaper.css'
 
 // stock static wallpapers: the kitkat default plus the backgrounds from aosp's basic wallpapers
@@ -31,6 +32,8 @@ export function setWallpaperOffset(f: number, anim: boolean) {
 async function draw() {
   const w = settings.get('wallpaper') as string
   const el = layers.wallpaper
+  if (w.startsWith('live:')) { el.style.backgroundImage = 'none'; el.style.backgroundColor = '#000'; startLive(w); return }
+  stopLive()
   if (w.startsWith('#')) { el.style.backgroundImage = 'none'; el.style.backgroundColor = w }
   else if (w.startsWith('shared:')) { el.style.backgroundImage = `url("${await shared.url(w.slice(7))}")`; el.style.backgroundColor = '#000' }
   else { el.style.backgroundImage = `url("${url(w)}")`; el.style.backgroundColor = '#000' }
@@ -45,6 +48,11 @@ function picker(ctx: ActivityContext): Activity {
   for (const w of WALLPAPERS) {
     const t = pressable(h('div.wp-tile', { style: { backgroundImage: `url("${url(w)}")` } }))
     t.addEventListener('click', () => { settings.set('wallpaper', w); toast('Wallpaper set'); ctx.finish() })
+    grid.append(t)
+  }
+  for (const [k, label] of Object.entries(LIVE)) {
+    const t = pressable(h('div.wp-tile.wp-pick.wp-live', {}, label + ' (live)'))
+    t.addEventListener('click', () => { settings.set('wallpaper', k); toast('Live wallpaper set'); ctx.finish() })
     grid.append(t)
   }
   for (const c of ['#000000', '#0099cc', '#222222']) {

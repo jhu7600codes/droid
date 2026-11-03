@@ -128,6 +128,11 @@ for (const src of sources) {
   manifest.sources[src.id] = { repo: MIRROR + src.repo, tag: TAG, commit }
   for (const res of src.res || []) importRes(src, dir, res)
   if (src.fonts) await importFonts(src, dir)
+  for (const snd of src.sounds || []) {
+    const d = path.join(dir, snd.from)
+    if (!fs.existsSync(d)) continue
+    for (const f of fs.readdirSync(d).filter((x) => snd.pick.test(x))) write(`sounds/${snd.to}${f}`, fs.readFileSync(path.join(d, f)), `${src.repo}/${snd.from}/${f}`)
+  }
   if (src.notice && fs.existsSync(path.join(dir, src.notice))) write(`NOTICE-${src.id}`, fs.readFileSync(path.join(dir, src.notice)), `${src.repo}/${src.notice}`)
   else if (src.notice) manifest.sources[src.id].license = fs.existsSync(path.join(dir, 'MODULE_LICENSE_APACHE2')) ? 'apache-2.0 (MODULE_LICENSE_APACHE2)' : 'apache-2.0 (aosp default)'
 }
