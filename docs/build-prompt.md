@@ -34,7 +34,7 @@ implement everything in `dpk-spec.md`, including section 10 (arm runtime and apk
 - the shell kernel: window manager, dpk runtime, sdk bridge. everything the user sees is a system dpk with a role (spec section 14): launcher, systemui (status bar, notification shade, quick settings, nav bar, lockscreen), settings, wallpaper, keyboard, browser, networks
 - dpk format: zip container, manifest validation, `web` and `wasm` types, lifecycle and back stack, intents, permissions with holo dialogs, per-app sandbox plus the sdk bridge, install, update and uninstall
 - the js sdk (`droid.*`) with the surface listed in the spec section 9, plus a small docs page and 2-3 example dpks (hello world, a notes app, a wasm c demo)
-- fake networks: dr-nt (wifi) and vte (mobile data), regions, the setup step where every user adds their own network, and the fallback to vte when outside the area (spec section 15). location from browser geolocation with a manual "pretend i am here" fallback, never sent anywhere
+- fake networks: DR-Nt (wifi) and vte (mobile data), regions, the setup step where every user adds their own network, and the fallback to vte when outside the area (spec section 15). location from browser geolocation with a manual "pretend i am here" fallback, never sent anywhere
 - danen account: the setup wizard has an account step. it works fully local first (a profile stored on the device) and can optionally sync to the danen backend. it must never ask for a real google password or look like a google login
 - danen play services (spec section 19): the `services` role app plus the `droid.danen.*` sdk (account, sync, push through web push, update checks for installed dpks)
 - danen store (spec section 19): the `store` role app to browse, search, install and update dpks, plus a publish flow done on github: developers send a pull request with their dpk and listing to the store catalog repo, a github action validates it (manifest, size, permissions, integrity hashes), a maintainer merges, and the action rebuilds the catalog and deploys it to github pages. no store server needed. the store shows the requested permissions before install
@@ -82,7 +82,7 @@ license the repo gpl-free permissive (mit for my code, apache 2.0 for aosp parts
 1. asset import pipeline, holo theme css, 9-patch renderer, a test page showing buttons, lists, dialogs, switches, action bar
 2. shell kernel, automatic screen detection and the resolution setting, boot animation, setup wizard, lockscreen, launcher, systemui (status bar, 3 button nav bar, shade, quick settings)
 3. dpk runtime: parser, install, lifecycle, sdk bridge, permissions, intents, example apps, `pack-dpk` tool
-4. settings app, camera and gallery, and the networks role (dr-nt, vte, regions, setup network)
+4. settings app, camera and gallery, and the networks role (DR-Nt, vte, regions, setup network)
 5. proxy server, and the browser app on top of it
 6. danen play services and the danen store (client apps first, then the backend after you tell me the hosting plan)
 7. desktop mode and tablet mode

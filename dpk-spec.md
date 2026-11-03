@@ -196,7 +196,7 @@ the shell itself is a small kernel: window manager, dpk runtime, sdk bridge, not
 - the look is holo (android 4.4 era). use assets from aosp (apache 2.0) or original ones. no proprietary google apps, logos or branding
 - stock system apps to ship: launcher, systemui, settings, wallpaper (static and live), keyboard, browser, plus small ones like clock, calculator, gallery, file manager
 
-## 15. fake networks (dr-nt and vte)
+## 15. fake networks (DR-Nt and vte)
 
 droid has its own pretend connectivity layer shown in the status bar and settings. it is cosmetic: real connectivity is whatever the browser has.
 
@@ -342,7 +342,7 @@ the first boot runs a setup wizard that looks like the kitkat one, built from ho
 
 steps, in order:
 1. welcome and language (list picker, like kitkat)
-2. network: pick a dr-nt network from the detected region, or skip (section 15)
+2. network: pick a DR-Nt network from the detected region, or skip (section 15)
 3. create or sign in to a danen account, or skip with "not now" (below)
 4. date and time
 5. danen services: sync and location checkboxes, off by default where it matters (section 19)

@@ -15,7 +15,8 @@ const num = (n) => +n.toFixed(3) + 'px'
 
 export function buildCss(out, DENSITIES) {
   const pkgs = {}
-  for (const p of ['framework', 'systemui']) {
+  const dirs = ['framework', 'systemui', 'keyguard', ...(fs.existsSync(path.join(out, 'apps')) ? fs.readdirSync(path.join(out, 'apps')).map((a) => 'apps/' + a) : [])]
+  for (const p of dirs) {
     const f = path.join(out, p, 'drawables.json')
     if (fs.existsSync(f)) pkgs[p] = JSON.parse(fs.readFileSync(f, 'utf8'))
   }
@@ -283,6 +284,13 @@ export function buildCss(out, DENSITIES) {
   const nine = {}
   for (const [p, P] of Object.entries(pkgs)) for (const [n, m] of Object.entries(P.ninepatch)) nine[`${p}/${n}`] = m
   fs.writeFileSync(path.join(out, 'ninepatch.json'), JSON.stringify(nine))
+  // small image index for the runtime: "pkg/name" -> "ext:bucket,bucket" (9-patches marked with 9)
+  const index = {}
+  for (const [p, P] of Object.entries(pkgs)) {
+    for (const [n, m] of Object.entries(P.images)) { const b = Object.keys(m); index[`${p}/${n}`] = `${m[b[0]].ext}:${b.join(',')}` }
+    for (const [n, m] of Object.entries(P.ninepatch)) index[`${p}/${n}`] = `9:${Object.keys(m).join(',')}`
+  }
+  fs.writeFileSync(path.join(out, 'index.json'), JSON.stringify(index))
   if (warn.size) console.log('css warnings:\n  ' + [...warn].join('\n  '))
 }
 

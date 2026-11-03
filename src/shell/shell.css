@@ -1,0 +1,55 @@
+/* the shell's own layout: the screen, layers, windows and their transitions.
+   1px = 1dp everywhere inside #screen. */
+html, body { margin: 0; height: 100%; background: #000; overflow: hidden; overscroll-behavior: none; touch-action: none; }
+#screen {
+  position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden;
+  background: #000; color: #fff; font-family: 'Roboto', sans-serif; contain: strict;
+  --sb: 25px; --nb: 48px;
+}
+#screen > .layer { position: absolute; inset: 0; pointer-events: none; }
+#screen > .layer > * { pointer-events: auto; }
+#wallpaper { background: #000 center / cover no-repeat; transition: filter .3s; }
+
+/* windows: the content area is the screen minus status bar and nav bar */
+#windows .window { position: absolute; top: var(--sb); left: 0; right: 0; bottom: var(--nb); display: none; overflow: hidden; contain: strict; }
+#screen[data-nav="right"] #windows .window { bottom: 0; right: var(--nb); }
+#windows .window.translucent { top: 0; bottom: 0; right: 0; background: transparent; }
+#windows .window.visible, #windows .window.win-close, #windows .window.win-to-back { display: block; }
+#screen.immersive #windows .window { top: 0; bottom: 0; right: 0; }
+#screen.immersive #statusbar, #screen.immersive #navbar { transform: translateY(-100%); }
+
+/* kitkat activity transitions (activity_open_enter / close_exit: fade + zoom, 300ms) */
+@keyframes win-open { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: none; } }
+@keyframes win-close { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(.9); } }
+@keyframes win-reveal { from { opacity: .4; transform: scale(1.05); } to { opacity: 1; transform: none; } }
+@keyframes win-home { from { opacity: 0; transform: scale(1.1); } to { opacity: 1; transform: none; } }
+@keyframes win-to-back { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(.85); } }
+.window.win-open { animation: win-open .25s cubic-bezier(.1, .7, .3, 1); }
+.window.win-close { animation: win-close .2s ease-in forwards; z-index: 9999 !important; }
+.window.win-reveal { animation: win-reveal .25s ease-out; }
+.window.win-home { animation: win-home .3s cubic-bezier(.1, .7, .3, 1); }
+.window.win-to-back { animation: win-to-back .25s ease-in forwards; z-index: 9999 !important; }
+
+/* overlay: dialogs and toasts */
+#overlay .h-scrim { pointer-events: auto; z-index: 10; }
+.dialog-in { animation: dlg-in .18s ease-out; }
+.dialog-out { animation: dlg-out .15s ease-in forwards; }
+@keyframes dlg-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dlg-out { to { opacity: 0; } }
+.dialog-in .h-dialog { animation: dlg-zoom .18s ease-out; }
+@keyframes dlg-zoom { from { transform: scale(.9); } }
+.h-dialog { max-height: calc(100% - 32px); }
+.h-dialog .d-body.list { overflow-y: auto; max-height: 60vh; }
+.h-dialog .d-icon { width: 32px; height: 32px; }
+.d-progress { display: flex; align-items: center; gap: 16px; }
+.toasts { position: absolute; left: 0; right: 0; bottom: calc(var(--nb) + 64px); display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none !important; z-index: 20; }
+.toast-in { animation: dlg-in .2s ease-out; }
+.toast-out { animation: dlg-out .3s ease-in forwards; }
+
+/* simple app chrome used by system apps */
+.app { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.app > .content { flex: 1; overflow-y: auto; overflow-x: hidden; position: relative; touch-action: pan-y; -webkit-overflow-scrolling: touch; }
+.app-light { background: #f3f3f3; }
+.app-dark { background: #000; }
+.scroll-y { overflow-y: auto; touch-action: pan-y; }
+img { -webkit-user-drag: none; }

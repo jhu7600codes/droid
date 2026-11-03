@@ -2,10 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="droid">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./assets/brand/droid-d-icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
 <title>droid</title>
 </head>
-<body style="margin:0;background:#000;color:#fff;font-family:sans-serif">
-<p style="padding:16px">droid 4.4 shell comes in milestone 2. <a style="color:#33b5e5" href="./holo-test.html">holo test page</a></p>
+<body>
+<div id="screen"></div>
+<script type="module" src="./src/main.ts"></script>
 </body>
 </html>

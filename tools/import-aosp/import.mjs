@@ -29,8 +29,9 @@ function clone(src) {
     fs.mkdirSync(cache, { recursive: true })
     console.log(`clone ${src.repo} @ ${TAG}`)
     git(cache, 'clone', '-q', '--depth', '1', '--filter=blob:none', '--sparse', '--branch', TAG, MIRROR + src.repo, src.id)
+    git(path.join(cache, src.id), 'sparse-checkout', 'set', '--no-cone', ...src.paths)
   }
-  if (!skipClone) git(dir, 'sparse-checkout', 'set', '--no-cone', ...src.paths)
+  else if (!skipClone) git(dir, 'sparse-checkout', 'set', '--no-cone', ...src.paths)
   return { dir, commit: git(dir, 'rev-parse', 'HEAD') }
 }
 
@@ -54,6 +55,7 @@ function bucketOf(dirName) {
 
 function importRes(src, dir, res) {
   const base = path.join(dir, res.from)
+  if (!fs.existsSync(base)) { console.warn('missing', src.repo, res.from); return }
   const index = { ninepatch: {}, images: {}, xml: {}, colors: {}, values: {} }
   // images[name] = { mdpi: 'w h', ... } so the css generator can pick a density without touching disk
   for (const d of fs.readdirSync(base)) {
@@ -65,7 +67,8 @@ function importRes(src, dir, res) {
         if (excluded(name)) { manifest.excluded.push(`${res.from}/${d}/${f}`); continue }
         const from = `${src.repo}/${res.from}/${d}/${f}`
         const buf = fs.readFileSync(path.join(full, f))
-        const outDir = `${res.to}/${b.kind}-${b.bucket}`
+        // mipmap icons go into the same drawable-<bucket> folders, android looks them up the same way
+        const outDir = `${res.to}/drawable-${b.bucket}`
         if (f.endsWith('.9.png')) {
           const { png, meta } = parseNinePatch(buf)
           write(`${outDir}/${name}.png`, png, from)
@@ -125,7 +128,8 @@ for (const src of sources) {
   manifest.sources[src.id] = { repo: MIRROR + src.repo, tag: TAG, commit }
   for (const res of src.res || []) importRes(src, dir, res)
   if (src.fonts) await importFonts(src, dir)
-  if (src.notice) write(`NOTICE-${src.id}`, fs.readFileSync(path.join(dir, src.notice)), `${src.repo}/${src.notice}`)
+  if (src.notice && fs.existsSync(path.join(dir, src.notice))) write(`NOTICE-${src.id}`, fs.readFileSync(path.join(dir, src.notice)), `${src.repo}/${src.notice}`)
+  else if (src.notice) manifest.sources[src.id].license = fs.existsSync(path.join(dir, 'MODULE_LICENSE_APACHE2')) ? 'apache-2.0 (MODULE_LICENSE_APACHE2)' : 'apache-2.0 (aosp default)'
 }
 write('manifest.json', JSON.stringify(manifest, null, 1), 'generated')
 buildCss(out, DENSITIES)
