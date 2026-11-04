@@ -17,13 +17,16 @@ const ID = 'droid.services'
 // settings that follow you (not screen size or anything device specific)
 const SYNCED = ['wallpaper', 'time.24h', 'locale', 'font.scale', 'owner.name', 'net.own', 'net.saved', 'net.regions', 'sound.touch']
 
-async function syncNow(quiet = true) {
+// restore = take everything from the backup, whatever is newer here
+async function syncNow(quiet = true, restore = false) {
   const a = account.get()
-  if (!a?.remote || !settings.get('danen.sync') || !backendUrl() || !navigator.onLine) return
+  const why = !a ? 'Add a Danen account first' : !a.remote ? 'This account is only on this device. Remove it and sign in again to back up' : !backendUrl() ? 'No Danen backend is set' : !navigator.onLine ? 'You are offline' : !settings.get('danen.sync') && !restore && quiet ? 'off' : ''
+  if (why) { if (!quiet && why !== 'off') toast(why); return }
+  settings.set('danen.syncing', true)
   try {
     // pull, newest wins by our local "updated" stamps
     const remoteItems = (await danenApi.getSync()).items || {}
-    const lastPush = (settings.get('danen.lastSync') as number) || 0
+    const lastPush = restore ? 0 : (settings.get('danen.lastSync') as number) || 0
     if (remoteItems.settings && Date.parse(remoteItems.settings.updated) > lastPush) {
       for (const [k, v] of Object.entries(remoteItems.settings.value || {})) if (SYNCED.includes(k)) settings.set(k, v as any)
     }
@@ -35,9 +38,14 @@ async function syncNow(quiet = true) {
     for (const k of await store.keys('kv', 'danen:')) items['app:' + k.slice(6)] = await store.get('kv', k)
     await danenApi.putSync(items)
     settings.set('danen.lastSync', Date.now())
-    if (!quiet) toast('Sync complete')
+    settings.set('danen.syncError', '')
+    if (!quiet) toast(restore ? 'Restored from your backup' : 'Backup complete')
   } catch (e) {
-    if (!quiet) toast('Sync failed: ' + (e as Error).message)
+    const msg = (e as any).status === 401 ? 'Signed out on the server. Remove the account and sign in again.' : (e as Error).message
+    settings.set('danen.syncError', msg)
+    if (!quiet) toast('Backup failed: ' + msg)
+  } finally {
+    settings.set('danen.syncing', false)
   }
 }
 
@@ -70,7 +78,8 @@ function accountActivity(ctx: ActivityContext): Activity {
         if (mode === 'create') await account.create(nick.value.trim() || user.value.trim(), user.value.trim(), pass.value)
         else await account.signIn(user.value.trim(), pass.value)
         toast('Account added')
-        syncNow()
+        if (account.get()?.remote && settings.get('danen.sync') === undefined) settings.set('danen.sync', true)
+        syncNow(true, true)
         ctx.finish({ code: RESULT_OK })
       } catch (e) { err.textContent = (e as Error).message }
     })
@@ -102,8 +111,13 @@ const app: SystemApp = {
     installRemote()
     settings.on('danen.backend', installRemote)
     addEventListener('danen:sync-now', () => syncNow(false))
+    addEventListener('danen:restore', () => syncNow(false, true))
     let t = 0
-    addEventListener('danen:dirty', () => { clearTimeout(t); t = window.setTimeout(() => syncNow(), 5000) })
+    const dirty = () => { clearTimeout(t); t = window.setTimeout(() => syncNow(), 3000) }
+    addEventListener('danen:dirty', dirty)
+    // synced settings (networks, wallpaper, ...) back up a few seconds after they change
+    for (const k of SYNCED) settings.on(k as any, dirty)
+    settings.on('danen.sync', () => { if (settings.get('danen.sync')) syncNow() })
     addEventListener('online', () => syncNow())
     setTimeout(() => { syncNow(); checkUpdates() }, 8000)
     setInterval(() => { syncNow(); checkUpdates() }, 6 * 3600 * 1000)

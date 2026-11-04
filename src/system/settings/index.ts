@@ -265,8 +265,22 @@ function settingsApp(ctx: ActivityContext): Activity {
     { type: 'item', title: 'Default', summary: 'Keyboard of this device (Droid keyboard comes with an update)' },
   ], ic(S, 'ic_settings_language'))
 
-  const backup: Build = sub('Backup & reset', () => [
-    { type: 'check', title: 'Back up my data', key: 'danen.sync', summary: 'Back up settings and app data to your Danen account' },
+  const lastBackup = () => {
+    if (settings.get('danen.syncing')) return 'Backing up…'
+    const e = settings.get('danen.syncError') as string
+    if (e) return 'Last backup failed: ' + e
+    const t = settings.get('danen.lastSync') as number
+    return t ? 'Last backup ' + new Date(t).toLocaleString() : 'Never backed up'
+  }
+  const backupList = (): Pref[] => [
+    { type: 'header', title: 'Backup & restore' },
+    { type: 'check', title: 'Back up my data', key: 'danen.sync', summary: 'Back up settings, networks and app data to your Danen account' },
+    { type: 'item', title: 'Backup account', summary: () => { const a = account.get(); return a ? a.username + (a.remote ? '' : ' (only on this device, can\'t back up)') : 'No account. Tap to add one' }, onclick: () => { if (!account.get()) wm.start({ action: 'danen-account' }) } },
+    { type: 'item', title: 'Back up now', summary: lastBackup, onclick: () => window.dispatchEvent(new Event('danen:sync-now')) },
+    { type: 'item', title: 'Restore from backup', summary: 'Bring back the settings, networks and app data saved in your account', onclick: async () => {
+      const d = await dialog({ title: 'Restore from backup?', message: 'Settings, networks and app data from your Danen backup replace the ones on this device.', cancel: 'Cancel', ok: 'Restore' })
+      if (d.button === 'ok') window.dispatchEvent(new Event('danen:restore'))
+    } },
     { type: 'header', title: 'Personal data' },
     { type: 'item', title: 'Factory data reset', summary: 'Erases all data on Droid', onclick: async () => {
       const r = await dialog({ title: 'Factory data reset', message: 'This will erase all data: your Danen account on this device, settings, installed apps and their data, photos and files.', cancel: 'Cancel', ok: 'Erase everything' })
@@ -277,7 +291,13 @@ function settingsApp(ctx: ActivityContext): Activity {
       for (const k of await caches.keys()) await caches.delete(k)
       window.location.reload()
     } },
-  ], ic(S, 'ic_settings_backup'))
+  ]
+  const backup: Build = (el, pop) => {
+    const p = page(el, { title: 'Backup & reset', icon: ic(S, 'ic_settings_backup'), up: pop })
+    const r = prefs(p.content, backupList)
+    const off = ['danen.account', 'danen.lastSync', 'danen.syncError', 'danen.syncing', 'danen.sync'].map((k) => settings.on(k as any, () => r.render()))
+    return () => { off.forEach((f) => f?.()); r.dispose?.() }
+  }
 
   const accountPage: Build = (el, pop) => {
     const p = page(el, { title: 'Danen account', icon: 'assets/brand/droid-d-icon.svg', up: pop })
@@ -294,7 +314,7 @@ function settingsApp(ctx: ActivityContext): Activity {
       return [
         { type: 'item', title: a.nickname, summary: a.username + (a.remote ? '' : ' · only on this device') },
         { type: 'check', title: 'Sync settings and app data', key: 'danen.sync' },
-        { type: 'item', title: 'Sync now', summary: () => { const t = settings.get('danen.lastSync') as number; return t ? 'Last synced ' + new Date(t).toLocaleString() : 'Never synced' }, onclick: () => window.dispatchEvent(new Event('danen:sync-now')) },
+        { type: 'item', title: 'Sync now', summary: lastBackup, onclick: () => window.dispatchEvent(new Event('danen:sync-now')) },
         { type: 'item', title: 'Push notifications', summary: () => (settings.get('danen.push') ? 'On for this device' : 'Off'), onclick: async () => {
           if (!a.remote) return toast('Push needs a Danen account on the backend')
           const { subscribe } = await import('../../shell/push')
@@ -317,7 +337,9 @@ function settingsApp(ctx: ActivityContext): Activity {
         } },
       ]
     })
-    return r.dispose
+    // signing in happens in another screen: redraw when the account or the backup state changes
+    const off = ['danen.account', 'danen.lastSync', 'danen.syncError', 'danen.syncing', 'danen.sync'].map((k) => settings.on(k as any, () => r.render()))
+    return () => { off.forEach((f) => f?.()); r.dispose?.() }
   }
 
   const dateTime: Build = sub('Date & time', () => [
