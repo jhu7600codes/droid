@@ -336,12 +336,18 @@ function settingsApp(ctx: ActivityContext): Activity {
     let ver = '…'
     fetch('version.json').then((r) => r.json()).then((v) => { ver = v.version; r.render() }).catch(() => {})
     let taps = 0
+    let verTaps = 0, lastVer = 0
     const r = prefs(p.content, () => [
       { type: 'item', title: 'System updates', summary: settings.get('ota.ready') ? 'An update is ready. Tap to restart and install.' : 'Updates download in the background', onclick: () => open(update) },
       { type: 'item', title: 'Status', summary: () => { const s = netState(); return `Network: ${s.kind === 'none' ? 'none' : s.name} · ${navigator.onLine ? 'online' : 'offline'}` } },
       { type: 'item', title: 'Legal information', summary: 'Open source licenses', onclick: () => open(licensesPage) },
       { type: 'item', title: 'Model number', summary: 'Droid (by Danen)' },
-      { type: 'item', title: 'Droid version', summary: '4.4' },
+      { type: 'item', title: 'Droid version', summary: '4.4', onclick: () => {
+        const now = Date.now()
+        verTaps = now - lastVer < 600 ? verTaps + 1 : 1
+        lastVer = now
+        if (verTaps >= 5) { verTaps = 0; import('./egg').then((m) => m.easterEgg()) }
+      } },
       { type: 'item', title: 'API level', summary: '19' },
       { type: 'item', title: 'DPK spec', summary: '0.1' },
       { type: 'item', title: 'Kernel version', summary: 'Danen shell, running in ' + (navigator.userAgent.match(/(Firefox|Chrome|Safari)\/[\d.]+/)?.[0] || 'a browser') },
