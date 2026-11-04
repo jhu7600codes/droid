@@ -45,7 +45,7 @@ export class Scheduler {
   budget = 12 // ms of task work per event loop turn, so input and drawing stay smooth
   onError: (t: Task, e: unknown) => void = (t, e) => console.error(`thread "${t.name}" died`, e)
 
-  constructor() { if (this.ch) this.ch.port1.onmessage = () => this.tick() }
+  constructor() { if (this.ch) { this.ch.port1.onmessage = () => this.tick(); (this.ch.port1 as any).unref?.(); (this.ch.port2 as any).unref?.() } }
 
   add(t: Task) { this.tasks.push(t); this.wake() }
   remove(t: Task) { const i = this.tasks.indexOf(t); if (i >= 0) this.tasks.splice(i, 1) }

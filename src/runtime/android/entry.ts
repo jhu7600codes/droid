@@ -49,8 +49,11 @@ droid.on('create', async (saved: any) => {
     registerJavaIo(vm, vfs)
     registerReflect(vm)
     registerConcurrent(vm)
+    const manifestXml = files.get('AndroidManifest.xml') ? parseAxml(files.get('AndroidManifest.xml')!) : null
     const env = {
-      vfs,
+      vfs, manifestXml,
+      versionName: manifestXml ? attrString(manifestXml, 'versionName') || '1.0' : '1.0',
+      versionCode: manifestXml ? Number(attrString(manifestXml, 'versionCode')) || 1 : 1,
       pkg: map.pkg, files, res: parseArsc(files.get('resources.arsc')!), root, droid, prefs,
       density: dev.density, landscape: dev.orientation === 'landscape', lang: (dev.locale || 'en').slice(0, 2),
       intent: info.intent || {}, self: info.activity,

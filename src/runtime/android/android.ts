@@ -2,6 +2,7 @@
 // (versioned as droid-framework@0.1 in converted manifests)
 import { VM, JObject, JArray, JavaThrow, type NativeFn } from './dalvik.ts'
 import { Block } from './threads.ts'
+import { registerMore } from './android-more.ts'
 import { jstr, jformat } from './java.ts'
 import { parseAxml, attr, attrString, T, type XmlNode, type XmlValue } from './axml.ts'
 import { resolve, entryName, type ResTable } from './arsc.ts'
@@ -914,6 +915,8 @@ export function registerAndroid(vm: VM, env: Env) {
   const stopAllMedia = () => players.forEach((a) => a.pause())
 
   // ---------- running an activity ----------
+  // last: it extends classes defined (and patched) above
+  registerMore(vm, env, { el, report, runSafe, activity: () => activityObj, app: () => appObj, prefsFor, noop })
   return {
     // <application android:name>: made once, before any activity, like android does
     application(className: string | null, providers: { cls: string; authorities: string }[] = []) {
