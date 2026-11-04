@@ -1,5 +1,19 @@
 # droid proxy
 
+two versions with the same api: `server.mjs` (node, any long-running host) and `deno/main.ts` (deno deploy).
+
+## deno deploy (free, no server to run)
+1. sign in at https://dash.deno.com with github, create a project, link this repo
+2. entrypoint: `proxy/deno/main.ts`, no build step (deno kv is included for tokens and sessions)
+3. optional environment variables: `ORIGINS=https://<you>.github.io`, `REGISTRATION=closed` + `DROID_TOKENS=...`
+4. in droid: settings > more > droid proxy > address `https://<project>.deno.dev` (droid gets a token by itself)
+
+note: deno's fetch can't pin the resolved ip, so the deno version checks the dns answers before each request
+and on every redirect (rebinding is narrowed, not closed; deno deploy can't reach private networks anyway).
+test locally: `cd proxy/deno && deno task test`.
+
+## node
+
 relays http(s) and websockets for droid (dpk spec section 18) so the browser and apps can reach sites that
 block cross-origin requests or framing. self-host it anywhere that runs node 22 (a small vps, fly.io, render,
 railway, a raspberry pi). serverless platforms that cap request time or buffer responses break streaming and

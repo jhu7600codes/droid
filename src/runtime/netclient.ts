@@ -3,6 +3,15 @@
 import { settings } from '../shell/settings'
 import { DpkError } from './manifest'
 
+// the proxy hands out a token on POST /register: droid asks once when only the address is set
+let registering: Promise<void> | null = null
+export async function ensureProxyToken() {
+  const url = ((settings.get('proxy.url') as string) || '').replace(/\/+$/, '')
+  if (!url || settings.get('proxy.token')) return
+  registering ||= fetch(url + '/register', { method: 'POST' }).then((r) => r.json()).then((d) => { if (d.token) settings.set('proxy.token', d.token) }).catch(() => {}).finally(() => { registering = null })
+  await registering
+}
+
 export function proxyConfig() {
   const url = (settings.get('proxy.url') as string || '').replace(/\/+$/, '')
   const token = settings.get('proxy.token') as string || ''
@@ -31,6 +40,7 @@ async function rawFetch(pkg: string, url: string, init: { method: string; header
     return await fetch(url, opts)
   } catch {
     // cors refused (or offline): try the proxy
+    await ensureProxyToken()
     const p = proxyConfig()
     if (!p) throw new DpkError('denied', 'the site refused a direct request and no droid proxy is set (settings > more > droid proxy)')
     const headers = { ...init.headers, 'x-droid-token': p.token, 'x-droid-app': pkg }
