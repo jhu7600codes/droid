@@ -9,13 +9,18 @@ import { FP, execVfp } from './vfp.ts'
 export const TRAP_BASE = 0xfff00000
 export const RETURN_TRAP = 0xfffffff0
 
+// guest memory: one growable ArrayBuffer (resizable when the browser can, else re-allocated), with a
+// malloc that keeps a 16-byte header before every block: [total size, distance back to the block start]
+const MAX_MEM = 1024 * 1024 * 1024
 export class Memory {
   buf: ArrayBuffer
   u8: Uint8Array
   dv: DataView
-  brk: number
+  brk: number // the next free address (libraries, the heap and thread stacks all come from here)
   constructor(size = 64 * 1024 * 1024) {
-    this.buf = new ArrayBuffer(size)
+    let b: ArrayBuffer
+    try { b = new (ArrayBuffer as any)(size, { maxByteLength: MAX_MEM }) } catch { b = new ArrayBuffer(size) }
+    this.buf = b
     this.u8 = new Uint8Array(this.buf)
     this.dv = new DataView(this.buf)
     this.brk = 0x10000
@@ -29,45 +34,95 @@ export class Memory {
   cstr(a: number, max = 1 << 20) {
     let e = a
     while (this.u8[e] && e - a < max) e++
-    return new TextDecoder().decode(this.u8.subarray(a, e))
+    return new TextDecoder().decode(this.u8.slice(a, e)) // a copy: decoders refuse views of resizable buffers
   }
-  // simple first-fit heap with a free list (malloc / free / realloc)
-  private free_: [number, number][] = []
-  private sizes = new Map<number, number>()
-  heapTop = 0
-  malloc(n: number) {
-    n = (Math.max(1, n) + 15) & ~15
-    for (let i = 0; i < this.free_.length; i++) {
-      const [a, s] = this.free_[i]
-      if (s >= n) { this.free_.splice(i, 1); if (s > n + 32) this.free_.push([a + n, s - n]); this.sizes.set(a, n); return a }
-    }
-    const a = this.heapTop
-    this.heapTop += n
-    if (this.heapTop > this.stackLimit) throw new Error('arm: out of memory')
-    this.sizes.set(a, n)
+  size() { return this.buf.byteLength }
+  // make sure addresses below `end` exist
+  ensure(end: number) {
+    if (end <= this.buf.byteLength) return
+    let n = this.buf.byteLength
+    while (n < end) n *= 2
+    if (n > MAX_MEM) n = Math.max(end, MAX_MEM)
+    if (end > MAX_MEM) throw new Error('arm: out of memory (1 GB)')
+    if ((this.buf as any).resizable) (this.buf as any).resize(n)
+    else { const b = new ArrayBuffer(n); new Uint8Array(b).set(this.u8); this.buf = b }
+    this.u8 = new Uint8Array(this.buf)
+    this.dv = new DataView(this.buf)
+  }
+  // raw pages at the end (libraries, mmap, big blocks)
+  sbrk(n: number, align = 16) {
+    const a = (this.brk + align - 1) & ~(align - 1)
+    this.brk = a + n
+    this.ensure(this.brk)
     return a
   }
-  free(a: number) {
-    const s = this.sizes.get(a)
-    if (s == null) return
-    this.sizes.delete(a)
-    this.free_.push([a, s])
-  }
-  sizeOf(a: number) { return this.sizes.get(a) || 0 }
+  heapTop = 0 // kept for older callers: same as brk
   stackLimit = 0
+  // free lists: small blocks by total size (16-byte steps up to 64 kb), big ones first-fit
+  private bins = new Map<number, number[]>()
+  private big: [number, number][] = []
+  private take(total: number) {
+    if (total <= 65536) { const l = this.bins.get(total); if (l?.length) return l.pop()! }
+    else {
+      for (let i = 0; i < this.big.length; i++) {
+        const [b, t] = this.big[i]
+        if (t >= total) { this.big.splice(i, 1); if (t - total >= 4096) this.put(b + total, t - total); else total = t; return b }
+      }
+    }
+    return this.sbrk(total)
+  }
+  private put(b: number, total: number) {
+    if (total <= 65536) { let l = this.bins.get(total); if (!l) this.bins.set(total, (l = [])); l.push(b) }
+    else this.big.push([b, total])
+  }
+  malloc(n: number) { return this.memalign(16, n) }
+  memalign(align: number, n: number) {
+    align = Math.max(16, align)
+    const need = ((Math.max(1, n) + 15) & ~15) + 16
+    const total = align > 16 ? need + align : need
+    const b = this.take(total)
+    const p = ((b + 16 + align - 1) & ~(align - 1)) >>> 0
+    this.w32(p - 16, total)
+    this.w32(p - 12, p - b)
+    return p
+  }
+  free(p: number) {
+    if (!p) return
+    const total = this.r32(p - 16), back = this.r32(p - 12)
+    if (!total || back < 16 || back > total) return // not ours (or freed twice)
+    this.w32(p - 16, 0)
+    this.put(p - back, total)
+  }
+  sizeOf(p: number) { return p ? this.r32(p - 16) - this.r32(p - 12) : 0 }
 }
 
 export type HostFn = (cpu: CPU) => number | void | bigint
 
+// one thread's registers. the cpu works on the current context's arrays directly; switching threads
+// swaps them (and the flags)
+export interface Context { r: Uint32Array; fp: FP; N: boolean; Z: boolean; C: boolean; V: boolean; thumb: boolean; it: number; tls: number }
+export const newContext = (): Context => ({ r: new Uint32Array(16), fp: new FP(), N: false, Z: false, C: false, V: false, thumb: false, it: 0, tls: 0 })
+
+// a host function asks the calling thread to wait: the scheduler resumes it later (threads.ts Block)
+export const STOP = { YIELD: 1, BLOCK: 2, RETURN: 3, EXIT: 4, SIGRETURN: 5 } as const
+export const THREAD_EXIT_TRAP = 0xfffffff4
+export const SIGRETURN_TRAP = 0xfffffff8
+
 export class CPU {
-  r = new Uint32Array(16)
+  r: Uint32Array = new Uint32Array(16)
   N = false; Z = false; C = false; V = false
   thumb = false
   fp = new FP()
   it = 0 // thumb IT state: (firstcond << 4) | mask, 0 when outside an IT block
+  tls = 0 // TPIDRURO (mrc p15 c13), bionic keeps the thread's tls slots there
+  excl = -1 // exclusive monitor address (ldrex / strex); cleared on every thread switch
   mem: Memory
   host: { name: string; fn: HostFn }[] = []
   steps = 0
+  // set by run() when a host function asked to wait
+  waiting: { block: import('../threads.ts').Block; lr: number } | null = null
+  // when the current thread must wait inside a nested call (js -> arm), the runtime pumps other threads
+  pump: (b: import('../threads.ts').Block) => any = () => { throw new Error('arm: a wait with nobody to run') }
   constructor(mem: Memory) { this.mem = mem }
 
   // registers a js function and returns its trap address
@@ -76,11 +131,24 @@ export class CPU {
     return TRAP_BASE + (this.host.length - 1) * 4
   }
 
-  // calls arm code at addr with up to 4 register args (more go on the stack), returns r0 (and r1)
+  save(c: Context) { c.r = this.r; c.fp = this.fp; c.N = this.N; c.Z = this.Z; c.C = this.C; c.V = this.V; c.thumb = this.thumb; c.it = this.it; c.tls = this.tls }
+  load(c: Context) { this.r = c.r; this.fp = c.fp; this.N = c.N; this.Z = c.Z; this.C = c.C; this.V = c.V; this.thumb = c.thumb; this.it = c.it; this.tls = c.tls; this.excl = -1 }
+
+  // calls arm code at addr with up to 4 register args (more go on the stack), returns r0 (and r1).
+  // runs to completion on the current context (registers are restored after)
   call(addr: number, args: number[] = []): { r0: number; r1: number } {
     const saved = this.r.slice()
     const savedFlags = [this.N, this.Z, this.C, this.V, this.thumb] as const
     const savedIt = this.it
+    this.setupCall(addr, args, RETURN_TRAP)
+    this.run(Infinity)
+    const out = { r0: this.r[0], r1: this.r[1] }
+    this.r.set(saved)
+    ;[this.N, this.Z, this.C, this.V, this.thumb] = savedFlags
+    this.it = savedIt
+    return out
+  }
+  setupCall(addr: number, args: number[], lr: number) {
     this.it = 0
     let sp = this.r[13]
     const extra = args.slice(4)
@@ -88,38 +156,81 @@ export class CPU {
     extra.forEach((v, i) => this.mem.w32(sp + i * 4, v))
     for (let i = 0; i < 4; i++) this.r[i] = (args[i] ?? 0) >>> 0
     this.r[13] = sp
-    this.r[14] = RETURN_TRAP
+    this.r[14] = lr
     this.thumb = (addr & 1) === 1
     this.r[15] = addr & ~1
-    this.run()
-    const out = { r0: this.r[0], r1: this.r[1] }
-    this.r.set(saved)
-    ;[this.N, this.Z, this.C, this.V, this.thumb] = savedFlags
-    this.it = savedIt
-    return out
+  }
+  // finish a host call that waited: its value goes to r0 (r1), execution continues at lr
+  resume(v: unknown) {
+    const w = this.waiting!
+    this.waiting = null
+    this.retValue(v)
+    this.thumb = (w.lr & 1) === 1
+    this.r[15] = w.lr & ~1
+  }
+  private retValue(v: unknown) {
+    if (typeof v === 'bigint') { const u = BigInt.asUintN(64, v); this.r[0] = Number(u & 0xffffffffn); this.r[1] = Number(u >> 32n) }
+    else if (typeof v === 'number') this.r[0] = v >>> 0
   }
 
-  private run() {
+  // runs until the return trap (STOP.RETURN), the thread-exit trap (STOP.EXIT), the deadline
+  // (STOP.YIELD) or a host function that waits (STOP.BLOCK; nested runs pass deadline Infinity and
+  // wait in place instead)
+  run(deadline: number): number {
     for (;;) {
       const pc = this.r[15]
       if (pc >= TRAP_BASE) {
-        if (pc === RETURN_TRAP) return
+        if (pc === RETURN_TRAP) return STOP.RETURN
+        if (pc === THREAD_EXIT_TRAP) return STOP.EXIT
+        if (pc === SIGRETURN_TRAP) return STOP.SIGRETURN
+        if (pc >= 0xffff0f00 && pc < 0xffff1000) { this.kuser(pc); continue }
         const h = this.host[(pc - TRAP_BASE) >>> 2]
         if (!h) throw new Error(`arm: jump to bad trap 0x${pc.toString(16)}`)
-        const v = h.fn(this)
-        if (typeof v === 'bigint') { const u = BigInt.asUintN(64, v); this.r[0] = Number(u & 0xffffffffn); this.r[1] = Number(u >> 32n) }
-        else if (v !== undefined) this.r[0] = v >>> 0
         const lr = this.r[14]
+        let v: unknown
+        try { v = h.fn(this) }
+        catch (e) {
+          if (!(e instanceof Error) && (e as any)?.ready) {
+            if (deadline === Infinity) v = this.pump(e as any)
+            else { this.waiting = { block: e as any, lr }; return STOP.BLOCK }
+          } else throw e
+        }
+        this.retValue(v)
+        // the host function may have redirected execution (longjmp, signals, thread exit): it sets pc
+        if (this.r[15] !== pc) continue
         this.thumb = (lr & 1) === 1
         this.r[15] = lr & ~1
         continue
       }
-      this.steps++
+      if ((++this.steps & 4095) === 0 && deadline !== Infinity && performance.now() > deadline) return STOP.YIELD
       if (this.thumb) { execThumb(this, pc); continue }
       const insn = this.mem.r32(pc)
       this.r[15] = pc + 4
       if (this.cond(insn >>> 28)) this.exec(insn, pc)
     }
+  }
+
+  // the linux kernel's user helpers at the top of memory (old bionic and gcc atomics jump there)
+  private kuser(pc: number) {
+    const m = this.mem
+    switch (pc) {
+      case 0xffff0fc0: { // cmpxchg(old r0, new r1, ptr r2): r0 = 0 and C set when it swapped
+        const ptr = this.r[2]
+        if (m.r32(ptr) === this.r[0]) { m.w32(ptr, this.r[1]); this.r[0] = 0; this.C = true } else { this.r[0] = 1; this.C = false }
+        break
+      }
+      case 0xffff0f60: { // cmpxchg64(ptr old r0, ptr new r1, ptr r2)
+        const o = this.r[0], n = this.r[1], ptr = this.r[2]
+        if (m.r32(ptr) === m.r32(o) && m.r32(ptr + 4) === m.r32(o + 4)) { m.w32(ptr, m.r32(n)); m.w32(ptr + 4, m.r32(n + 4)); this.r[0] = 0; this.C = true } else { this.r[0] = 1; this.C = false }
+        break
+      }
+      case 0xffff0fe0: this.r[0] = this.tls; break // get_tls
+      case 0xffff0fa0: break // memory barrier
+      default: throw new Error(`arm: unknown kernel helper 0x${pc.toString(16)}`)
+    }
+    const lr = this.r[14]
+    this.thumb = (lr & 1) === 1
+    this.r[15] = lr & ~1
   }
 
   cond(c: number) {
@@ -178,6 +289,7 @@ export class CPU {
 
   private exec(insn: number, pc: number) {
     const m = this.mem
+    if ((insn & 0x0fff0fff) === 0x0e1d0f70) { this.r[(insn >>> 12) & 0xf] = this.tls; return } // mrc p15 c13: the tls pointer
     if (insn >>> 28 === 0xf) {
       // unconditional space: blx imm, pld, barriers
       if ((insn & 0x0e000000) === 0x0a000000) {
@@ -232,9 +344,19 @@ export class CPU {
         this.r[rd] = old
         return
       }
-      if ((insn & 0x0f9000f0) === 0x01800090) { // ldrex / strex: single threaded, always succeed
-        if ((insn >>> 20) & 1) this.r[rd] = m.r32(this.r[rn])
-        else { m.w32(this.r[rn], this.r[rm]); this.r[rd] = 0 }
+      if ((insn & 0x0f9000f0) === 0x01800090) { // ldrex / strex (+b/h/d): a monitor cleared on thread switches
+        const sz = (insn >>> 21) & 3, a = this.r[rn] // 0 word, 1 double, 2 byte, 3 half
+        if ((insn >>> 20) & 1) {
+          this.excl = a
+          this.r[rd] = sz === 2 ? m.r8(a) : sz === 3 ? m.r16(a) : m.r32(a)
+          if (sz === 1) this.r[rd + 1] = m.r32(a + 4)
+        } else {
+          if (this.excl !== a) { this.r[rd] = 1; return }
+          if (sz === 2) m.w8(a, this.r[rm]); else if (sz === 3) m.w16(a, this.r[rm]); else m.w32(a, this.r[rm])
+          if (sz === 1) m.w32(a + 4, this.r[rm + 1])
+          this.r[rd] = 0
+          this.excl = -1
+        }
         return
       }
       if ((insn & 0x0fbf0fff) === 0x010f0000) { this.r[rd] = ((this.N ? 1 : 0) << 31) | ((this.Z ? 1 : 0) << 30) | ((this.C ? 1 : 0) << 29) | ((this.V ? 1 : 0) << 28) | 0x10; return } // mrs
@@ -427,7 +549,7 @@ export class CPU {
     const n = this.r[7]
     switch (n) {
       case 4: { // write(fd, buf, len)
-        const s = new TextDecoder().decode(this.mem.u8.subarray(this.r[1], this.r[1] + this.r[2]))
+        const s = new TextDecoder().decode(this.mem.u8.slice(this.r[1], this.r[1] + this.r[2]))
         console.log('[native]', s)
         this.r[0] = this.r[2]
         return

@@ -1,6 +1,9 @@
 // native side of the android runtime: memory layout, libc / liblog host functions, and jni
 // (JNIEnv / JavaVM tables whose entries trap into js and talk to the dalvik vm).
 import { CPU, Memory, type HostFn } from './cpu.ts'
+import { Threads, PThread, installPthreads } from './pthread.ts'
+import { installPosix } from './posix.ts'
+import { installLibc } from './libc.ts'
 import { loadElf, type Lib } from './elf.ts'
 import { VM, JObject, JArray, JavaThrow, splitParams, type JMethod } from '../dalvik.ts'
 import { jstr } from '../java.ts'
@@ -18,17 +21,44 @@ export class Native {
   jvm = 0
   pending: JavaThrow | null = null
   vm: VM
-  vfs: import('../javaio.ts').Vfs | null
-  constructor(vm: VM, vfs: import('../javaio.ts').Vfs | null = null) {
+  vfs: import('../javaio.ts').Vfs
+  pkg: string
+  threads: Threads
+  heapStart = 0
+  // stdio hooks (posix.ts) and the printf formatter (libc.ts)
+  writeFile: (fp: number, s: string) => number = () => -1
+  readFile: (fp: number) => { get: () => number; unget: (ch: number) => void } | null = () => null
+  format: (f: string, next: () => number, nextD: () => number) => string = (f) => f
+  constructor(vm: VM, vfs: import('../javaio.ts').Vfs | null = null, pkg = 'app') {
     this.vm = vm
-    this.vfs = vfs
+    this.vfs = vfs ?? (new (class { files = new Map(); dirs = new Set(['/']); norm(p: string) { return p } read() { return null } write() {} exists() { return false } isDir() { return false } mkdirs() { return true } remove() { return false } list() { return [] } text() {} })() as any)
+    this.pkg = pkg
     this.mem.brk = 0x10000
-    this.mem.heapTop = 24 * MB
-    this.mem.stackLimit = 63 * MB
-    this.cpu.r[13] = 64 * MB - 64
+    // the main (outside) thread's stack: 8 mb, from the start of memory
+    const stack = 8 * MB
+    const base = this.mem.sbrk(stack, 4096)
+    this.cpu.r[13] = base + stack - 64
+    this.cpu.tls = this.mem.malloc(256)
+    this.mem.w32(this.cpu.tls, this.cpu.tls)
+    this.threads = new Threads(this)
+    this.threads.mainStackBase = base
+    this.threads.mainStackSize = stack
+    this.heapStart = this.mem.brk
     this.libc()
+    installLibc(this)
+    installPosix(this)
+    installPthreads(this)
+    this.errnoSetup()
     this.jni()
   }
+  // errno: one slot per thread
+  private errnoSlots = new Map<any, number>()
+  private errnoSlot() { const k = this.threads.current ?? this.vm.current; let a = this.errnoSlots.get(k); if (!a) { a = this.mem.malloc(4); this.mem.w32(a, 0); this.errnoSlots.set(k, a) } return a }
+  setErrno(e: number) { this.mem.w32(this.errnoSlot(), e) }
+  getErrno() { return this.mem.r32(this.errnoSlot()) }
+  private errnoSetup() { this.def('__errno', () => this.errnoSlot()); this.def('__errno_location', () => this.errnoSlot()) }
+  // a symbol from the loaded libraries or the host, 0 if there is none (no trap made)
+  resolveOrZero(name: string) { for (const l of this.libs) { const a = l.exports.get(name); if (a) return a } return this.host.get(name) ?? 0 }
 
   // ---------- references ----------
   ref(v: any) { if (v == null) return 0; const i = this.free.pop() ?? this.refs.length; this.refs[i] = v; return i * 4 + 0x100000 }
@@ -45,7 +75,7 @@ export class Native {
     if (onload) this.cpu.call(onload, [this.jvm, 0])
     return lib
   }
-  private resolve(name: string): number {
+  resolve(name: string): number {
     for (const l of this.libs) { const a = l.exports.get(name); if (a) return a }
     const h = this.host.get(name)
     if (h) return h
@@ -55,8 +85,8 @@ export class Native {
     this.host.set(name, t)
     return t
   }
-  private def(name: string, fn: HostFn) { this.host.set(name, this.cpu.hostFn(name, fn)) }
-  private data(name: string, bytes: number, init?: (a: number) => void) { const a = this.mem.malloc(bytes); init?.(a); this.host.set(name, a) }
+  def(name: string, fn: HostFn) { this.host.set(name, this.cpu.hostFn(name, fn)) }
+  data(name: string, bytes: number, init?: (a: number) => void) { const a = this.mem.malloc(bytes); init?.(a); this.host.set(name, a) }
 
   // ---------- calling native methods ----------
   // java native method -> Java_<class>_<name> (or the RegisterNatives table), AAPCS argument passing
