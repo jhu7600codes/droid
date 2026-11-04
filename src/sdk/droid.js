@@ -131,7 +131,10 @@
     danen: {
       account: function () { return call('danen.account', []) },
       sync: { get: function (k) { return call('danen.sync.get', [k]) }, set: function (k, v) { return call('danen.sync.set', [k, v]) } },
-      push: { subscribe: function () { return call('danen.push.subscribe', []) } },
+      push: {
+        subscribe: function () { return call('danen.push.subscribe', []) },
+        send: function (title, body, data) { return call('danen.push.send', [title, body, data]) },
+      },
     },
     // c and other wasm modules: instantiate with the droid import table (docs/sdk.md)
     wasm: {

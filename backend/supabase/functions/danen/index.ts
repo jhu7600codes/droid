@@ -6,8 +6,12 @@
 //   PUT  /sync             (session) {items: {key: value}} -> {updated}
 //   POST /push/subscribe   (session) {pkg, subscription}   -> {}
 //   GET  /vapid                                            -> {key} public web push key
+//   POST /push/send        (session) {pkg?, title, body}   -> {sent}  push to your own devices
+//   POST /push/admin       (x-danen-push-secret) {username, pkg?, title, body} -> {sent}  server-side sends
+// the vapid key pair is generated on first use and kept in the config table (service role only).
 // session = "authorization: Danen <token>". passwords: pbkdf2-sha256, 210k rounds, per-user salt.
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import webpush from 'npm:web-push@3.6.7'
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } })
 const ORIGINS = (Deno.env.get('DANEN_ORIGINS') || '*').split(',')
@@ -62,12 +66,56 @@ async function userOf(req: Request) {
   return data.user_id as string
 }
 
+// ---------- web push ----------
+let vapid: { publicKey: string; privateKey: string } | null = null
+async function getVapid() {
+  if (vapid) return vapid
+  const { data } = await db.from('config').select('key, value').in('key', ['vapid_public', 'vapid_private'])
+  const m = Object.fromEntries((data || []).map((r) => [r.key, r.value]))
+  if (m.vapid_public && m.vapid_private) vapid = { publicKey: m.vapid_public, privateKey: m.vapid_private }
+  else {
+    const k = webpush.generateVAPIDKeys()
+    // insert-only: if another instance won the race, read theirs instead
+    await db.from('config').upsert([{ key: 'vapid_public', value: k.publicKey }, { key: 'vapid_private', value: k.privateKey }], { onConflict: 'key', ignoreDuplicates: true })
+    vapid = null
+    return getVapid()
+  }
+  webpush.setVapidDetails(Deno.env.get('DANEN_PUSH_CONTACT') || 'mailto:push@danen.invalid', vapid.publicKey, vapid.privateKey)
+  return vapid
+}
+async function pushTo(userId: string, pkg: string | null, msg: { title: string; body: string; data?: unknown }) {
+  await getVapid()
+  let q = db.from('push_subs').select('pkg, endpoint, keys').eq('user_id', userId)
+  if (pkg) q = q.eq('pkg', pkg)
+  const { data } = await q
+  let sent = 0
+  for (const s of data || []) {
+    try {
+      await webpush.sendNotification({ endpoint: s.endpoint, keys: s.keys }, JSON.stringify({ ...msg, pkg: s.pkg }), { TTL: 86400 })
+      sent++
+    } catch (e) {
+      // gone subscriptions are removed
+      if ((e as any)?.statusCode === 404 || (e as any)?.statusCode === 410) await db.from('push_subs').delete().eq('user_id', userId).eq('endpoint', s.endpoint)
+    }
+  }
+  return sent
+}
+const clean = (m: any) => ({ title: String(m?.title || 'droid').slice(0, 120), body: String(m?.body || '').slice(0, 500), data: m?.data ?? null })
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: cors(req) })
   const path = new URL(req.url).pathname.replace(/^.*\/danen/, '')
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0] || 'ip'
   try {
-    if (path === '/vapid') return json(req, { key: Deno.env.get('VAPID_PUBLIC_KEY') || null })
+    if (path === '/vapid') return json(req, { key: (await getVapid()).publicKey })
+    if (path === '/push/admin' && req.method === 'POST') {
+      const secret = Deno.env.get('DANEN_PUSH_SECRET')
+      if (!secret || !same(req.headers.get('x-danen-push-secret') || '', secret)) return json(req, { error: 'not allowed' }, 403)
+      const b = await req.json()
+      const { data: u } = await db.from('users').select('id').eq('username', String(b.username || '').toLowerCase()).maybeSingle()
+      if (!u) return json(req, { error: 'no such user' }, 404)
+      return json(req, { sent: await pushTo(u.id, b.pkg ? String(b.pkg) : null, clean(b)) })
+    }
 
     if (path === '/account/create' && req.method === 'POST') {
       if (limited('c' + ip, 5)) return json(req, { error: 'slow down' }, 429)
@@ -114,6 +162,11 @@ Deno.serve(async (req) => {
       if (!subscription?.endpoint?.startsWith('https://')) return json(req, { error: 'bad subscription' }, 400)
       await db.from('push_subs').upsert({ user_id: user, pkg: String(pkg).slice(0, 100), endpoint: subscription.endpoint, keys: subscription.keys || {} })
       return json(req, {})
+    }
+    if (path === '/push/send' && req.method === 'POST') {
+      if (limited('p' + user, 30)) return json(req, { error: 'slow down' }, 429)
+      const b = await req.json()
+      return json(req, { sent: await pushTo(user, b.pkg ? String(b.pkg) : null, clean(b)) })
     }
     return json(req, { error: 'not found' }, 404)
   } catch {

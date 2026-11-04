@@ -42,9 +42,17 @@ self.addEventListener('fetch', (e) => {
 self.addEventListener('push', (e) => {
   let d = {}
   try { d = e.data ? e.data.json() : {} } catch (err) { d = { title: 'droid', body: e.data && e.data.text() } }
-  e.waitUntil(self.registration.showNotification(d.title || 'droid', { body: d.body || '', icon: 'icons/icon-192.png', data: d }))
+  e.waitUntil(self.clients.matchAll({ type: 'window' }).then((cs) => {
+    const visible = cs.find((c) => c.visibilityState === 'visible')
+    if (visible) { visible.postMessage({ droidPush: d }); return }
+    return self.registration.showNotification(d.title || 'droid', { body: d.body || '', icon: 'icons/icon-192.png', data: d })
+  }))
 })
 self.addEventListener('notificationclick', (e) => {
   e.notification.close()
-  e.waitUntil(self.clients.matchAll({ type: 'window' }).then((cs) => (cs[0] ? cs[0].focus() : self.clients.openWindow('./'))))
+  const pkg = e.notification.data && e.notification.data.pkg
+  e.waitUntil(self.clients.matchAll({ type: 'window' }).then((cs) => {
+    if (cs[0]) { cs[0].postMessage({ droidOpen: pkg }); return cs[0].focus() }
+    return self.clients.openWindow('./' + (pkg ? '?open=' + encodeURIComponent(pkg) : ''))
+  }))
 })
