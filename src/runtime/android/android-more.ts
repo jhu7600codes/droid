@@ -766,7 +766,6 @@ export function registerMore(vm: VM, env: Env, h: MoreHelpers) {
   def('Ljava/lang/AssertionError;', 'Ljava/lang/Error;', { '<init>()V': noop, '<init>(Ljava/lang/Object;)V': (v, s, [m]) => { s.f.message = jstr(vm, m) } })
   def('Ljava/lang/Double;', 'Ljava/lang/Number;', { 'isInfinite(D)Z': (v, s, [x]) => (x === Infinity || x === -Infinity ? 1 : 0) })
   def('Ljava/lang/Class;', OBJ, { 'asSubclass(Ljava/lang/Class;)Ljava/lang/Class;': (v, s) => s })
-  def('Ljava/util/LinkedHashMap;', 'Ljava/util/HashMap;', { '<init>()V': (v, s, a) => vm.shims.get('Ljava/util/HashMap;')!.methods!['<init>()V'](v, s, a), '<init>(IFZ)V': (v, s, a) => vm.shims.get('Ljava/util/HashMap;')!.methods!['<init>()V'](v, s, []) })
 
   // shared preferences extras
   const sp = h.prefsFor('__probe')

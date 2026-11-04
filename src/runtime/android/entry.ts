@@ -9,6 +9,7 @@ import { registerAndroid } from './android.ts'
 import { Vfs, registerJavaIo } from './javaio.ts'
 import { registerReflect } from './reflect.ts'
 import { registerConcurrent } from './concurrent.ts'
+import { registerCollections } from './collections.ts'
 import { scheduler } from './threads.ts'
 import { Native } from './arm/native.ts'
 
@@ -45,6 +46,7 @@ droid.on('create', async (saved: any) => {
     const dev = await droid.device.info()
     const vm = new VM()
     registerJava(vm)
+    registerCollections(vm)
     const vfs = new Vfs()
     registerJavaIo(vm, vfs)
     registerReflect(vm)

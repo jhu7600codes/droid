@@ -9,6 +9,7 @@ import { registerJava } from '../../src/runtime/android/java.ts'
 import { Vfs, registerJavaIo } from '../../src/runtime/android/javaio.ts'
 import { registerReflect } from '../../src/runtime/android/reflect.ts'
 import { registerConcurrent } from '../../src/runtime/android/concurrent.ts'
+import { registerCollections } from '../../src/runtime/android/collections.ts'
 import { registerAndroid } from '../../src/runtime/android/android.ts'
 
 const buf = fs.readFileSync(process.argv[2])
@@ -19,6 +20,7 @@ for (const e of listZip(ab)) if (/^(classes\d*\.dex|resources\.arsc)$/.test(e.pa
 globalThis.document ??= { createElement: () => ({ style: {}, classList: { add() {}, remove() {}, toggle() {} }, append() {}, addEventListener() {}, setAttribute() {} }) }
 const vm = new VM()
 registerJava(vm)
+registerCollections(vm)
 registerJavaIo(vm, new Vfs())
 registerReflect(vm)
 registerConcurrent(vm)
