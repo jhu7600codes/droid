@@ -89,7 +89,7 @@ export function measure(): ScreenInfo {
   return {
     width, height, dpi, bucket, density: dpi / 160, orientation, form, mode: fit as 'native' | 'fit',
     scale, offsetX: Math.round((vw - width * scale) / 2), offsetY: Math.round((vh - height * scale) / 2),
-    insets, statusBar: 25 + (mode === 'auto' ? Math.round(insets.top / scale) : 0), navBar: 48 + (mode === 'auto' && navSide === 'bottom' ? Math.round(insets.bottom / scale) : 0), navSide,
+    insets, statusBar: 25 + (mode === 'auto' ? Math.round(insets.top / scale) : 0), navBar: 48 + (mode === 'auto' && navSide === 'bottom' ? Math.min(10, Math.round(insets.bottom / scale)) : 0), navSide,
   }
 }
 
