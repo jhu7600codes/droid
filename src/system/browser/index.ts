@@ -18,7 +18,21 @@ const store = {
   get<T>(k: string, d: T): T { try { return JSON.parse(localStorage.getItem(`${KEY}.${k}`) || 'null') ?? d } catch { return d } },
   set(k: string, v: unknown) { try { localStorage.setItem(`${KEY}.${k}`, JSON.stringify(v)) } catch { /* full */ } },
 }
-const SEARCH = (q: string) => 'https://duckduckgo.com/?q=' + encodeURIComponent(q)
+// search: searxng (a metasearch aggregator, it asks several engines at once) by default, through
+// public instances that answer the proxy; when one fails the next one is tried. duckduckgo and a
+// custom searxng instance are options in the browser settings.
+export const SEARX = ['https://www.isci.si/', 'https://search.lumy.live/', 'https://search.pereira.is/']
+export const ENGINES = [
+  { id: 'searxng', label: 'SearXNG (aggregator)' },
+  { id: 'duckduckgo', label: 'DuckDuckGo' },
+  { id: 'custom', label: 'Custom SearXNG instance' },
+]
+const searxBase = () => {
+  if (settings.get('browser.engine') === 'custom' && settings.get('browser.searx')) return String(settings.get('browser.searx')).replace(/\/?$/, '/')
+  return SEARX[(settings.get('browser.searx.i') as number) % SEARX.length || 0]
+}
+export const SEARCH = (q: string) => settings.get('browser.engine') === 'duckduckgo' ? 'https://duckduckgo.com/?q=' + encodeURIComponent(q) : searxBase() + 'search?q=' + encodeURIComponent(q)
+const isSearx = (u: string) => SEARX.some((b) => u.startsWith(b))
 const HOME = 'droid:home'
 
 export function normalize(input: string) {
@@ -108,6 +122,15 @@ function browser(ctx: ActivityContext): Activity {
 
   const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`)
   function errorPage(t: Tab, reason: string) {
+    // a public searxng instance is down or refusing: move on to the next one
+    if (isSearx(t.url) && !t.url.includes('&droid-retry=' + (SEARX.length - 1))) {
+      const n = Number(t.url.match(/&droid-retry=(\d+)/)?.[1] || 0) + 1
+      const i = SEARX.findIndex((b) => t.url.startsWith(b))
+      settings.set('browser.searx.i', (i + 1) % SEARX.length)
+      const q = new URL(t.url).searchParams.get('q') || ''
+      load(t, SEARX[(i + 1) % SEARX.length] + 'search?q=' + encodeURIComponent(q) + '&droid-retry=' + n, false)
+      return
+    }
     setLoading(t, false)
     t.error = reason
     t.title = 'Webpage not available'
@@ -306,7 +329,21 @@ function browser(ctx: ActivityContext): Activity {
   }
 
   async function browserSettings() {
-    const r = await dialog({ title: 'Settings', items: ['Clear history', 'Clear cookies (new proxy sessions)', 'droid proxy settings'] })
+    const r = await dialog({ title: 'Settings', items: ['Search engine', 'Clear history', 'Clear cookies (new proxy sessions)', 'Droid proxy settings'] })
+    if (r.index === 0) {
+      const cur = Math.max(0, ENGINES.findIndex((e) => e.id === (settings.get('browser.engine') || 'searxng')))
+      const e = await dialog({ title: 'Search engine', kind: 'single', items: ENGINES.map((x) => x.label), checked: cur })
+      if (e.button !== 'item' || e.index == null) return
+      if (ENGINES[e.index].id === 'custom') {
+        const v = await dialog({ title: 'SearXNG instance', kind: 'input', value: String(settings.get('browser.searx') || 'https://'), placeholder: 'https://searx.example/', ok: 'OK', cancel: 'Cancel' })
+        if (v.button !== 'ok' || !/^https:\/\/[^/]+/.test(v.value || '')) return
+        settings.set('browser.searx', v.value)
+      }
+      settings.set('browser.engine', ENGINES[e.index].id)
+      toast(ENGINES[e.index].label)
+      return
+    }
+    r.index = (r.index ?? 0) - 1
     if (r.index === 0) { store.set('history', []); toast('History cleared') }
     if (r.index === 1) { tabs.forEach((t) => (t.sid = undefined)); toast('Cookies cleared') }
     if (r.index === 2) ctx.start({ action: 'settings', extras: { page: 'more' } })
