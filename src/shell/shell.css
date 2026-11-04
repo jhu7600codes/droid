@@ -88,7 +88,7 @@ img { -webkit-user-drag: none; }
 .dw-btn::before { content: ''; position: absolute; left: 14px; top: 10px; width: 12px; height: 12px; }
 .dw-btn.min::before { border-bottom: 2px solid #ccc; height: 8px; }
 .dw-btn.max::before { border: 2px solid #ccc; box-sizing: border-box; }
-.dw-btn.close::before { content: '✕'; color: #ccc; font-size: 14px; left: 14px; top: 7px; width: auto; height: auto; }
+.dw-btn.close::before { content: '✕\FE0E'; color: #ccc; font-size: 14px; left: 14px; top: 7px; width: auto; height: auto; }
 .dw-btn:hover, .dw-btn.pressed { background: rgba(255, 255, 255, .12); }
 .dw-btn.close:hover { background: #cc3333; }
 .dw-rs { position: absolute; touch-action: none; }

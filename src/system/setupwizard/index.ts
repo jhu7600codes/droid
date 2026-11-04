@@ -28,12 +28,12 @@ function wizard(ctx: ActivityContext): Activity {
       title: 'Welcome', noNav: true,
       render(body, next) {
         const cur = LANGS.find((l) => l[0] === settings.get('locale')) || LANGS[0]
-        const lang = pressable(h('div.wiz-lang', {}, h('span', {}, cur[1]), h('span.wiz-caret', {}, '▾')))
+        const lang = pressable(h('div.wiz-lang', {}, h('span', {}, cur[1]), h('span.wiz-caret', {}, '▾︎')))
         lang.addEventListener('click', async () => {
           const r = await dialog({ title: 'Language', kind: 'list', items: LANGS.map((l) => l[1]) })
           if (r.button === 'item') { settings.set('locale', LANGS[r.index!][0]); lang.firstChild!.textContent = LANGS[r.index!][1] }
         })
-        const start = pressable(h('div.wiz-start', {}, h('span', {}, 'Start'), h('span.wiz-arrow', {}, '▶')))
+        const start = pressable(h('div.wiz-start', {}, h('span', {}, 'Start'), h('span.wiz-arrow', {}, '▶︎')))
         start.addEventListener('click', next)
         body.append(h('img.wiz-logo', { src: brand('droid-d-icon') }), h('div.wiz-hello', {}, 'Welcome'), h('div.wiz-sub', {}, 'Droid 4.4 by Danen'), lang, h('div', { style: { flex: '1' } }), start)
       },
@@ -212,7 +212,7 @@ function wizard(ctx: ActivityContext): Activity {
     {
       title: 'All done', noNav: true,
       render(body) {
-        const fin = pressable(h('div.wiz-start', {}, h('span', {}, 'Finish'), h('span.wiz-arrow', {}, '▶')))
+        const fin = pressable(h('div.wiz-start', {}, h('span', {}, 'Finish'), h('span.wiz-arrow', {}, '▶︎')))
         fin.addEventListener('click', () => { settings.set('setup.done', true); ctx.finish() })
         body.append(h('img.wiz-logo', { src: brand('droid-logo') }), h('div.wiz-hello', {}, 'You\'re all set'), h('div.wiz-sub', {}, settings.get('owner.name') ? `Enjoy Droid, ${settings.get('owner.name')}.` : 'Enjoy Droid.'), h('div', { style: { flex: '1' } }), fin)
       },
@@ -234,8 +234,8 @@ function wizard(ctx: ActivityContext): Activity {
     body.style.animation = `${dir > 0 ? 'wiz-in' : 'wiz-back'} .25s ease-out`
     check = s.render(body, () => go(1))
     if (!s.noNav) {
-      const back = pressable(h('div.wiz-nav-btn', {}, h('span.wiz-arrow', {}, '◀'), h('span', {}, 'Back')))
-      const nxt = pressable(h('div.wiz-nav-btn.next', {}, h('span', {}, s.skip ? 'Next' : 'Next'), h('span.wiz-arrow', {}, '▶')))
+      const back = pressable(h('div.wiz-nav-btn', {}, h('span.wiz-arrow', {}, '◀︎'), h('span', {}, 'Back')))
+      const nxt = pressable(h('div.wiz-nav-btn.next', {}, h('span', {}, s.skip ? 'Next' : 'Next'), h('span.wiz-arrow', {}, '▶︎')))
       back.addEventListener('click', () => go(-1))
       nxt.addEventListener('click', () => go(1))
       const skip = s.skip ? pressable(h('div.wiz-nav-btn.skip', { onclick: () => show(Math.min(steps.length - 1, i + 1)) }, 'Skip')) : h('div')
