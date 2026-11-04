@@ -22,16 +22,24 @@ const store = {
 // public instances that answer the proxy; when one fails the next one is tried. duckduckgo and a
 // custom searxng instance are options in the browser settings.
 export const SEARX = ['https://www.isci.si/', 'https://search.lumy.live/', 'https://search.pereira.is/']
+// bing is the default: public searxng instances refuse traffic that comes through a proxy, and
+// duckduckgo asks for a human check first. searxng still works with your own instance.
 export const ENGINES = [
-  { id: 'searxng', label: 'SearXNG (aggregator)' },
+  { id: 'bing', label: 'Bing' },
   { id: 'duckduckgo', label: 'DuckDuckGo' },
+  { id: 'searxng', label: 'SearXNG (public instances, often refuse proxies)' },
   { id: 'custom', label: 'Custom SearXNG instance' },
 ]
 const searxBase = () => {
   if (settings.get('browser.engine') === 'custom' && settings.get('browser.searx')) return String(settings.get('browser.searx')).replace(/\/?$/, '/')
   return SEARX[(settings.get('browser.searx.i') as number) % SEARX.length || 0]
 }
-export const SEARCH = (q: string) => settings.get('browser.engine') === 'duckduckgo' ? 'https://duckduckgo.com/?q=' + encodeURIComponent(q) : searxBase() + 'search?q=' + encodeURIComponent(q)
+export const SEARCH = (q: string) => {
+  const e = settings.get('browser.engine') || 'bing'
+  if (e === 'duckduckgo') return 'https://duckduckgo.com/?q=' + encodeURIComponent(q)
+  if (e === 'searxng' || e === 'custom') return searxBase() + 'search?q=' + encodeURIComponent(q)
+  return 'https://www.bing.com/search?q=' + encodeURIComponent(q)
+}
 const isSearx = (u: string) => SEARX.some((b) => u.startsWith(b))
 const HOME = 'droid:home'
 
@@ -336,7 +344,7 @@ function browser(ctx: ActivityContext): Activity {
   async function browserSettings() {
     const r = await dialog({ title: 'Settings', items: ['Search engine', 'Clear history', 'Clear cookies (new proxy sessions)', 'Droid proxy settings'] })
     if (r.index === 0) {
-      const cur = Math.max(0, ENGINES.findIndex((e) => e.id === (settings.get('browser.engine') || 'searxng')))
+      const cur = Math.max(0, ENGINES.findIndex((e) => e.id === (settings.get('browser.engine') || 'bing')))
       const e = await dialog({ title: 'Search engine', kind: 'single', items: ENGINES.map((x) => x.label), checked: cur })
       if (e.button !== 'item' || e.index == null) return
       if (ENGINES[e.index].id === 'custom') {
