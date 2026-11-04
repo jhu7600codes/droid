@@ -14,6 +14,7 @@ export interface MoreHelpers {
   activity: () => JObject
   app: () => JObject | null
   prefsFor: (name: string) => JObject
+  appInfo: () => JObject
   noop: NativeFn
 }
 
@@ -310,7 +311,7 @@ export function registerMore(vm: VM, env: Env, h: MoreHelpers) {
     'unbindService(Landroid/content/ServiceConnection;)V': noop,
     'getClassLoader()Ljava/lang/ClassLoader;': () => vm.callStatic('Ljava/lang/ClassLoader;', 'getSystemClassLoader()Ljava/lang/ClassLoader;'),
     'getMainLooper()Landroid/os/Looper;': () => mainLooper,
-    'getApplicationInfo()Landroid/content/pm/ApplicationInfo;': () => vm.callVirtual(h.activity(), 'getApplicationInfo()Landroid/content/pm/ApplicationInfo;'),
+    'getApplicationInfo()Landroid/content/pm/ApplicationInfo;': () => h.appInfo(),
   })
   def('Landroid/app/Activity;', 'Landroid/view/ContextThemeWrapper;', {
     'getLocalClassName()Ljava/lang/String;': (v, s) => { const n = s.cls.name.slice(1, -1).replace(/\//g, '.'); return n.startsWith(env.pkg + '.') ? n.slice(env.pkg.length + 1) : n },
@@ -345,11 +346,11 @@ export function registerMore(vm: VM, env: Env, h: MoreHelpers) {
       void m
       const sig = obj('Landroid/content/pm/Signature;', { bytes: new Uint8Array(32).fill(7) })
       const sigs = vm.newArray('[Landroid/content/pm/Signature;', 1); sigs.data[0] = sig
-      return obj('Landroid/content/pm/PackageInfo;', { packageName: env.pkg, versionName: (env as any).versionName ?? '1.0', versionCode: (env as any).versionCode ?? 1, applicationInfo: vm.callVirtual(h.activity(), 'getApplicationInfo()Landroid/content/pm/ApplicationInfo;'), signatures: sigs, firstInstallTime: 0n, lastUpdateTime: 0n })
+      return obj('Landroid/content/pm/PackageInfo;', { packageName: env.pkg, versionName: (env as any).versionName ?? '1.0', versionCode: (env as any).versionCode ?? 1, applicationInfo: h.appInfo(), signatures: sigs, firstInstallTime: 0n, lastUpdateTime: 0n })
     },
     'getApplicationInfo(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;': (v, s, [p]) => {
       if (p !== env.pkg) throw vm.error('Landroid/content/pm/PackageManager$NameNotFoundException;', p)
-      const a = vm.callVirtual(h.activity(), 'getApplicationInfo()Landroid/content/pm/ApplicationInfo;')
+      const a = h.appInfo()
       a.f.metaData ??= metaBundle()
       return a
     },

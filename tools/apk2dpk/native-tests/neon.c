@@ -125,6 +125,12 @@ int neon_test(char *buf, int size) {
   { uint8_t r[16] = {0}, e[16] = {0}; vst1q_lane_u8(r + 3, vld1q_u8(A8), 9); e[3] = A8[9]; check("vst1q_lane_u8", r, e, 16); }
   { uint16_t r[8], e[8]; uint16x4x2_t s = vld2_dup_u16(A16); vst1_u16(r, s.val[0]); vst1_u16(r + 4, s.val[1]); for (int i = 0; i < 4; i++) { e[i] = A16[0]; e[4 + i] = A16[1]; } check("vld2_dup_u16", r, e, 16); }
   { uint32_t r[4] = {0}, e[4] = {0}; uint32x2x2_t s = {{vld1_u32(A32), vld1_u32(B32)}}; vst2_lane_u32(r, s, 1); e[0] = A32[1]; e[1] = B32[1]; check("vst2_lane_u32", r, e, 16); }
+  // atomics (ldrex / strex, all sizes)
+  { static volatile int w; static volatile short h; static volatile unsigned char b; static volatile long long d; int e[4] = {7, 3, 5, 9};
+    w = 2; h = 1; b = 4; d = 8;
+    __sync_fetch_and_add(&w, 5); __sync_fetch_and_add(&h, 2); __sync_fetch_and_add(&b, 1); __sync_fetch_and_add(&d, 1);
+    int r[4] = {w, h, b, (int)d}; check("atomics", r, e, 16);
+    int old = __sync_val_compare_and_swap(&w, 7, 11); int r2[2] = {old, w}, e2[2] = {7, 11}; check("cmpxchg", r2, e2, 8); }
   LOG("%d checks, %d failed\n", checks, fails);
   return fails == 0;
 }

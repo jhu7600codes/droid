@@ -29,6 +29,8 @@ export interface Task {
   busy: boolean // running nested further up the js stack right now (the scheduler must not step it)
   // run up to `ms` milliseconds; returns when the slice is used up, the task blocks, or it ends
   step(ms: number): void
+  // something must run even though the task waits (a signal handler): step it anyway
+  urgent?(): boolean
 }
 
 let nextId = 1
@@ -83,6 +85,7 @@ export class Scheduler {
   // is the task able to run (resolves a cleared block)
   private ready(t: Task) {
     if (t.state === 'runnable') return true
+    if (t.state === 'blocked' && t.urgent?.()) return true
     if (t.state !== 'blocked' || !t.block) return false
     if (t.block.ready()) { t.state = 'runnable'; return true } // (until only plans the timer; ready() checks the time itself)
     return false

@@ -222,6 +222,7 @@ function coproc(c: CPU, pc: number, h1: number, h2: number) {
 function exec32(c: CPU, pc: number, h1: number, h2: number) {
   const m = c.mem
   if (h1 === 0xee1d && (h2 & 0x0fff) === 0x0f70) { c.r[h2 >>> 12] = c.tls; return } // mrc p15 c13: the tls pointer
+  if (h1 === 0xee07 && (h2 & 0x0f10) === 0x0f10) return // mcr p15 c7: cache maintenance, armv6 barriers
   if ((h1 & 0xec00) === 0xec00 || (h1 & 0xff10) === 0xf900) return coproc(c, pc, h1, h2)
   const op1 = (h1 >>> 11) & 3, op2 = (h1 >>> 4) & 0x7f, op = (h2 >>> 15) & 1
   const rn = h1 & 0xf, rd = (h2 >>> 8) & 0xf, rt = (h2 >>> 12) & 0xf

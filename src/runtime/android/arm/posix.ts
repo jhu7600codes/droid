@@ -34,7 +34,8 @@ export function installPosix(nat: Native) {
     if (p === '/proc/self/status') return 'Name:\tdroid\nState:\tR (running)\nPid:\t4242\nVmRSS:\t65536 kB\n'
     if (p === '/proc/self/cmdline') return nat.vm ? 'droid\0' : ''
     if (p === '/proc/self/exe') return ''
-    if (p === '/proc/stat') return 'cpu  100 0 100 1000 0 0 0 0 0 0\ncpu0 100 0 100 1000 0 0 0 0 0 0\n'
+    // (boehm gc counts the cpuN lines and wants more than 100 bytes)
+    if (p === '/proc/stat') return 'cpu  4705 356 584 3699176 23060 0 277 0 0 0\ncpu0 1393 280 234 925349 5800 0 166 0 0 0\ncpu1 1137 23 112 924938 5751 0 50 0 0 0\nintr 114930548 113199788 3 0 5 263 0 4 [...]\nctxt 1990473\nbtime 1062191376\nprocesses 2915\nprocs_running 1\nprocs_blocked 0\n'
     return null
   }
   const hex = (x: number) => (x >>> 0).toString(16).padStart(8, '0')

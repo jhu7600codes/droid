@@ -11,6 +11,8 @@ import { VM, JObject, JArray, JavaThrow, JThread, splitParams, type JMethod } fr
 import { jstr } from '../java.ts'
 
 const MB = 1024 * 1024
+const ARM_SAMPLE = false
+
 export class Native {
   mem = new Memory(64 * MB)
   cpu = new CPU(this.mem)
@@ -57,6 +59,8 @@ export class Native {
     this.jni()
     vm.nativeAsync = this
     // a native call that runs for seconds without returning says where it is (finding hangs)
+    // debugging aid: set ARM_SAMPLE to log where native code is every 8M instructions, with all threads
+    if (ARM_SAMPLE) { let t0 = performance.now(), s0 = 0; (globalThis as any).__armSample = (c: any, pc: number) => { const t = performance.now(); console.log(`SAMPLE ${((c.steps - s0) / (t - t0) / 1000).toFixed(1)}M/s at ${this.where(pc | (c.thumb ? 1 : 0))} lr ${this.where(c.r[14])} on ${this.threads.current?.name ?? 'java ' + this.vm.current?.name} | ${[...(this.threads as any).all.values()].map((x: any) => `${x.name}:${x.state ?? 'outside'}${x.block ? '/' + x.block.what : ''}${x.waiting ? '@' + this.where(x.ctx?.r?.[14] ?? 0) : ''}`).join(', ')}`); t0 = t; s0 = c.steps } }
     this.cpu.onSlow = (pc, lr) => console.warn(`native: still running after a long time at ${this.where(pc)} (lr ${this.where(lr)}) on ${this.threads.current?.name ?? 'main'}`)
   }
   // lib+offset and the nearest exported symbol below it
@@ -185,6 +189,7 @@ export class Native {
     c.save(outside)
     c.load(a.ctx)
     try {
+      if (this.threads.hasSignals(t)) this.threads.deliverFor(t)
       setup()
       const r = c.run(deadline)
       if (r === STOP.RETURN) { const m = a.m!; a.m = null; const r0 = c.r[0], r1 = c.r[1]; c.save(a.ctx); c.load(outside); return { done: true, value: this.finishCall(m, r0, r1) } }
@@ -193,6 +198,14 @@ export class Native {
       if (r === STOP.YIELD) return { done: false, block: null }
       throw new Error('arm: a java thread\'s native call ended oddly (' + r + ')')
     } catch (e) { this.fault = { pc: c.r[15] | (c.thumb ? 1 : 0), lr: c.r[14] }; if (c.r !== outside.r) { c.save(a.ctx); c.load(outside) } throw e }
+  }
+  signalsPending(t: JThread) { return this.threads.hasSignals(t) }
+  takeSignals(t: JThread) { this.signalsOn(t, this.armOf(t)) }
+  // runs a java thread's pending signal handlers on its own native stack
+  private signalsOn(t: JThread, a: { ctx: Context }) {
+    const c = this.cpu, outside = newContext()
+    c.save(outside); c.load(a.ctx)
+    try { this.threads.deliverFor(t) } finally { c.save(a.ctx); c.load(outside) }
   }
   fromNative(t: string, r0: number, r1: number) {
     if (t === 'V') return undefined

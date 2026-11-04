@@ -1,6 +1,6 @@
 // big apk (local only, never committed): dist/apk-test/ss.apk. install, open, report what breaks
 export default async ({ page, shot, base }) => {
-  page.on('console', (m) => { const t = m.text(); if (/missing|android|stopped|native|exception|error|unity|still running|stack:|ZDBG/i.test(t)) console.log('console:', t.slice(0, 700)) })
+  page.on('console', (m) => { const t = m.text(); if (/missing|android|stopped|native|exception|error|unity|still running|stack:|overflow|SAMPLE/i.test(t)) console.log('console:', t.slice(0, 700)) })
   page.on('pageerror', (e) => console.log('pageerror', e.message.slice(0, 300)))
   await page.goto(base + 'index.html?fastboot')
   await page.evaluate(() => localStorage.setItem('droid.settings', JSON.stringify({ 'setup.done': true, 'lock.type': 'none' })))

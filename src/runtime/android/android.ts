@@ -4,6 +4,7 @@ import { VM, JObject, JArray, JavaThrow, splitParams, type NativeFn } from './da
 import { Block } from './threads.ts'
 import { registerMore } from './android-more.ts'
 import { registerGlJava } from './gl-java.ts'
+import { registerAudio } from './audio.ts'
 import { jstr, jformat, box } from './java.ts'
 import { parseAxml, attr, attrString, T, type XmlNode, type XmlValue } from './axml.ts'
 import { resolve, entryName, type ResTable } from './arsc.ts'
@@ -942,8 +943,9 @@ export function registerAndroid(vm: VM, env: Env) {
 
   // ---------- running an activity ----------
   // last: it extends classes defined (and patched) above
-  registerMore(vm, env, { el, report, runSafe, activity: () => activityObj, app: () => appObj, prefsFor, noop })
+  registerMore(vm, env, { el, report, runSafe, activity: () => activityObj, app: () => appObj, prefsFor, noop, appInfo: () => appInfo() })
   registerGlJava(vm, env, report)
+  registerAudio(vm)
   // the app-wide default prefs file android names <package>_preferences
   vm.shim('Landroid/preference/PreferenceManager;', { methods: {
     'getDefaultSharedPreferences(Landroid/content/Context;)Landroid/content/SharedPreferences;': () => prefsFor(env.pkg + '_preferences'),

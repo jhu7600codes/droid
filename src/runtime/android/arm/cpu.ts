@@ -210,6 +210,7 @@ export class CPU {
         continue
       }
       if ((++this.steps & 4095) === 0) {
+        if ((this.steps & 0x7fffff) === 0) (globalThis as any).__armSample?.(this, pc) // see ARM_SAMPLE in native.ts
         if (deadline !== Infinity) { if (performance.now() > deadline) return STOP.YIELD }
         else if (this.slowAt && performance.now() > this.slowAt) { this.slowAt += 3000; this.onSlow?.(pc | (this.thumb ? 1 : 0), this.r[14]) }
       }
@@ -300,6 +301,7 @@ export class CPU {
   private exec(insn: number, pc: number) {
     const m = this.mem
     if ((insn & 0x0fff0fff) === 0x0e1d0f70) { this.r[(insn >>> 12) & 0xf] = this.tls; return } // mrc p15 c13: the tls pointer
+    if ((insn & 0x0fff0f10) === 0x0e070f10) return // mcr p15 c7: cache maintenance and the armv6 barriers (dmb dsb isb)
     if (insn >>> 28 === 0xf) {
       // unconditional space: blx imm, pld, barriers
       if ((insn & 0x0e000000) === 0x0a000000) {
@@ -355,7 +357,7 @@ export class CPU {
         this.r[rd] = old
         return
       }
-      if ((insn & 0x0f9000f0) === 0x01800090) { // ldrex / strex (+b/h/d): a monitor cleared on thread switches
+      if ((insn & 0x0f8000f0) === 0x01800090) { // ldrex / strex (+b/h/d): a monitor cleared on thread switches
         const sz = (insn >>> 21) & 3, a = this.r[rn] // 0 word, 1 double, 2 byte, 3 half
         if ((insn >>> 20) & 1) {
           this.excl = a
