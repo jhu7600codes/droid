@@ -9,6 +9,7 @@ import { wm } from '../../shell/wm'
 import { screenEl, layers } from '../../shell/layers'
 import { setWallpaperOffset } from '../wallpaper/index'
 import './launcher.css'
+import { SEARCH } from '../browser'
 
 const L3 = 'apps/launcher3'
 const KEY = 'droid.launcher'
@@ -57,7 +58,7 @@ function launcher(ctx: ActivityContext): Activity & { translucent: boolean; home
   const search = h('div.l-search', {}, h('img', { src: img(L3, 'ic_home_search_normal_holo') }), h('span', {}, 'Search'))
   search.addEventListener('click', async () => {
     const r = await dialog({ title: 'Search', kind: 'input', placeholder: 'Search the web', ok: 'Search' })
-    if (r.button === 'ok' && r.value) wm.start({ action: 'view', data: 'https://duckduckgo.com/?q=' + encodeURIComponent(r.value) })
+    if (r.button === 'ok' && r.value) wm.start({ action: 'view', data: SEARCH(r.value) })
   })
   const pagesWrap = h('div.l-pages')
   const strip = h('div.l-strip')
