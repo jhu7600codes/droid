@@ -18,8 +18,10 @@ export class Native {
   jvm = 0
   pending: JavaThrow | null = null
   vm: VM
-  constructor(vm: VM) {
+  vfs: import('../javaio.ts').Vfs | null
+  constructor(vm: VM, vfs: import('../javaio.ts').Vfs | null = null) {
     this.vm = vm
+    this.vfs = vfs
     this.mem.brk = 0x10000
     this.mem.heapTop = 24 * MB
     this.mem.stackLimit = 63 * MB

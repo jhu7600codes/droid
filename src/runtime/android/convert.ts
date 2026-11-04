@@ -74,12 +74,19 @@ export async function convertApk(apk: ArrayBuffer, runtimeJs: string): Promise<C
     actions: r.children.filter((f) => f.tag === 'intent-filter').flatMap((f) => f.children.filter((x) => x.tag === 'action').map((x) => attrString(x, 'name') || '')),
   }))
   const services = (app?.children || []).filter((c) => c.tag === 'service').map((x) => cls(attrString(x, 'name') || ''))
-  out.set('apk-map.json', enc.encode(JSON.stringify({ pkg, activities: map, libs, receivers, services })))
+  const orig = new Uint8Array(apk), PART = 16 * 1024 * 1024
+  const parts = libs.length ? Math.ceil(orig.length / PART) : 0
+  out.set('apk-map.json', enc.encode(JSON.stringify({ pkg, activities: map, libs, receivers, services, original: parts })))
   ;(manifest as any)['android-receivers'] = [...new Set(receivers.flatMap((r) => r.actions))]
   out.set('manifest.json', enc.encode(JSON.stringify(manifest, null, 1)))
-  const kept = [...files.keys()].filter((p) => !p.startsWith('META-INF/') && !(p.startsWith('lib/') && !p.startsWith('lib/armeabi-v7a/')))
+  // apps that keep the original apk read assets/ from it, so those are not unpacked twice
+  const kept = [...files.keys()].filter((p) => !p.startsWith('META-INF/') && !(p.startsWith('lib/') && !p.startsWith('lib/armeabi-v7a/')) && !(libs.length && p.startsWith('assets/')))
   out.set('apk-files.json', enc.encode(JSON.stringify(kept)))
   for (const p of kept) out.set('apk/' + p.toLowerCase().replace(/[^a-z0-9/._-]/g, '_'), files.get(p)!)
+  // native code (game engines like unity) often reads its assets straight out of the apk file,
+  // so those apps keep the original next to the unpacked files
+  // (in 16 MB parts: a dpk file may not be bigger than 20 MB)
+  for (let i = 0; i < parts; i++) out.set(`original/apk.${i}`, orig.subarray(i * PART, (i + 1) * PART))
   // apk paths are case sensitive and may not fit dpk path rules: keep a mapping when they differ
   const renamed = kept.filter((p) => p !== p.toLowerCase().replace(/[^a-z0-9/._-]/g, '_'))
   if (renamed.length) report.push(`${renamed.length} files renamed for the DPK path rules`)

@@ -9,6 +9,7 @@ export const SHIM_VERSION = 'droid-framework@0.1'
 const OBJ = 'Ljava/lang/Object;'
 
 export interface Env {
+  vfs?: import('./javaio.ts').Vfs // in-memory file system shared with native code
   pkg: string
   files: Map<string, Uint8Array>
   res: ResTable
@@ -347,12 +348,32 @@ export function registerAndroid(vm: VM, env: Env) {
   let activityObj: JObject = null as any
   let content: JObject | null = null
   let menuItems: JObject[] = []
+  const APK_PATH = `/data/app/${env.pkg}-1.apk`
+  const fileObj = (p: string) => { const f = new JObject(vm.cls('Ljava/io/File;')); f.f.path = p; return f }
+  const dirFile = (p: string) => { env.vfs?.mkdirs(p); return fileObj(p) }
+  const appInfo = () => {
+    const a = new JObject(vm.cls('Landroid/content/pm/ApplicationInfo;'))
+    Object.assign(a.f, { packageName: env.pkg, sourceDir: APK_PATH, publicSourceDir: APK_PATH, dataDir: `/data/data/${env.pkg}`, nativeLibraryDir: `/data/data/${env.pkg}/lib`, targetSdkVersion: 19, flags: 0, uid: 10050, processName: env.pkg })
+    return a
+  }
   const contextMethods: Record<string, NativeFn> = {
     'getString(I)Ljava/lang/String;': (v, s, [id]) => resString(id),
     'getString(I[Ljava/lang/Object;)Ljava/lang/String;': (v, s, [id, a]) => jformat(vm, resString(id), a ? [...a.data] : []),
     'getText(I)Ljava/lang/CharSequence;': (v, s, [id]) => resString(id),
     'getResources()Landroid/content/res/Resources;': () => resources,
     'getPackageName()Ljava/lang/String;': () => env.pkg,
+    // where things live on a phone (backed by the in-memory file system)
+    'getFilesDir()Ljava/io/File;': () => dirFile(`/data/data/${env.pkg}/files`),
+    'getCacheDir()Ljava/io/File;': () => dirFile(`/data/data/${env.pkg}/cache`),
+    'getDir(Ljava/lang/String;I)Ljava/io/File;': (v, s, [n]) => dirFile(`/data/data/${env.pkg}/app_${n}`),
+    'getExternalFilesDir(Ljava/lang/String;)Ljava/io/File;': (v, s, [t]) => dirFile(`/sdcard/Android/data/${env.pkg}/files` + (t ? '/' + t : '')),
+    'getExternalCacheDir()Ljava/io/File;': () => dirFile(`/sdcard/Android/data/${env.pkg}/cache`),
+    'getFileStreamPath(Ljava/lang/String;)Ljava/io/File;': (v, s, [n]) => fileObj(`/data/data/${env.pkg}/files/${n}`),
+    'getPackageCodePath()Ljava/lang/String;': () => APK_PATH,
+    'getPackageResourcePath()Ljava/lang/String;': () => APK_PATH,
+    'getApplicationInfo()Landroid/content/pm/ApplicationInfo;': () => appInfo(),
+    'openFileInput(Ljava/lang/String;)Ljava/io/FileInputStream;': (v, s, [n]) => { const f = new JObject(vm.cls('Ljava/io/FileInputStream;')); vm.callVirtual(f, '<init>(Ljava/lang/String;)V', [`/data/data/${env.pkg}/files/${n}`]); return f },
+    'openFileOutput(Ljava/lang/String;I)Ljava/io/FileOutputStream;': (v, s, [n, mode]) => { const f = new JObject(vm.cls('Ljava/io/FileOutputStream;')); vm.callVirtual(f, '<init>(Ljava/lang/String;Z)V', [`/data/data/${env.pkg}/files/${n}`, mode & 0x8792 ? 1 : 0]); return f },
     'getApplicationContext()Landroid/content/Context;': (v, s) => s,
     'getSharedPreferences(Ljava/lang/String;I)Landroid/content/SharedPreferences;': (v, s, [name]) => prefsFor(name),
     'getSystemService(Ljava/lang/String;)Ljava/lang/Object;': (v, s, [name]) => { if (name === 'vibrator') return new JObject(vm.cls('Landroid/os/Vibrator;')); if (name === 'layout_inflater') return new JObject(vm.cls('Landroid/view/LayoutInflater;')); if (name === 'audio') return new JObject(vm.cls('Landroid/media/AudioManager;')); if (name === 'notification') return new JObject(vm.cls('Landroid/app/NotificationManager;')); vm.missing.add('system service ' + name); return null },
@@ -408,6 +429,8 @@ export function registerAndroid(vm: VM, env: Env) {
   })
   def('Landroid/content/res/Resources$Theme;', OBJ, { 'applyStyle(IZ)V': noop })
   def('Landroid/app/Application;', 'Landroid/content/ContextWrapper;', { 'onCreate()V': noop })
+  def('Landroid/content/pm/PackageItemInfo;', OBJ, {})
+  def('Landroid/content/pm/ApplicationInfo;', 'Landroid/content/pm/PackageItemInfo;', { '<init>()V': noop })
   def('Landroid/content/res/Resources;', OBJ, {
     'getString(I)Ljava/lang/String;': (v, s, [id]) => resString(id),
     'getColor(I)I': (v, s, [id]) => (res(id)?.data ?? 0) | 0,
@@ -595,8 +618,13 @@ export function registerAndroid(vm: VM, env: Env) {
     'removeCallbacks(Ljava/lang/Runnable;)V': (v, s, [r]) => { const t = s.f.timers?.get(r); if (t) clearTimeout(t) },
   })
   def('Landroid/os/SystemClock;', OBJ, { 'uptimeMillis()J': () => BigInt(Math.round(performance.now())), 'elapsedRealtime()J': () => BigInt(Math.round(performance.now())), 'sleep(J)V': noop })
-  def('Landroid/os/Build$VERSION;', OBJ, {}, { statics: { SDK_INT: 19, RELEASE: '4.4' } })
-  def('Landroid/os/Build;', OBJ, {}, { statics: { MODEL: 'droid', MANUFACTURER: 'danen', BRAND: 'danen', DEVICE: 'droid', PRODUCT: 'droid' } })
+  def('Landroid/os/Build$VERSION;', OBJ, {}, { statics: { SDK_INT: 19, SDK: '19', RELEASE: '4.4', CODENAME: 'REL', INCREMENTAL: 'droid' } })
+  def('Landroid/os/Build$VERSION_CODES;', OBJ, {}, { statics: { BASE: 1, CUPCAKE: 3, DONUT: 4, ECLAIR: 5, FROYO: 8, GINGERBREAD: 9, HONEYCOMB: 11, HONEYCOMB_MR1: 12, HONEYCOMB_MR2: 13, ICE_CREAM_SANDWICH: 14, ICE_CREAM_SANDWICH_MR1: 15, JELLY_BEAN: 16, JELLY_BEAN_MR1: 17, JELLY_BEAN_MR2: 18, KITKAT: 19 } })
+  def('Landroid/os/Build;', OBJ, { 'getRadioVersion()Ljava/lang/String;': () => 'droid' }, { statics: {
+    MODEL: 'Droid', MANUFACTURER: 'Danen', BRAND: 'danen', DEVICE: 'droid', PRODUCT: 'droid', BOARD: 'droid', HARDWARE: 'droid', BOOTLOADER: 'unknown',
+    CPU_ABI: 'armeabi-v7a', CPU_ABI2: 'armeabi', DISPLAY: 'KTU84Q', ID: 'KTU84Q', HOST: 'danen', USER: 'danen', TAGS: 'release-keys', TYPE: 'user',
+    FINGERPRINT: 'danen/droid/droid:4.4/KTU84Q/droid:user/release-keys', SERIAL: '0123456789ABCDEF', RADIO: 'unknown', UNKNOWN: 'unknown', TIME: 1404000000000n,
+  } })
   def('Landroid/graphics/Color;', OBJ, {
     'rgb(III)I': (v, s, [r, g, b]) => (0xff000000 | (r << 16) | (g << 8) | b) | 0,
     'argb(IIII)I': (v, s, [a, r, g, b]) => ((a << 24) | (r << 16) | (g << 8) | b) | 0,
