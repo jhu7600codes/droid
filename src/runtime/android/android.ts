@@ -1,8 +1,9 @@
 // framework shim, part 2: the android classes a simple old app uses, mapped onto droid and holo dom.
 // (versioned as droid-framework@0.1 in converted manifests)
-import { VM, JObject, JArray, JavaThrow, type NativeFn } from './dalvik.ts'
+import { VM, JObject, JArray, JavaThrow, splitParams, type NativeFn } from './dalvik.ts'
 import { Block } from './threads.ts'
-import { jstr, jformat } from './java.ts'
+import { registerMore } from './android-more.ts'
+import { jstr, jformat, box } from './java.ts'
 import { parseAxml, attr, attrString, T, type XmlNode, type XmlValue } from './axml.ts'
 import { resolve, entryName, type ResTable } from './arsc.ts'
 
@@ -547,44 +548,63 @@ export function registerAndroid(vm: VM, env: Env) {
   // shared preferences -> droid.prefs (preloaded, written through)
   def('Landroid/content/SharedPreferences;', OBJ, {})
   def('Landroid/content/SharedPreferences$Editor;', OBJ, {})
+  // values keep their java type next to them (sp-type:<name>:<key>) so getAll can box them right
   function prefsFor(name: string) {
     const p = new JObject(vm.cls('Landroid/content/SharedPreferences;'))
-    const key = (k: string) => `sp:${name}:${k}`
-    const get = (k: string, d: any) => (env.prefs.has(key(k)) ? env.prefs.get(key(k)) : d)
-    const m = p.cls.methods
-    const add = (k: string, fn: NativeFn, cls = p.cls) => cls.methods.set(k, { cls, name: k.slice(0, k.indexOf('(')), key: k, desc: k.slice(k.indexOf('(')), ret: k.slice(k.indexOf(')') + 1), params: [], flags: 1, code: null, native: fn })
-    if (!m.size) {
-      add('getInt(Ljava/lang/String;I)I', (v, s, [k, d]) => get(k, d))
-      add('getLong(Ljava/lang/String;J)J', (v, s, [k, d]) => { const x = get(k, null); return x == null ? d : BigInt(x) })
-      add('getBoolean(Ljava/lang/String;Z)Z', (v, s, [k, d]) => get(k, d))
-      add('getFloat(Ljava/lang/String;F)F', (v, s, [k, d]) => get(k, d))
-      add('getString(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;', (v, s, [k, d]) => get(k, d))
-      add('contains(Ljava/lang/String;)Z', (v, s, [k]) => (env.prefs.has(key(k)) ? 1 : 0))
-      add('edit()Landroid/content/SharedPreferences$Editor;', () => {
-        const ed = new JObject(vm.cls('Landroid/content/SharedPreferences$Editor;'))
-        ed.f.pending = new Map()
-        return ed
-      })
-      const E = vm.cls('Landroid/content/SharedPreferences$Editor;')
-      const put = (sig: string, conv = (x: any) => x) => add(`put${sig}`, (v, s, [k, x]) => { s.f.pending.set(key(k), conv(x)); return s }, E)
-      put('Int(Ljava/lang/String;I)Landroid/content/SharedPreferences$Editor;')
-      put('Long(Ljava/lang/String;J)Landroid/content/SharedPreferences$Editor;', (x) => String(x))
-      put('Boolean(Ljava/lang/String;Z)Landroid/content/SharedPreferences$Editor;')
-      put('Float(Ljava/lang/String;F)Landroid/content/SharedPreferences$Editor;')
-      put('String(Ljava/lang/String;Ljava/lang/String;)Landroid/content/SharedPreferences$Editor;')
-      add('remove(Ljava/lang/String;)Landroid/content/SharedPreferences$Editor;', (v, s, [k]) => { s.f.pending.set(key(k), undefined); return s }, E)
-      add('clear()Landroid/content/SharedPreferences$Editor;', (v, s) => { for (const k of env.prefs.keys()) if (k.startsWith(`sp:${name}:`)) s.f.pending.set(k, undefined); return s }, E)
-      const commit: NativeFn = (v, s) => {
-        for (const [k, x] of s.f.pending) {
-          if (x === undefined) { env.prefs.delete(k); env.droid.prefs.remove(k) } else { env.prefs.set(k, x); env.droid.prefs.set(k, x) }
-        }
-        s.f.pending.clear()
-        return 1
-      }
-      add('commit()Z', commit, E)
-      add('apply()V', commit, E)
-    }
+    p.f.name = name
     return p
+  }
+  {
+    const P = vm.cls('Landroid/content/SharedPreferences;'), E = vm.cls('Landroid/content/SharedPreferences$Editor;')
+    const key = (s: JObject, k: string) => `sp:${s.f.name}:${k}`
+    const get = (s: JObject, k: string, d: any) => (env.prefs.has(key(s, k)) ? env.prefs.get(key(s, k)) : d)
+    const add = (k: string, fn: NativeFn, cls = P) => cls.methods.set(k, { cls, name: k.slice(0, k.indexOf('(')), key: k, desc: k.slice(k.indexOf('(')), ret: k.slice(k.indexOf(')') + 1), params: splitParams(k.slice(k.indexOf('('))), flags: 1, code: null, native: fn })
+    add('getInt(Ljava/lang/String;I)I', (v, s, [k, d]) => get(s, k, d))
+    add('getLong(Ljava/lang/String;J)J', (v, s, [k, d]) => { const x = get(s, k, null); return x == null ? d : BigInt(x) })
+    add('getBoolean(Ljava/lang/String;Z)Z', (v, s, [k, d]) => (get(s, k, d) ? 1 : 0))
+    add('getFloat(Ljava/lang/String;F)F', (v, s, [k, d]) => get(s, k, d))
+    add('getString(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;', (v, s, [k, d]) => get(s, k, d))
+    add('getStringSet(Ljava/lang/String;Ljava/util/Set;)Ljava/util/Set;', (v, s, [k, d]) => { const x = get(s, k, null); if (!Array.isArray(x)) return d; const set = vm.newObject('Ljava/util/HashSet;'); for (const i of x) vm.callVirtual(set, 'add(Ljava/lang/Object;)Z', [i]); return set })
+    add('contains(Ljava/lang/String;)Z', (v, s, [k]) => (env.prefs.has(key(s, k)) ? 1 : 0))
+    add('getAll()Ljava/util/Map;', (v, s) => {
+      const m = vm.newObject('Ljava/util/HashMap;')
+      const pre = `sp:${s.f.name}:`
+      for (const [k, x] of env.prefs) {
+        if (!k.startsWith(pre)) continue
+        const t = env.prefs.get(`sp-type:${s.f.name}:${k.slice(pre.length)}`)
+        const boxed = typeof x === 'string' ? x : t === 'J' ? box(vm, 'Ljava/lang/Long;', BigInt(x)) : t === 'F' ? box(vm, 'Ljava/lang/Float;', x) : t === 'Z' ? box(vm, 'Ljava/lang/Boolean;', x ? 1 : 0) : typeof x === 'number' ? box(vm, 'Ljava/lang/Integer;', x) : x
+        vm.callVirtual(m, 'put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;', [k.slice(pre.length), boxed])
+      }
+      return m
+    })
+    add('registerOnSharedPreferenceChangeListener(Landroid/content/SharedPreferences$OnSharedPreferenceChangeListener;)V', () => {})
+    add('unregisterOnSharedPreferenceChangeListener(Landroid/content/SharedPreferences$OnSharedPreferenceChangeListener;)V', () => {})
+    add('edit()Landroid/content/SharedPreferences$Editor;', (v, s) => {
+      const ed = new JObject(E)
+      ed.f.pending = new Map()
+      ed.f.name = s.f.name
+      return ed
+    })
+    const put = (sig: string, t: string, conv = (x: any) => x) => add(`put${sig}`, (v, s, [k, x]) => { s.f.pending.set(key(s, k), [conv(x), t]); return s }, E)
+    put('Int(Ljava/lang/String;I)Landroid/content/SharedPreferences$Editor;', 'I')
+    put('Long(Ljava/lang/String;J)Landroid/content/SharedPreferences$Editor;', 'J', (x) => String(x))
+    put('Boolean(Ljava/lang/String;Z)Landroid/content/SharedPreferences$Editor;', 'Z', (x) => !!x)
+    put('Float(Ljava/lang/String;F)Landroid/content/SharedPreferences$Editor;', 'F')
+    put('String(Ljava/lang/String;Ljava/lang/String;)Landroid/content/SharedPreferences$Editor;', 'S')
+    put('StringSet(Ljava/lang/String;Ljava/util/Set;)Landroid/content/SharedPreferences$Editor;', 'T', (x) => { const out: any[] = []; const it = vm.callVirtual(x, 'iterator()Ljava/util/Iterator;'); while (vm.callVirtual(it, 'hasNext()Z')) out.push(vm.callVirtual(it, 'next()Ljava/lang/Object;')); return out })
+    add('remove(Ljava/lang/String;)Landroid/content/SharedPreferences$Editor;', (v, s, [k]) => { s.f.pending.set(key(s, k), undefined); return s }, E)
+    add('clear()Landroid/content/SharedPreferences$Editor;', (v, s) => { for (const k of env.prefs.keys()) if (k.startsWith(`sp:${s.f.name}:`)) s.f.pending.set(k, undefined); return s }, E)
+    const commit: NativeFn = (v, s) => {
+      for (const [k, x] of s.f.pending) {
+        const tk = k.replace(/^sp:/, 'sp-type:')
+        if (x === undefined) { env.prefs.delete(k); env.droid.prefs.remove(k); env.prefs.delete(tk); env.droid.prefs.remove(tk) }
+        else { env.prefs.set(k, x[0]); env.droid.prefs.set(k, x[0]); env.prefs.set(tk, x[1]); env.droid.prefs.set(tk, x[1]) }
+      }
+      s.f.pending.clear()
+      return 1
+    }
+    add('commit()Z', commit, E)
+    add('apply()V', (v, s, a) => { commit(v, s, a) }, E)
   }
 
   // ---------- toast, log, menus, misc ----------
@@ -914,6 +934,8 @@ export function registerAndroid(vm: VM, env: Env) {
   const stopAllMedia = () => players.forEach((a) => a.pause())
 
   // ---------- running an activity ----------
+  // last: it extends classes defined (and patched) above
+  registerMore(vm, env, { el, report, runSafe, activity: () => activityObj, app: () => appObj, prefsFor, noop })
   return {
     // <application android:name>: made once, before any activity, like android does
     application(className: string | null, providers: { cls: string; authorities: string }[] = []) {

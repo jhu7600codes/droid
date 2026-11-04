@@ -291,7 +291,27 @@ export function registerJava(vm: VM) {
     'getCause()Ljava/lang/Throwable;': (v, s) => s.f.cause ?? null,
     'toString()Ljava/lang/String;': (v, s) => s.cls.name.slice(1, -1).replace(/\//g, '.') + (s.f.message != null ? ': ' + s.f.message : ''),
     'printStackTrace()V': (v, s) => console.warn('java exception', jstr(vm, s)),
-    'getStackTrace()[Ljava/lang/StackTraceElement;': () => vm.newArray('[Ljava/lang/StackTraceElement;', 0),
+    'getStackTrace()[Ljava/lang/StackTraceElement;': (v, s) => s.f.trace ?? stackOf(s),
+    'setStackTrace([Ljava/lang/StackTraceElement;)V': (v, s, [t]) => { s.f.trace = t },
+    'fillInStackTrace()Ljava/lang/Throwable;': (v, s) => s,
+    'initCause(Ljava/lang/Throwable;)Ljava/lang/Throwable;': (v, s, [c]) => { s.f.cause = c; return s },
+    'addSuppressed(Ljava/lang/Throwable;)V': (v, s, [x]) => { (s.f.suppressed ||= []).push(x) },
+    'getSuppressed()[Ljava/lang/Throwable;': (v, s) => { const l = s.f.suppressed || []; const a = vm.newArray('[Ljava/lang/Throwable;', l.length); l.forEach((x: any, i: number) => (a.data[i] = x)); return a },
+    'printStackTrace(Ljava/io/PrintStream;)V': (v, s) => console.warn('java exception', jstr(vm, s)),
+    'printStackTrace(Ljava/io/PrintWriter;)V': (v, s) => console.warn('java exception', jstr(vm, s)),
+  })
+  // the java stack an exception was made with, as StackTraceElements
+  const stackOf = (s: JObject) => {
+    const names: string[] = s.f.jstack || []
+    const a = vm.newArray('[Ljava/lang/StackTraceElement;', names.length)
+    names.forEach((n, i) => { const e = new JObject(vm.cls('Ljava/lang/StackTraceElement;')); const k = n.lastIndexOf('.'); e.f.cls = n.slice(0, k); e.f.method = n.slice(k + 1); a.data[i] = e })
+    return a
+  }
+  def('Ljava/lang/StackTraceElement;', OBJ, {
+    '<init>(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)V': (v, s, [c, m, f, l]) => { s.f.cls = c; s.f.method = m; s.f.file = f; s.f.line = l },
+    'getClassName()Ljava/lang/String;': (v, s) => s.f.cls, 'getMethodName()Ljava/lang/String;': (v, s) => s.f.method,
+    'getFileName()Ljava/lang/String;': (v, s) => s.f.file ?? null, 'getLineNumber()I': (v, s) => s.f.line ?? -1,
+    'toString()Ljava/lang/String;': (v, s) => `${s.f.cls}.${s.f.method}(${s.f.file ?? 'Unknown Source'})`,
   })
   throwable('Ljava/lang/Exception;', 'Ljava/lang/Throwable;')
   throwable('Ljava/lang/Error;', 'Ljava/lang/Throwable;')
@@ -374,7 +394,44 @@ export function registerJava(vm: VM) {
     'sort([I)V': (v, s, [a]) => (a.data as Int32Array).sort(),
     'asList([Ljava/lang/Object;)Ljava/util/List;': (v, s, [a]) => { const l = new JObject(vm.cls('Ljava/util/ArrayList;')); l.f.a = [...a.data]; return l },
     'toString([I)Ljava/lang/String;': (v, s, [a]) => '[' + [...a.data].join(', ') + ']',
+    ...arraysAll(vm),
   })
+}
+
+// java.util.Arrays for every element type: copyOf, copyOfRange, fill, sort, equals, hashCode, toString
+function arraysAll(vm: VM): Record<string, NativeFn> {
+  const out: Record<string, NativeFn> = {}
+  const copy = (a: JArray, from: number, to: number) => {
+    if (from < 0 || from > a.data.length) throw vm.error('Ljava/lang/ArrayIndexOutOfBoundsException;', String(from))
+    if (from > to) throw vm.error('Ljava/lang/IllegalArgumentException;', `${from} > ${to}`)
+    const n = vm.newArray(a.cls.name, to - from)
+    const k = Math.min(to, a.data.length) - from
+    for (let i = 0; i < k; i++) (n.data as any)[i] = a.data[from + i]
+    return n
+  }
+  const str = (a: JArray, t: string) => (a == null ? 'null' : '[' + [...a.data].map((x: any) => (t === 'Z' ? (x ? 'true' : 'false') : t === 'C' ? String.fromCharCode(x) : t === 'F' || t === 'D' ? jnum(x) : x == null ? 'null' : jstr(vm, x))).join(', ') + ']')
+  for (const t of ['I', 'J', 'B', 'S', 'C', 'Z', 'F', 'D', 'Ljava/lang/Object;']) {
+    const A = '[' + t
+    out[`copyOf(${A}I)${A}`] = (v, s, [a, n]) => copy(a, 0, n)
+    out[`copyOfRange(${A}II)${A}`] = (v, s, [a, f, to]) => copy(a, f, to)
+    out[`fill(${A}${t})V`] = (v, s, [a, x]) => { (a.data as any).fill(x) }
+    out[`fill(${A}II${t})V`] = (v, s, [a, f, to, x]) => { (a.data as any).fill(x, f, to) }
+    out[`equals(${A}${A})Z`] = (v, s, [a, b]) => (a === b || (a && b && a.data.length === b.data.length && [...a.data].every((x: any, i: number) => (t.length > 1 ? jeq(vm, x, b.data[i]) : x === b.data[i]))) ? 1 : 0)
+    out[`hashCode(${A})I`] = (v, s, [a]) => { if (!a) return 0; let h = 1; for (const x of a.data as any) h = (Math.imul(31, h) + (typeof x === 'number' ? x | 0 : typeof x === 'bigint' ? Number(BigInt.asIntN(32, x ^ (x >> 32n))) : x == null ? 0 : vm.callVirtual(x, 'hashCode()I'))) | 0; return h }
+    out[`toString(${A})Ljava/lang/String;`] = (v, s, [a]) => str(a, t)
+    if (t.length === 1 && t !== 'Z') {
+      const cmp = t === 'J' ? (x: bigint, y: bigint) => (x < y ? -1 : x > y ? 1 : 0) : (x: number, y: number) => x - y
+      out[`sort(${A})V`] = (v, s, [a]) => { const xs = [...a.data].sort(cmp as any); for (let i = 0; i < xs.length; i++) (a.data as any)[i] = xs[i] }
+      out[`sort(${A}II)V`] = (v, s, [a, f, to]) => { const xs = [...a.data].slice(f, to).sort(cmp as any); for (let i = 0; i < xs.length; i++) (a.data as any)[f + i] = xs[i] }
+      out[`binarySearch(${A}${t})I`] = (v, s, [a, k]) => { let lo = 0, hi = a.data.length - 1; while (lo <= hi) { const m = (lo + hi) >> 1, c = (cmp as any)(a.data[m], k); if (c < 0) lo = m + 1; else if (c > 0) hi = m - 1; else return m } return -(lo + 1) }
+    }
+  }
+  const objCmp = (c: any) => (x: any, y: any) => (c ? vm.callVirtual(c, 'compare(Ljava/lang/Object;Ljava/lang/Object;)I', [x, y]) : vm.callVirtual(x, 'compareTo(Ljava/lang/Object;)I', [y]))
+  out['sort([Ljava/lang/Object;)V'] = (v, s, [a]) => { const xs = [...a.data].sort(objCmp(null)); xs.forEach((x, i) => (a.data[i] = x)) }
+  out['sort([Ljava/lang/Object;Ljava/util/Comparator;)V'] = (v, s, [a, c]) => { const xs = [...a.data].sort(objCmp(c)); xs.forEach((x, i) => (a.data[i] = x)) }
+  out['sort([Ljava/lang/Object;IILjava/util/Comparator;)V'] = (v, s, [a, f, to, c]) => { const xs = [...a.data].slice(f, to).sort(objCmp(c)); xs.forEach((x, i) => (a.data[f + i] = x)) }
+  out['deepToString([Ljava/lang/Object;)Ljava/lang/String;'] = (v, s, [a]) => (a == null ? 'null' : '[' + [...a.data].map((x: any) => (x instanceof JArray ? '[' + [...x.data].join(', ') + ']' : jstr(vm, x))).join(', ') + ']')
+  return out
 }
 
 export function jeq(vm: VM, a: any, b: any) {

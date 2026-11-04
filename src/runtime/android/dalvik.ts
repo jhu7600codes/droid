@@ -497,6 +497,8 @@ export class VM {
                 if (deadline === Infinity) v = scheduler.pump(t, e)
                 else { f.pc = pc + 3; t.block = e; t.blockValue = true; t.state = 'blocked'; return BLOCKED }
               }
+              // java strings are js strings: a String constructor's value replaces the blank object
+              if (typeof v === 'string' && target.name === '<init>' && self instanceof JObject && self.cls.name === 'Ljava/lang/String;') { for (let i = 0; i < r.length; i++) if (r[i] === self) r[i] = v }
               f.result = v
               pc += 3; break
             }

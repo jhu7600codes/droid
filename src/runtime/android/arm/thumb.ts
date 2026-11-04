@@ -220,6 +220,7 @@ function coproc(c: CPU, pc: number, h1: number, h2: number) {
 
 function exec32(c: CPU, pc: number, h1: number, h2: number) {
   const m = c.mem
+  if (h1 === 0xee1d && (h2 & 0x0fff) === 0x0f70) { c.r[h2 >>> 12] = c.tls; return } // mrc p15 c13: the tls pointer
   if ((h1 & 0xec00) === 0xec00 || (h1 & 0xff10) === 0xf900) return coproc(c, pc, h1, h2)
   const op1 = (h1 >>> 11) & 3, op2 = (h1 >>> 4) & 0x7f, op = (h2 >>> 15) & 1
   const rn = h1 & 0xf, rd = (h2 >>> 8) & 0xf, rt = (h2 >>> 12) & 0xf
@@ -249,14 +250,16 @@ function exec32(c: CPU, pc: number, h1: number, h2: number) {
       }
       if ((h1 & 0xffe0) === 0xe840) { // ldrex / strex
         const a = (c.r[rn] + (h2 & 0xff) * 4) >>> 0
-        if (load) c.r[rt] = m.r32(a); else { m.w32(a, c.r[rt]); c.r[rd] = 0 }
+        if (load) { c.excl = a; c.r[rt] = m.r32(a) }
+        else if (c.excl !== a) c.r[rd] = 1
+        else { m.w32(a, c.r[rt]); c.r[rd] = 0; c.excl = -1 }
         return
       }
       if ((h1 & 0xfff0) === 0xe8c0 || (h1 & 0xfff0) === 0xe8d0) { // ldrexb/h, strexb/h, ldrexd
         const k = (h2 >>> 4) & 0xf, a = c.r[rn]
-        if (load) c.r[rt] = k === 4 ? m.r8(a) : k === 5 ? m.r16(a) : m.r32(a)
-        else { if (k === 4) m.w8(a, c.r[rt]); else if (k === 5) m.w16(a, c.r[rt]); else m.w32(a, c.r[rt]); c.r[h2 & 0xf] = 0 }
-        if (k === 7 && load) c.r[rd] = m.r32(a + 4)
+        if (load) { c.excl = a; c.r[rt] = k === 4 ? m.r8(a) : k === 5 ? m.r16(a) : m.r32(a); if (k === 7) c.r[rd] = m.r32(a + 4) }
+        else if (c.excl !== a) c.r[h2 & 0xf] = 1
+        else { if (k === 4) m.w8(a, c.r[rt]); else if (k === 5) m.w16(a, c.r[rt]); else m.w32(a, c.r[rt]); if (k === 7) m.w32(a + 4, c.r[rd]); c.r[h2 & 0xf] = 0; c.excl = -1 }
         return
       }
       const imm = (h2 & 0xff) * 4

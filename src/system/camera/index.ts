@@ -44,22 +44,48 @@ function camera(ctx: ActivityContext): Activity {
   let tick = 0
   let last: string | null = null
 
+  // one camera request at a time: a newer start() wins, an older one drops its stream. phones need a
+  // moment to release the old camera before the other one opens, and some only open the front
+  // camera with an exact facingMode (or by device id)
+  let gen = 0
   async function start() {
+    const my = ++gen
     stop()
+    await new Promise((r) => setTimeout(r, 150))
+    if (my !== gen) return
+    const audio = mode === 'video'
+    const tries: MediaStreamConstraints[] = [
+      { video: { facingMode: { exact: facing }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio },
+      { video: { facingMode: facing }, audio },
+    ]
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } },
-        audio: mode === 'video',
-      })
-    } catch {
-      try { stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: mode === 'video' }) }
-      catch {
-        await dialog({ title: 'Camera error', message: 'Can\'t connect to the camera.' })
-        ctx.finish({ code: RESULT_CANCELED })
-        return
+      const want = facing === 'user' ? /front|user|face/i : /back|rear|environment/i
+      const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput')
+      const dev = cams.find((d) => want.test(d.label)) || (cams.length > 1 ? cams[facing === 'user' ? 0 : cams.length - 1] : null)
+      if (dev?.deviceId) tries.push({ video: { deviceId: { exact: dev.deviceId } }, audio })
+    } catch { /* no device list */ }
+    tries.push({ video: true, audio })
+    let got: MediaStream | null = null
+    for (const c of tries) {
+      try { got = await navigator.mediaDevices.getUserMedia(c); break }
+      catch (e) {
+        // the old camera may still be busy: wait a bit once and try the same thing again
+        if ((e as Error).name === 'NotReadableError' || (e as Error).name === 'AbortError') {
+          await new Promise((r) => setTimeout(r, 400))
+          try { got = await navigator.mediaDevices.getUserMedia(c); break } catch { /* next */ }
+        }
       }
+      if (my !== gen) return
     }
+    if (my !== gen) { got?.getTracks().forEach((t) => t.stop()); return }
+    if (!got) {
+      await dialog({ title: 'Camera error', message: 'Can\'t connect to the camera.' })
+      ctx.finish({ code: RESULT_CANCELED })
+      return
+    }
+    stream = got
     video.srcObject = stream
+    video.play?.().catch(() => {})
     video.classList.toggle('mirror', facing === 'user')
     const track = stream.getVideoTracks()[0]
     const caps = (track.getCapabilities?.() || {}) as any

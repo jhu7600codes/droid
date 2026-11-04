@@ -41,7 +41,7 @@ droid.on('create', async (saved: any) => {
     await Promise.all(list.filter((p) => /^(res\/|resources\.arsc|classes\d*\.dex|AndroidManifest\.xml)/.test(p)).map(async (p) => files.set(p, await bytes('apk/' + norm(p)))))
     // preload prefs so SharedPreferences can be synchronous
     const prefs = new Map<string, any>()
-    for (const k of await droid.prefs.keys()) if (k.startsWith('sp:')) prefs.set(k, await droid.prefs.get(k))
+    for (const k of await droid.prefs.keys()) if (k.startsWith('sp:') || k.startsWith('sp-type:')) prefs.set(k, await droid.prefs.get(k))
     const dev = await droid.device.info()
     const vm = new VM()
     registerJava(vm)
@@ -49,8 +49,11 @@ droid.on('create', async (saved: any) => {
     registerJavaIo(vm, vfs)
     registerReflect(vm)
     registerConcurrent(vm)
+    const manifestXml = files.get('AndroidManifest.xml') ? parseAxml(files.get('AndroidManifest.xml')!) : null
     const env = {
-      vfs,
+      vfs, manifestXml,
+      versionName: manifestXml ? attrString(manifestXml, 'versionName') || '1.0' : '1.0',
+      versionCode: manifestXml ? Number(attrString(manifestXml, 'versionCode')) || 1 : 1,
       pkg: map.pkg, files, res: parseArsc(files.get('resources.arsc')!), root, droid, prefs,
       density: dev.density, landscape: dev.orientation === 'landscape', lang: (dev.locale || 'en').slice(0, 2),
       intent: info.intent || {}, self: info.activity,
@@ -77,7 +80,7 @@ droid.on('create', async (saved: any) => {
       const file = `lib${name}.so`
       const b = libBytes.get(file)
       if (!b) throw vm.error('Ljava/lang/UnsatisfiedLinkError;', `dlopen failed: library "${file}" not found (only armeabi-v7a libraries run in Droid)`)
-      native ||= new Native(vm, vfs)
+      native ||= new Native(vm, vfs, map.pkg)
       native.load(file, b)
     }
     vm.natives = (m, self, args) => {

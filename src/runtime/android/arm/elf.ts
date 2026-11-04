@@ -3,7 +3,7 @@
 // runs init arrays. the runtime then looks up Java_* symbols and JNI_OnLoad.
 import type { CPU } from './cpu.ts'
 
-export interface Lib { name: string; base: number; exports: Map<string, number>; init: number[] }
+export interface Lib { name: string; base: number; exports: Map<string, number>; init: number[]; segments: { start: number; end: number; prot: string }[]; exidx: { start: number; count: number } | null }
 export type Resolver = (name: string, isData: boolean) => number
 
 export function loadElf(cpu: CPU, name: string, bytes: Uint8Array, resolve: Resolver, missing: Set<string>): Lib {
@@ -12,17 +12,16 @@ export function loadElf(cpu: CPU, name: string, bytes: Uint8Array, resolve: Reso
   if (bytes[4] !== 1) throw new Error(`${name}: only 32-bit libraries (armeabi-v7a) are supported`)
   if (d.getUint16(18, true) !== 40) throw new Error(`${name}: not an arm library`)
   const phoff = d.getUint32(28, true), phnum = d.getUint16(44, true), phentsize = d.getUint16(42, true)
-  const segs: { type: number; off: number; vaddr: number; filesz: number; memsz: number }[] = []
+  const segs: { type: number; off: number; vaddr: number; filesz: number; memsz: number; flags: number }[] = []
   for (let i = 0; i < phnum; i++) {
     const o = phoff + i * phentsize
-    segs.push({ type: d.getUint32(o, true), off: d.getUint32(o + 4, true), vaddr: d.getUint32(o + 8, true), filesz: d.getUint32(o + 16, true), memsz: d.getUint32(o + 20, true) })
+    segs.push({ type: d.getUint32(o, true), off: d.getUint32(o + 4, true), vaddr: d.getUint32(o + 8, true), filesz: d.getUint32(o + 16, true), memsz: d.getUint32(o + 20, true), flags: d.getUint32(o + 24, true) })
   }
   const loads = segs.filter((s) => s.type === 1)
   const size = Math.max(...loads.map((s) => s.vaddr + s.memsz))
   const mem = cpu.mem
-  const base = (mem.brk + 0xfff) & ~0xfff
-  mem.brk = (base + size + 0xfff) & ~0xfff
-  if (mem.brk > mem.heapTop) mem.heapTop = mem.brk
+  const base = mem.sbrk(((size + 0xfff) & ~0xfff) + 0x1000, 0x1000)
+  mem.u8.fill(0, base, base + size)
   for (const s of loads) mem.u8.set(bytes.subarray(s.off, s.off + s.filesz), base + s.vaddr)
 
   // dynamic section
@@ -92,5 +91,8 @@ export function loadElf(cpu: CPU, name: string, bytes: Uint8Array, resolve: Reso
   const init: number[] = []
   if (t(12)) init.push(base + t(12)!)
   if (t(25) != null) { const a = base + t(25)!; for (let i = 0; i < (t(27) ?? 0) / 4; i++) { const f = mem.r32(a + i * 4); if (f && f !== 0xffffffff) init.push(f) } }
-  return { name, base, exports, init }
+  const segments = loads.map((x) => ({ start: (base + x.vaddr) & ~0xfff, end: (base + x.vaddr + x.memsz + 0xfff) & ~0xfff, prot: `${x.flags & 4 ? 'r' : '-'}${x.flags & 2 ? 'w' : '-'}${x.flags & 1 ? 'x' : '-'}p` }))
+  const ex = segs.find((x) => x.type === 0x70000001) // PT_ARM_EXIDX
+  const exidx = ex ? { start: base + ex.vaddr, count: ex.memsz / 8 } : null
+  return { name, base, exports, init, segments, exidx }
 }

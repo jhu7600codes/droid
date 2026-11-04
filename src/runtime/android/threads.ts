@@ -41,11 +41,13 @@ export class Scheduler {
   private timer: ReturnType<typeof setTimeout> | null = null
   private ch: MessageChannel | null = typeof MessageChannel !== 'undefined' ? new MessageChannel() : null
   pumpDepth = 0
+  // called while code waits in place (signal delivery for threads that can't be switched away)
+  pollers = new Set<() => void>()
   slice = 8 // ms per task per turn
   budget = 12 // ms of task work per event loop turn, so input and drawing stay smooth
   onError: (t: Task, e: unknown) => void = (t, e) => console.error(`thread "${t.name}" died`, e)
 
-  constructor() { if (this.ch) this.ch.port1.onmessage = () => this.tick() }
+  constructor() { if (this.ch) { this.ch.port1.onmessage = () => this.tick(); (this.ch.port1 as any).unref?.(); (this.ch.port2 as any).unref?.() } }
 
   add(t: Task) { this.tasks.push(t); this.wake() }
   remove(t: Task) { const i = this.tasks.indexOf(t); if (i >= 0) this.tasks.splice(i, 1) }
@@ -107,6 +109,8 @@ export class Scheduler {
     const start = now()
     try {
       while (!b.ready()) {
+        for (const p of this.pollers) p()
+        if (b.ready()) break
         let ran = false
         for (const t of [...this.tasks]) {
           if (t === self || t.busy || t.state === 'done' || !this.ready(t)) continue
