@@ -38,7 +38,7 @@ function networks(ctx: ActivityContext): Activity {
       const s = saved()
       const near = scan()
       const out: Pref[] = [{ type: 'switch', title: 'On', key: 'wifi.on' }]
-      if (!location()) out.push({ type: 'item', title: 'Where are you?', summary: 'droid does not know your location. Turn on location or pick a pretend location.', onclick: () => open(pretend) })
+      if (!location()) out.push({ type: 'item', title: 'Where are you?', summary: 'Droid does not know your location. Turn on location or pick a pretend location.', onclick: () => open(pretend) })
       for (const n of near) {
         const connected = st.kind === 'drnt' && st.name === n.name
         out.push({ type: 'item', title: n.name, icon: ic(S, `ic_wifi_signal_${Math.max(1, n.level)}_dark`),
@@ -94,7 +94,7 @@ function networks(ctx: ActivityContext): Activity {
           if (d.button === 'ok' && m) save({ lat: +m[1], lon: +m[2] })
         } },
         { type: 'slider', title: 'Radius', min: 100, max: 20000, step: 100, get: () => own?.area.radius || 1000, set: (v) => save({ radius: v }), label: (v) => (v / 1000).toFixed(1) + ' km' },
-        { type: 'item', title: 'Outside your network, droid uses VTE mobile data.', disabled: true },
+        { type: 'item', title: 'Outside your network, Droid uses VTE mobile data.', disabled: true },
       ]
     })
     const save = (x: { name?: string; lat?: number; lon?: number; radius?: number }) => {

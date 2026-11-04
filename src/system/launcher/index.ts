@@ -248,7 +248,7 @@ function launcher(ctx: ActivityContext): Activity & { translucent: boolean; home
     swipe = null
     const bar = h('div.l-overview', {},
       h('div.l-ov-btn', { onclick: () => { close(); wm.start({ action: 'set-wallpaper' }) } }, h('img', { src: img(L3, 'ic_wallpaper') }), 'Wallpapers'),
-      h('div.l-ov-btn', { onclick: () => { close(); toast('Widgets come with a later droid version') } }, h('img', { src: img(L3, 'ic_widget') }), 'Widgets'),
+      h('div.l-ov-btn', { onclick: () => { close(); toast('Widgets come with a later Droid version') } }, h('img', { src: img(L3, 'ic_widget') }), 'Widgets'),
       h('div.l-ov-btn', { onclick: () => { close(); wm.start({ action: 'settings' }) } }, h('img', { src: img(L3, 'ic_setting') }), 'Settings'))
     root.classList.add('overview')
     root.append(bar)
@@ -283,7 +283,7 @@ function launcher(ctx: ActivityContext): Activity & { translucent: boolean; home
 function allApps(ctx: ActivityContext, onAdd: (c: Cell) => void, _layout: () => Layout) {
   const el = h('div.l-drawer')
   const tabs = h('div.l-tabs', {}, h('div.l-tab.selected', {}, 'Apps'), h('div.l-tab', {}, 'Widgets'))
-  tabs.lastChild!.addEventListener('click', () => toast('Widgets come with a later droid version'))
+  tabs.lastChild!.addEventListener('click', () => toast('Widgets come with a later Droid version'))
   const grid = h('div.l-grid')
   // the start menu (desktop mode) has a search field on top
   const q = h('input.h-edit.l-search-in', { placeholder: 'Search apps', oninput: () => filter() }) as HTMLInputElement

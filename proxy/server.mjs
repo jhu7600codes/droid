@@ -13,7 +13,7 @@ import { pipeline } from 'node:stream/promises'
 import { Agent, fetch } from 'undici'
 import { WebSocketServer, WebSocket } from 'ws'
 import { config, validToken, newToken, allowRequest, countBytes, checkUrl, safeLookup } from './guard.mjs'
-import { toProxy, fromProxy, rewriteHtml, rewriteCss, shimFor } from './deno/rewrite.mjs'
+import { toProxy, fromProxy, rewriteHtml, rewriteCss, shimFor, downloadName, downloadPage } from './deno/rewrite.mjs'
 
 // every outgoing connection goes through safeLookup (blocks private addresses after dns too).
 // tls to the origin is always verified (undici default, never turned off)
@@ -172,6 +172,12 @@ async function handlePage(req, res, u) {
       return res.end()
     }
     const type = r.headers.get('content-type') || ''
+    const dl = isDoc && r.ok ? downloadName(p.url, r.headers) : null
+    if (dl) {
+      r.body?.cancel()
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+      return res.end(downloadPage(p.url, dl))
+    }
     const h = { 'referrer-policy': 'no-referrer' }
     r.headers.forEach((v, k) => { if (!DROP_RESPONSE.has(k) && k !== 'location') h[k] = v })
     if (/text\/html|application\/xhtml/.test(type)) {

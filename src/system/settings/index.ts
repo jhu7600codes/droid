@@ -40,25 +40,25 @@ function settingsApp(ctx: ActivityContext): Activity {
 
   const more = sub('More…', () => [
     { type: 'switch', title: 'Airplane mode', key: 'airplane' },
-    { type: 'item', title: 'droid proxy', summary: () => (settings.get('proxy.token') ? 'Connected' : 'Not connected yet') + ' · change it in Developer options' },
+    { type: 'item', title: 'Droid proxy', summary: () => (settings.get('proxy.token') ? 'Connected' : 'Not connected yet') + ' · change it in Developer options' },
   ])
 
   // developer options: unlocked by tapping the build number 7 times (like android)
   const developer = sub('Developer options', () => [
     { type: 'switch', title: 'Developer options', key: 'dev.enabled', summary: 'Turning this off hides the page again' },
-    { type: 'header', title: 'droid proxy' },
+    { type: 'header', title: 'Droid proxy' },
     { type: 'item', title: 'Proxy address', summary: () => (settings.get('proxy.url') as string) || 'Not set', onclick: async () => {
-      const r = await dialog({ title: 'droid proxy', kind: 'input', value: settings.get('proxy.url') as string, placeholder: 'https://proxy.example.com' })
-      if (r.button === 'ok') { settings.set('proxy.url', (r.value || '').trim()); settings.set('proxy.token', ''); ensureProxyToken().then(() => toast(settings.get('proxy.token') ? 'Connected to the droid proxy' : 'Could not reach the proxy')) }
+      const r = await dialog({ title: 'Droid proxy', kind: 'input', value: settings.get('proxy.url') as string, placeholder: 'https://proxy.example.com' })
+      if (r.button === 'ok') { settings.set('proxy.url', (r.value || '').trim()); settings.set('proxy.token', ''); ensureProxyToken().then(() => toast(settings.get('proxy.token') ? 'Connected to the Droid proxy' : 'Could not reach the proxy')) }
     } },
     { type: 'item', title: 'Proxy token', summary: () => (settings.get('proxy.token') ? 'Set' : 'Not set'), onclick: async () => {
       const r = await dialog({ title: 'Proxy token', kind: 'input', placeholder: 'token from your proxy', value: '' })
       if (r.button === 'ok') settings.set('proxy.token', (r.value || '').trim())
     } },
-    { type: 'item', title: 'Use the default proxy', summary: 'https://sweet-moose-8098.vedeo.deno.net', onclick: () => { settings.set('proxy.url', 'https://sweet-moose-8098.vedeo.deno.net'); settings.set('proxy.token', ''); ensureProxyToken().then(() => toast(settings.get('proxy.token') ? 'Connected to the droid proxy' : 'Could not reach the proxy')) } },
-    { type: 'header', title: 'danen' },
-    { type: 'item', title: 'danen backend', summary: () => (settings.get('danen.backend') as string) || 'Not set', onclick: async () => {
-      const d = await dialog({ title: 'danen backend', kind: 'input', value: (settings.get('danen.backend') as string) || '', placeholder: 'https://<project>.supabase.co/functions/v1/danen' })
+    { type: 'item', title: 'Use the default proxy', summary: 'https://sweet-moose-8098.vedeo.deno.net', onclick: () => { settings.set('proxy.url', 'https://sweet-moose-8098.vedeo.deno.net'); settings.set('proxy.token', ''); ensureProxyToken().then(() => toast(settings.get('proxy.token') ? 'Connected to the Droid proxy' : 'Could not reach the proxy')) } },
+    { type: 'header', title: 'Danen' },
+    { type: 'item', title: 'Danen backend', summary: () => (settings.get('danen.backend') as string) || 'Not set', onclick: async () => {
+      const d = await dialog({ title: 'Danen backend', kind: 'input', value: (settings.get('danen.backend') as string) || '', placeholder: 'https://<project>.supabase.co/functions/v1/danen' })
       if (d.button === 'ok') settings.set('danen.backend', (d.value || '').trim())
     } },
     { type: 'header', title: 'Drawing' },
@@ -67,12 +67,12 @@ function settingsApp(ctx: ActivityContext): Activity {
     { type: 'list', title: 'Animation scale', options: [['1', '1x'], ['0.5', '.5x'], ['2', '2x'], ['5', '5x'], ['0', 'Off']], get: () => String(settings.get('dev.anim') ?? 1), set: (v) => settings.set('dev.anim', +v) },
     { type: 'header', title: 'Apps' },
     { type: 'check', title: 'Don\'t keep activities', key: 'dev.nokeep', summary: 'Destroy every activity as soon as you leave it' },
-    { type: 'item', title: 'Reinstall sample apps', onclick: () => { settings.set('samples.installed', false); toast('Restart droid to reinstall them') } },
+    { type: 'item', title: 'Reinstall sample apps', onclick: () => { settings.set('samples.installed', false); toast('Restart Droid to reinstall them') } },
   ])
 
   const bluetooth = sub('Bluetooth', () => [
     { type: 'switch', title: 'Bluetooth', key: 'bt.on' },
-    { type: 'item', title: 'droid', summary: () => (settings.get('bt.on') ? 'Visible to nearby devices (pretend)' : 'Turn on Bluetooth to see devices') },
+    { type: 'item', title: 'Droid', summary: () => (settings.get('bt.on') ? 'Visible to nearby devices (pretend)' : 'Turn on Bluetooth to see devices') },
   ])
 
   const sound = sub('Sound', () => [
@@ -118,7 +118,7 @@ function settingsApp(ctx: ActivityContext): Activity {
     const r = prefs(p.content, () => [
       { type: 'header', title: 'Device storage' },
       { type: 'item', title: 'Used', summary: `${fmtBytes(info.used)} of ${fmtBytes(info.quota)}` },
-      { type: 'item', title: 'Kept safe', summary: info.persisted ? 'The browser will not delete droid\'s data' : 'The browser may clear droid\'s data when space is low' },
+      { type: 'item', title: 'Kept safe', summary: info.persisted ? 'The browser will not delete Droid\'s data' : 'The browser may clear Droid\'s data when space is low' },
       { type: 'header', title: 'Offline' },
       { type: 'item', title: 'Download essential', summary: `System and its apps, about ${fmtBytes(est.essential)}`, onclick: () => dl('essential') },
       { type: 'item', title: 'Download full', summary: `Also wallpapers, sounds and featured apps, about ${fmtBytes(est.full)}`, onclick: () => dl('full') },
@@ -145,7 +145,7 @@ function settingsApp(ctx: ActivityContext): Activity {
   }
 
   const battery = sub('Battery', () => [
-    { type: 'item', title: 'Battery', summary: 'Shown from this device\'s real battery when the browser tells droid' },
+    { type: 'item', title: 'Battery', summary: 'Shown from this device\'s real battery when the browser tells Droid' },
     { type: 'check', title: 'Battery saver', key: 'battery.saver', summary: 'Turns off animations' },
   ], ic(S, 'ic_settings_battery'))
 
@@ -221,7 +221,7 @@ function settingsApp(ctx: ActivityContext): Activity {
     for (const role of ['launcher', 'browser', 'store', 'wallpaper', 'ime']) {
       const opts = [...kernel.apps.values()].filter((a) => a.manifest.role === role)
       if (!opts.length) continue
-      out.push({ type: 'list', title: role[0].toUpperCase() + role.slice(1), options: opts.map((a) => [a.manifest.id, a.manifest.name]), get: () => kernel.role(role)?.manifest.id || '', set: (v) => { kernel.setRole(role, v); if (role === 'launcher') toast('Restart droid to switch launcher') } })
+      out.push({ type: 'list', title: role[0].toUpperCase() + role.slice(1), options: opts.map((a) => [a.manifest.id, a.manifest.name]), get: () => kernel.role(role)?.manifest.id || '', set: (v) => { kernel.setRole(role, v); if (role === 'launcher') toast('Restart Droid to switch launcher') } })
     }
     return out
   })
@@ -256,20 +256,20 @@ function settingsApp(ctx: ActivityContext): Activity {
       if (r.button === 'ok') settings.set('owner.name', r.value || '')
     } },
     { type: 'header', title: 'Device administration' },
-    { type: 'item', title: 'Unknown sources', summary: 'droid always lets you install .dpk files from anywhere' },
+    { type: 'item', title: 'Unknown sources', summary: 'Droid always lets you install .dpk files from anywhere' },
   ], ic(S, 'ic_settings_security'))
 
   const language: Build = sub('Language & input', () => [
     { type: 'list', title: 'Language', options: [['en', 'English (United States)'], ['ru', 'Русский'], ['de', 'Deutsch'], ['es', 'Español'], ['fr', 'Français'], ['uk', 'Українська'], ['pl', 'Polski'], ['ja', '日本語'], ['zh', '中文']], key: 'locale' },
     { type: 'header', title: 'Keyboard & input methods' },
-    { type: 'item', title: 'Default', summary: 'Keyboard of this device (droid keyboard comes with an update)' },
+    { type: 'item', title: 'Default', summary: 'Keyboard of this device (Droid keyboard comes with an update)' },
   ], ic(S, 'ic_settings_language'))
 
   const backup: Build = sub('Backup & reset', () => [
-    { type: 'check', title: 'Back up my data', key: 'danen.sync', summary: 'Back up settings and app data to your danen account' },
+    { type: 'check', title: 'Back up my data', key: 'danen.sync', summary: 'Back up settings and app data to your Danen account' },
     { type: 'header', title: 'Personal data' },
-    { type: 'item', title: 'Factory data reset', summary: 'Erases all data on droid', onclick: async () => {
-      const r = await dialog({ title: 'Factory data reset', message: 'This will erase all data: your danen account on this device, settings, installed apps and their data, photos and files.', cancel: 'Cancel', ok: 'Erase everything' })
+    { type: 'item', title: 'Factory data reset', summary: 'Erases all data on Droid', onclick: async () => {
+      const r = await dialog({ title: 'Factory data reset', message: 'This will erase all data: your Danen account on this device, settings, installed apps and their data, photos and files.', cancel: 'Cancel', ok: 'Erase everything' })
       if (r.button !== 'ok') return
       settings.reset()
       try { localStorage.clear() } catch { /* ignore */ }
@@ -283,12 +283,12 @@ function settingsApp(ctx: ActivityContext): Activity {
     const p = page(el, { title: 'Danen account', icon: 'assets/brand/droid-d-icon.svg', up: pop })
     const r = prefs(p.content, () => {
       const a = account.get()
-      const backend: Pref = { type: 'item', title: 'danen backend', summary: () => (settings.get('danen.backend') as string) || 'Not set (accounts stay on this device)', onclick: async () => {
-        const d = await dialog({ title: 'danen backend', kind: 'input', value: (settings.get('danen.backend') as string) || '', placeholder: 'https://<project>.supabase.co/functions/v1/danen' })
+      const backend: Pref = { type: 'item', title: 'Danen backend', summary: () => (settings.get('danen.backend') as string) || 'Not set (accounts stay on this device)', onclick: async () => {
+        const d = await dialog({ title: 'Danen backend', kind: 'input', value: (settings.get('danen.backend') as string) || '', placeholder: 'https://<project>.supabase.co/functions/v1/danen' })
         if (d.button === 'ok') settings.set('danen.backend', (d.value || '').trim())
       } }
       if (!a) return [
-        { type: 'item', title: 'Add a danen account', summary: 'Sign in or create one', onclick: () => wm.start({ action: 'danen-account' }) },
+        { type: 'item', title: 'Add a Danen account', summary: 'Sign in or create one', onclick: () => wm.start({ action: 'danen-account' }) },
         ...(settings.get('dev.enabled') ? [backend] : []),
       ]
       return [
@@ -296,23 +296,23 @@ function settingsApp(ctx: ActivityContext): Activity {
         { type: 'check', title: 'Sync settings and app data', key: 'danen.sync' },
         { type: 'item', title: 'Sync now', summary: () => { const t = settings.get('danen.lastSync') as number; return t ? 'Last synced ' + new Date(t).toLocaleString() : 'Never synced' }, onclick: () => window.dispatchEvent(new Event('danen:sync-now')) },
         { type: 'item', title: 'Push notifications', summary: () => (settings.get('danen.push') ? 'On for this device' : 'Off'), onclick: async () => {
-          if (!a.remote) return toast('Push needs a danen account on the backend')
+          if (!a.remote) return toast('Push needs a Danen account on the backend')
           const { subscribe } = await import('../../shell/push')
           const perm = await Notification.requestPermission?.().catch(() => 'denied')
-          if (perm !== 'granted') return toast('Notifications are blocked for droid in this browser')
+          if (perm !== 'granted') return toast('Notifications are blocked for Droid in this browser')
           const r = await subscribe('droid.services').catch(() => null)
           settings.set('danen.push', !!r)
           toast(r ? 'Push notifications are on' : 'This browser can\'t do push')
         } },
         { type: 'item', title: 'Send a test push', onclick: async () => {
           const { danenApi } = await import('../../shell/danen-remote')
-          const r = await danenApi.push(null, 'Hello from danen', 'Push notifications work on this device.').catch((e) => ({ error: e.message }))
+          const r = await danenApi.push(null, 'Hello from Danen', 'Push notifications work on this device.').catch((e) => ({ error: e.message }))
           toast((r as any).error ? 'Failed: ' + (r as any).error : `Sent to ${(r as any).sent} device${(r as any).sent === 1 ? '' : 's'}`)
         } },
         { type: 'check', title: 'Check for app updates', get: () => settings.get('danen.updates') !== false, set: (v) => settings.set('danen.updates', v) },
         ...(settings.get('dev.enabled') ? [backend] : []),
         { type: 'item', title: 'Remove account', onclick: async () => {
-          const d = await dialog({ title: 'Remove account?', message: 'Removing this account deletes it from this device. It stays on the danen backend if it was synced.', cancel: 'Cancel', ok: 'Remove' })
+          const d = await dialog({ title: 'Remove account?', message: 'Removing this account deletes it from this device. It stays on the Danen backend if it was synced.', cancel: 'Cancel', ok: 'Remove' })
           if (d.button === 'ok') { account.signOut(); r.render() }
         } },
       ]
@@ -336,15 +336,21 @@ function settingsApp(ctx: ActivityContext): Activity {
     let ver = '…'
     fetch('version.json').then((r) => r.json()).then((v) => { ver = v.version; r.render() }).catch(() => {})
     let taps = 0
+    let verTaps = 0, lastVer = 0
     const r = prefs(p.content, () => [
       { type: 'item', title: 'System updates', summary: settings.get('ota.ready') ? 'An update is ready. Tap to restart and install.' : 'Updates download in the background', onclick: () => open(update) },
       { type: 'item', title: 'Status', summary: () => { const s = netState(); return `Network: ${s.kind === 'none' ? 'none' : s.name} · ${navigator.onLine ? 'online' : 'offline'}` } },
       { type: 'item', title: 'Legal information', summary: 'Open source licenses', onclick: () => open(licensesPage) },
-      { type: 'item', title: 'Model number', summary: 'droid (by danen)' },
-      { type: 'item', title: 'droid version', summary: '4.4' },
+      { type: 'item', title: 'Model number', summary: 'Droid (by Danen)' },
+      { type: 'item', title: 'Droid version', summary: '4.4', onclick: () => {
+        const now = Date.now()
+        verTaps = now - lastVer < 600 ? verTaps + 1 : 1
+        lastVer = now
+        if (verTaps >= 5) { verTaps = 0; import('./egg').then((m) => m.easterEgg()) }
+      } },
       { type: 'item', title: 'API level', summary: '19' },
-      { type: 'item', title: 'dpk spec', summary: '0.1' },
-      { type: 'item', title: 'Kernel version', summary: 'danen shell, running in ' + (navigator.userAgent.match(/(Firefox|Chrome|Safari)\/[\d.]+/)?.[0] || 'a browser') },
+      { type: 'item', title: 'DPK spec', summary: '0.1' },
+      { type: 'item', title: 'Kernel version', summary: 'Danen shell, running in ' + (navigator.userAgent.match(/(Firefox|Chrome|Safari)\/[\d.]+/)?.[0] || 'a browser') },
       { type: 'item', title: 'Build number', summary: () => `KTU84Q.droid.${ver}`, onclick: () => {
         if (settings.get('dev.enabled')) return toast('No need, you are already a developer.')
         taps++
@@ -395,9 +401,9 @@ function settingsApp(ctx: ActivityContext): Activity {
     const draw = async () => {
       box.innerHTML = ''
       const mine = await fetch('version.json').then((r) => r.json()).catch(() => null)
-      box.append(h('img.upd-logo', { src: 'assets/brand/droid-logo.svg' }), h('div.upd-ver', {}, 'droid 4.4'), h('div.upd-sub', {}, mine ? `build ${mine.version}` : ''))
+      box.append(h('img.upd-logo', { src: 'assets/brand/droid-logo.svg' }), h('div.upd-ver', {}, 'Droid 4.4'), h('div.upd-sub', {}, mine ? `build ${mine.version}` : ''))
       if (settings.get('ota.ready')) {
-        box.append(h('div.upd-msg', {}, 'A system update has been downloaded. droid will restart to install it.'), pressable(h('button.h-btn', { onclick: () => applyUpdate() }, 'Restart & install')))
+        box.append(h('div.upd-msg', {}, 'A system update has been downloaded. Droid will restart to install it.'), pressable(h('button.h-btn', { onclick: () => applyUpdate() }, 'Restart & install')))
         return
       }
       const status = h('div.upd-msg', {}, navigator.onLine ? 'Checking for updates…' : 'You are offline. Updates are checked when you are online.')

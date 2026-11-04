@@ -21,7 +21,7 @@ export function licensesPage(el: HTMLElement, pop: () => void) {
     list.append(li, h('li.h-divider'))
   }
   item('droid', 'MIT license', 'legal/LICENSE')
-  item('NOTICE', 'what droid includes and from where', 'legal/NOTICE')
+  item('NOTICE', 'what Droid includes and from where', 'legal/NOTICE')
   item('Apache License 2.0', 'license of the android open source project parts', 'legal/LICENSE-APACHE-2.0')
   item('Roboto', 'fonts, apache 2.0', 'assets/aosp/fonts/NOTICE')
   fetch('assets/aosp/manifest.json').then((r) => r.json()).then((m) => {

@@ -31,7 +31,7 @@ function installer(ctx: ActivityContext): Activity {
       let buf = await (await fetch(src)).arrayBuffer()
       // an old android apk: convert it to a dpk first (spec section 10)
       if (listZip(buf).some((e) => e.path === 'AndroidManifest.xml') && !listZip(buf).some((e) => e.path === 'manifest.json')) {
-        const stop = progress('Converting the apk…')
+        const stop = progress('Converting the APK…')
         try {
           const { convertApk } = await import('../../runtime/android/convert')
           const runtime = await (await fetch('runtime/android-runtime.js')).text()
@@ -54,7 +54,7 @@ function installer(ctx: ActivityContext): Activity {
     const perms = (m.permissions || []).map(permName)
     const q = { install: 'Do you want to install this application?', update: 'Do you want to install an update to this existing application? Your existing data will not be lost.', same: 'This version is already installed. Install it again?', downgrade: 'A newer version is installed. Replace it with this older version?' }[kind]
     body.append(h('div.pi-q', {}, q), h('div.pi-meta', {}, `Version ${m.version}${m.author ? ' · ' + m.author : ''} · ${(p.size / 1024).toFixed(0)} KB`))
-    if (converted) body.append(h('div.pi-meta', {}, `Converted from an android apk (${(m as any).runtime} runtime). ${converted.join('. ')}`))
+    if (converted) body.append(h('div.pi-meta', {}, `Converted from an Android APK (${(m as any).runtime} runtime). ${converted.join('. ')}`))
     if (perms.length) {
       body.append(h('div.h-section', {}, 'It will get access to'))
       for (const pm of perms) body.append(h('div.pi-perm', {}, h('span.pi-dot'), h('span', {}, permissionText(pm))))

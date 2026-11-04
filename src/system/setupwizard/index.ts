@@ -35,7 +35,7 @@ function wizard(ctx: ActivityContext): Activity {
         })
         const start = pressable(h('div.wiz-start', {}, h('span', {}, 'Start'), h('span.wiz-arrow', {}, '▶')))
         start.addEventListener('click', next)
-        body.append(h('img.wiz-logo', { src: brand('droid-d-icon') }), h('div.wiz-hello', {}, 'Welcome'), h('div.wiz-sub', {}, 'droid 4.4 by danen'), lang, h('div', { style: { flex: '1' } }), start)
+        body.append(h('img.wiz-logo', { src: brand('droid-d-icon') }), h('div.wiz-hello', {}, 'Welcome'), h('div.wiz-sub', {}, 'Droid 4.4 by Danen'), lang, h('div', { style: { flex: '1' } }), start)
       },
     },
     {
@@ -69,7 +69,7 @@ function wizard(ctx: ActivityContext): Activity {
           if (r.button === 'item') { reg = regs[r.index!]; settings.set('net.region', reg.r.id); regBtn.textContent = reg.path; draw() }
         })
         draw()
-        body.append(h('div.wiz-text', {}, 'DR-Nt networks are droid\'s pretend wi-fi. They show up in the status bar when you are inside their area. Your real connection is not changed.'), regBtn, list)
+        body.append(h('div.wiz-text', {}, 'DR-Nt networks are Droid\'s pretend wi-fi. They show up in the status bar when you are inside their area. Your real connection is not changed.'), regBtn, list)
       },
     },
     {
@@ -80,12 +80,12 @@ function wizard(ctx: ActivityContext): Activity {
           body.innerHTML = ''
           if (mode === 'choose') {
             body.append(
-              h('div.wiz-text', {}, 'A danen account keeps your droid settings and apps in sync. It is optional: droid works fully without one.'),
+              h('div.wiz-text', {}, 'A Danen account keeps your Droid settings and apps in sync. It is optional: Droid works fully without one.'),
               h('div.wiz-choices', {},
-                pressable(h('button.h-btn', { onclick: () => { mode = 'create'; draw() } }, 'Create a danen account')),
+                pressable(h('button.h-btn', { onclick: () => { mode = 'create'; draw() } }, 'Create a Danen account')),
                 pressable(h('button.h-btn', { onclick: () => { mode = 'signin'; draw() } }, 'Sign in')),
                 pressable(h('button.h-btn-borderless.wiz-notnow', { onclick: next }, 'Not now'))),
-              h('div.wiz-fine', {}, 'danen never asks for a google password. Only a nickname, a username and a password are stored. ', h('a.wiz-link', { onclick: () => privacy() }, 'Privacy')),
+              h('div.wiz-fine', {}, 'Danen never asks for a google password. Only a nickname, a username and a password are stored. ', h('a.wiz-link', { onclick: () => privacy() }, 'Privacy')),
             )
             return
           }
@@ -103,7 +103,7 @@ function wizard(ctx: ActivityContext): Activity {
               next()
             } catch (e) { err.textContent = (e as Error).message }
           })
-          body.append(h('div.wiz-text', {}, mode === 'create' ? 'Create a danen account' : 'Sign in with your danen account'),
+          body.append(h('div.wiz-text', {}, mode === 'create' ? 'Create a Danen account' : 'Sign in with your Danen account'),
             mode === 'create' ? nick : '', user, pass, err, h('div.wiz-row', {}, pressable(h('button.h-btn-borderless', { onclick: () => { mode = 'choose'; draw() } }, 'Back')), go))
         }
         draw()
@@ -119,7 +119,7 @@ function wizard(ctx: ActivityContext): Activity {
         const t = setInterval(tick, 5000)
         body.addEventListener('wiz:leave', () => clearInterval(t))
         const sw = h('label.h-switch', {}, h('input', { type: 'checkbox', checked: settings.get('time.24h'), onchange: (e: Event) => { settings.set('time.24h', (e.target as HTMLInputElement).checked); tick() } }), h('span.track', {}, h('span.thumb', {}, '')))
-        body.append(h('div.wiz-text', {}, 'droid uses the time of this device.'), now,
+        body.append(h('div.wiz-text', {}, 'Droid uses the time of this device.'), now,
           h('ul.h-list', {}, h('li.h-item', {}, h('div.lines', {}, h('span.title', {}, 'Time zone'), h('span.summary', {}, tz))), h('li.h-divider'),
             h('li.h-item', {}, h('div.lines', {}, h('span.title', {}, 'Use 24-hour format')), sw)))
       },
@@ -132,9 +132,9 @@ function wizard(ctx: ActivityContext): Activity {
           return h('li.h-item', {}, h('div.lines', {}, h('span.title', {}, title), h('span.summary', { style: { whiteSpace: 'normal' } }, text)), c)
         }
         body.append(h('ul.h-list', {},
-          row('danen.sync', 'Back up and sync', 'Keep settings and app data in your danen account. Needs an account.'), h('li.h-divider'),
-          row('location.on', 'Location', 'Lets droid use this browser\'s location for DR-Nt networks. Your location never leaves this device.'), h('li.h-divider'),
-          row('danen.updates', 'App updates', 'Check the danen store for updates to installed apps.')))
+          row('danen.sync', 'Back up and sync', 'Keep settings and app data in your Danen account. Needs an account.'), h('li.h-divider'),
+          row('location.on', 'Location', 'Lets Droid use this browser\'s location for DR-Nt networks. Your location never leaves this device.'), h('li.h-divider'),
+          row('danen.updates', 'App updates', 'Check the Danen store for updates to installed apps.')))
       },
     },
     {
@@ -154,7 +154,7 @@ function wizard(ctx: ActivityContext): Activity {
           if (!navigator.geolocation) return toast('Location is not available')
           navigator.geolocation.getCurrentPosition((p) => { lat.value = p.coords.latitude.toFixed(5); lon.value = p.coords.longitude.toFixed(5) }, () => toast('Location denied, type it in instead'))
         })
-        body.append(h('div.wiz-text', {}, 'Create your own DR-Nt network. When you are outside it, droid falls back to VTE mobile data.'), name, h('div.wiz-row', {}, lat, lon), here, radius, rlabel)
+        body.append(h('div.wiz-text', {}, 'Create your own DR-Nt network. When you are outside it, Droid falls back to VTE mobile data.'), name, h('div.wiz-row', {}, lat, lon), here, radius, rlabel)
         return () => {
           if (!lat.value || !lon.value) return true // optional
           const def: NetDef = { id: 'own', name: name.value || 'my-net', kind: 'drnt', area: { lat: +lat.value, lon: +lon.value, radius: +radius.value } }
@@ -200,13 +200,13 @@ function wizard(ctx: ActivityContext): Activity {
           btn.textContent = 'Pause'
           prog.style.display = 'block'
           await offline.download(pick, (done, total) => { bar.style.width = `${(done / total) * 100}%`; status.textContent = `${done} of ${total}` })
-          if (running) { status.textContent = 'Done. droid works offline now.'; btn.textContent = 'Downloaded'; running = false }
+          if (running) { status.textContent = 'Done. Droid works offline now.'; btn.textContent = 'Downloaded'; running = false }
         })
         const ios = /iphone|ipad|ipod/i.test(navigator.userAgent)
-        body.append(h('div.wiz-text', {}, 'Download droid so it works with no network.'),
+        body.append(h('div.wiz-text', {}, 'Download Droid so it works with no network.'),
           h('ul.h-list', {}, opt('essential', 'Essential', 'The system and its apps.'), h('li.h-divider'), opt('full', 'Full', 'Also wallpapers, sounds and featured apps.')),
           size, btn, prog, status,
-          h('div.wiz-fine', {}, ios ? 'Tip: tap Share, then "Add to Home Screen". Browsers may delete data of sites that are not on the home screen.' : 'Tip: install droid from the browser menu ("Install app" or "Add to Home screen") so it is kept safe.'))
+          h('div.wiz-fine', {}, ios ? 'Tip: tap Share, then "Add to Home Screen". Browsers may delete data of sites that are not on the home screen.' : 'Tip: install Droid from the browser menu ("Install app" or "Add to Home screen") so it is kept safe.'))
       },
     },
     {
@@ -214,13 +214,13 @@ function wizard(ctx: ActivityContext): Activity {
       render(body) {
         const fin = pressable(h('div.wiz-start', {}, h('span', {}, 'Finish'), h('span.wiz-arrow', {}, '▶')))
         fin.addEventListener('click', () => { settings.set('setup.done', true); ctx.finish() })
-        body.append(h('img.wiz-logo', { src: brand('droid-logo') }), h('div.wiz-hello', {}, 'You\'re all set'), h('div.wiz-sub', {}, settings.get('owner.name') ? `Enjoy droid, ${settings.get('owner.name')}.` : 'Enjoy droid.'), h('div', { style: { flex: '1' } }), fin)
+        body.append(h('img.wiz-logo', { src: brand('droid-logo') }), h('div.wiz-hello', {}, 'You\'re all set'), h('div.wiz-sub', {}, settings.get('owner.name') ? `Enjoy Droid, ${settings.get('owner.name')}.` : 'Enjoy Droid.'), h('div', { style: { flex: '1' } }), fin)
       },
     },
   ]
 
   function privacy() {
-    dialog({ title: 'Privacy', message: 'Without an account nothing leaves this device. With a danen account only your nickname, your username, a password hash and (if you turn on sync) your settings and app data are stored on the danen backend. No real name, no birthdate, no phone number, no tracking, no ads.' })
+    dialog({ title: 'Privacy', message: 'Without an account nothing leaves this device. With a Danen account only your nickname, your username, a password hash and (if you turn on sync) your settings and app data are stored on the Danen backend. No real name, no birthdate, no phone number, no tracking, no ads.' })
   }
 
   function show(n: number, dir = 1) {

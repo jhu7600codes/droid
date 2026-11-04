@@ -78,7 +78,7 @@ function clock(ctx: ActivityContext): Activity {
         draw()
       })
       draw()
-      body.append(list, add, h('div.dc-note', {}, 'Alarms ring while droid is open in the browser.'))
+      body.append(list, add, h('div.dc-note', {}, 'Alarms ring while Droid is open in the browser.'))
     },
     clock() {
       const t = h('div.dc-big')

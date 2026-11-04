@@ -42,12 +42,12 @@ async function rawFetch(pkg: string, url: string, init: { method: string; header
     // cors refused (or offline): try the proxy
     await ensureProxyToken()
     const p = proxyConfig()
-    if (!p) throw new DpkError('denied', 'the site refused a direct request and no droid proxy is set (settings > more > droid proxy)')
+    if (!p) throw new DpkError('denied', 'the site refused a direct request and no Droid proxy is set (settings > more > Droid proxy)')
     const headers = { ...init.headers, 'x-droid-token': p.token, 'x-droid-app': pkg }
     try {
       return await fetch(`${p.url}/fetch?url=${encodeURIComponent(url)}`, { ...opts, headers })
     } catch {
-      throw new DpkError('offline', 'the droid proxy is not reachable')
+      throw new DpkError('offline', 'the Droid proxy is not reachable')
     }
   }
 }

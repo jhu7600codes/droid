@@ -73,7 +73,7 @@ function browser(ctx: ActivityContext): Activity {
     if (!p) return null
     if (t.sid) return t.sid
     const r = await fetch(p.url + '/session', { method: 'POST', headers: { 'x-droid-token': p.token }, body: JSON.stringify({ app: 'droid.browser', tab: String(t.id) + (t.incognito ? '-i' : '') }) })
-    if (!r.ok) throw new Error(r.status === 401 ? 'The droid proxy refused the token. Check Settings > More > droid proxy.' : 'The droid proxy is not working.')
+    if (!r.ok) throw new Error(r.status === 401 ? 'The Droid proxy refused the token. Check Settings > More > Droid proxy.' : 'The Droid proxy is not working.')
     t.sid = (await r.json()).sid
     return t.sid
   }
@@ -100,7 +100,7 @@ function browser(ctx: ActivityContext): Activity {
         t.frame.src = target
         // no proxy: we can't tell if the site refused to be framed, so say how to get out
         hint.innerHTML = ''
-        hint.append(h('span', {}, 'Page blank? This site may refuse to show inside droid.'), pressable(h('button.h-btn-borderless', { onclick: () => realTab(t.url) }, 'Open in real tab')))
+        hint.append(h('span', {}, 'Page blank? This site may refuse to show inside Droid.'), pressable(h('button.h-btn-borderless', { onclick: () => realTab(t.url) }, 'Open in real tab')))
         hint.classList.add('on')
         setTimeout(() => setLoading(t, false), 4000)
       }
@@ -142,7 +142,7 @@ function browser(ctx: ActivityContext): Activity {
       <p style="color:#666">Suggestions:<br>• Make sure you have a data connection<br>• Reload this webpage later<br>• Check the address you entered<br>• Open it in a real browser tab</p></body>`
     if (t === cur) showUrl()
     hint.innerHTML = ''
-    hint.append(h('span', {}, 'This page can\'t be shown in droid.'), pressable(h('button.h-btn-borderless', { onclick: () => realTab(t.url) }, 'Open in real tab')))
+    hint.append(h('span', {}, 'This page can\'t be shown in Droid.'), pressable(h('button.h-btn-borderless', { onclick: () => realTab(t.url) }, 'Open in real tab')))
     hint.classList.add('on')
   }
 
@@ -218,6 +218,11 @@ function browser(ctx: ActivityContext): Activity {
     if (d.droid === 'loaded') setLoading(t, false)
     if (d.droid === 'error') errorPage(t, d.reason || '')
     if (d.droid === 'open' && d.url) newTab(d.url, t.incognito)
+    if (d.droid === 'download' && typeof d.url === 'string' && /^https?:/.test(d.url)) {
+      import('./download').then((m) => m.download(d.url, typeof d.name === 'string' ? d.name : ''))
+      // the frame went to the file itself: back to the page that linked it
+      if (d.back) { if (t.back.length) load(t, t.back.pop()!, false); else setLoading(t, false) }
+    }
     if (d.droid === 'go' && d.url) load(t, d.url)
   }
   addEventListener('message', onMsg)

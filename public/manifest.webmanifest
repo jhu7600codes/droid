@@ -1,7 +1,7 @@
 {
-  "name": "droid 4.4",
-  "short_name": "droid",
-  "description": "droid, a web imitation of android 4.4 kitkat, by danen",
+  "name": "Droid 4.4",
+  "short_name": "Droid",
+  "description": "Droid, a web imitation of Android 4.4 KitKat, by Danen",
   "start_url": "./",
   "scope": "./",
   "display": "fullscreen",

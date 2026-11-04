@@ -10,7 +10,9 @@ self.addEventListener('install', (e) => {
 })
 self.addEventListener('activate', (e) => {
   e.waitUntil((async () => {
-    for (const k of await caches.keys()) if (k.startsWith('droid-shell-') && k !== SHELL_CACHE) await caches.delete(k)
+    // keep the previous shell too: a page still running the old version can load its old chunks
+    const old = (await caches.keys()).filter((k) => k.startsWith('droid-shell-') && k !== SHELL_CACHE).sort()
+    for (const k of old.slice(0, -1)) await caches.delete(k)
     await self.clients.claim()
   })())
 })
@@ -21,6 +23,7 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return
   const url = new URL(req.url)
   if (url.origin !== location.origin) return
+  if (url.pathname.endsWith('/sw.js') || url.pathname.endsWith('/version.json')) return
   e.respondWith((async () => {
     const hit = await caches.match(req, { ignoreSearch: url.pathname.endsWith('.html') || url.pathname.endsWith('/') })
     if (hit) return hit
@@ -41,11 +44,11 @@ self.addEventListener('fetch', (e) => {
 // web push from the danen backend: { title, body, pkg }
 self.addEventListener('push', (e) => {
   let d = {}
-  try { d = e.data ? e.data.json() : {} } catch (err) { d = { title: 'droid', body: e.data && e.data.text() } }
+  try { d = e.data ? e.data.json() : {} } catch (err) { d = { title: 'Droid', body: e.data && e.data.text() } }
   e.waitUntil(self.clients.matchAll({ type: 'window' }).then((cs) => {
     const visible = cs.find((c) => c.visibilityState === 'visible')
     if (visible) { visible.postMessage({ droidPush: d }); return }
-    return self.registration.showNotification(d.title || 'droid', { body: d.body || '', icon: 'icons/icon-192.png', data: d })
+    return self.registration.showNotification(d.title || 'Droid', { body: d.body || '', icon: 'icons/icon-192.png', data: d })
   }))
 })
 self.addEventListener('notificationclick', (e) => {

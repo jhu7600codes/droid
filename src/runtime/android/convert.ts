@@ -23,7 +23,7 @@ export async function convertApk(apk: ArrayBuffer, runtimeJs: string): Promise<C
   const versionCode = attr(man, 'versionCode')?.data || 1
   const minSdk = man.children.find((c) => c.tag === 'uses-sdk')
   const min = minSdk ? attr(minSdk, 'minSdkVersion')?.data ?? 1 : 1
-  if (min > 19) report.push(`needs android api ${min}, droid is 19 (it may still run)`)
+  if (min > 19) report.push(`needs Android API ${min}, Droid is 19 (it may still run)`)
   const perms = man.children.filter((c) => c.tag === 'uses-permission').map((c) => attrString(c, 'name') || '')
   const PERM: Record<string, string> = { 'android.permission.INTERNET': 'network', 'android.permission.VIBRATE': 'vibrate', 'android.permission.CAMERA': 'camera', 'android.permission.RECORD_AUDIO': 'microphone', 'android.permission.ACCESS_FINE_LOCATION': 'location', 'android.permission.ACCESS_COARSE_LOCATION': 'location', 'android.permission.WRITE_EXTERNAL_STORAGE': 'storage', 'android.permission.READ_EXTERNAL_STORAGE': 'storage' }
   // android before 13 had no notification permission: every converted app may post notifications
@@ -42,11 +42,11 @@ export async function convertApk(apk: ArrayBuffer, runtimeJs: string): Promise<C
     activities[key] = { entry: 'index.html', label: str(attr(a, 'label')) || label, launcher: isMain }
     map[key] = 'L' + name.replace(/\./g, '/') + ';'
   })
-  if (!main) throw new Error('the apk has no launcher activity')
+  if (!main) throw new Error('the APK has no launcher activity')
   const dexes = [...files.keys()].filter((p) => /^classes\d*\.dex$/.test(p))
   const libs = [...files.keys()].filter((p) => p.startsWith('lib/armeabi-v7a/') && p.endsWith('.so'))
   const otherAbis = [...new Set([...files.keys()].filter((p) => p.startsWith('lib/') && !p.startsWith('lib/armeabi-v7a/')).map((p) => p.split('/')[1]))]
-  if (otherAbis.length && !libs.length) report.push(`native code only for ${otherAbis.join(', ')}: droid runs armeabi-v7a`)
+  if (otherAbis.length && !libs.length) report.push(`native code only for ${otherAbis.join(', ')}: Droid runs armeabi-v7a`)
   if (dexes.length > 1) report.push('multidex app')
   // icon: the highest density png we can find
   let icon: string | undefined
@@ -82,6 +82,6 @@ export async function convertApk(apk: ArrayBuffer, runtimeJs: string): Promise<C
   for (const p of kept) out.set('apk/' + p.toLowerCase().replace(/[^a-z0-9/._-]/g, '_'), files.get(p)!)
   // apk paths are case sensitive and may not fit dpk path rules: keep a mapping when they differ
   const renamed = kept.filter((p) => p !== p.toLowerCase().replace(/[^a-z0-9/._-]/g, '_'))
-  if (renamed.length) report.push(`${renamed.length} files renamed for the dpk path rules`)
+  if (renamed.length) report.push(`${renamed.length} files renamed for the DPK path rules`)
   return { dpk: await writeZip(out), manifest, report }
 }

@@ -29,9 +29,9 @@ export function validateManifest(m: any, files?: Set<string>, opts: { system?: b
   if (!TYPES.includes(m.type)) bad(`manifest: type must be one of ${TYPES.join(', ')}`)
   if (m.dpk != null) {
     const major = parseInt(String(m.dpk).split('.')[0], 10)
-    if (major > parseInt(SPEC_VERSION, 10)) throw new DpkError('unsupported', `this droid supports dpk spec ${SPEC_VERSION}, the app needs ${m.dpk}`)
+    if (major > parseInt(SPEC_VERSION, 10)) throw new DpkError('unsupported', `this Droid supports DPK spec ${SPEC_VERSION}, the app needs ${m.dpk}`)
   }
-  if ((m.minapi ?? 1) > API_LEVEL) throw new DpkError('unsupported', `the app needs droid api ${m.minapi}, this is api ${API_LEVEL}`)
+  if ((m.minapi ?? 1) > API_LEVEL) throw new DpkError('unsupported', `the app needs Droid API ${m.minapi}, this is API ${API_LEVEL}`)
   if (typeof m.activities !== 'object' || !Object.keys(m.activities).length) bad('manifest: activities is empty')
   if (!m.activities[m.main]) bad(`manifest: main activity "${m.main}" is not in activities`)
   for (const [name, a] of Object.entries<any>(m.activities)) {

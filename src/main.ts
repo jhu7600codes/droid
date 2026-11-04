@@ -12,7 +12,7 @@ import { initUi } from './shell/ui'
 import { settings } from './shell/settings'
 import { systemApps } from './system'
 import { lockscreen } from './system/systemui/lockscreen'
-import { registerSw } from './shell/sw-client'
+import { registerSw, bootUpdate } from './shell/sw-client'
 
 const screen = document.getElementById('screen')!
 createLayers(screen)
@@ -20,6 +20,8 @@ let info = measure()
 apply(screen, info)
 
 async function start() {
+  // a downloaded system update installs now, on boot (reloads into the new version)
+  if (await bootUpdate()) await new Promise(() => {})
   loadHolo(info.bucket)
   await loadIndex(info.bucket)
   initUi(layers.overlay)
