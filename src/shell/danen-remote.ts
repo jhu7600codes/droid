@@ -6,7 +6,7 @@ export const backendUrl = () => ((settings.get('danen.backend') as string) || ''
 
 async function call(path: string, method = 'GET', body?: unknown) {
   const url = backendUrl()
-  if (!url) throw new Error('no danen backend set')
+  if (!url) throw new Error('no Danen backend set')
   const session = settings.get('danen.session') as string | undefined
   const r = await fetch(url + path, {
     method,
@@ -14,7 +14,7 @@ async function call(path: string, method = 'GET', body?: unknown) {
     body: body ? JSON.stringify(body) : undefined,
   })
   const data = await r.json().catch(() => ({}))
-  if (!r.ok) throw Object.assign(new Error(data.error || 'danen is not reachable'), { status: r.status })
+  if (!r.ok) throw Object.assign(new Error(data.error || 'Danen is not reachable'), { status: r.status })
   return data
 }
 

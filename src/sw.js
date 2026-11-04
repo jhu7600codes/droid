@@ -44,11 +44,11 @@ self.addEventListener('fetch', (e) => {
 // web push from the danen backend: { title, body, pkg }
 self.addEventListener('push', (e) => {
   let d = {}
-  try { d = e.data ? e.data.json() : {} } catch (err) { d = { title: 'droid', body: e.data && e.data.text() } }
+  try { d = e.data ? e.data.json() : {} } catch (err) { d = { title: 'Droid', body: e.data && e.data.text() } }
   e.waitUntil(self.clients.matchAll({ type: 'window' }).then((cs) => {
     const visible = cs.find((c) => c.visibilityState === 'visible')
     if (visible) { visible.postMessage({ droidPush: d }); return }
-    return self.registration.showNotification(d.title || 'droid', { body: d.body || '', icon: 'icons/icon-192.png', data: d })
+    return self.registration.showNotification(d.title || 'Droid', { body: d.body || '', icon: 'icons/icon-192.png', data: d })
   }))
 })
 self.addEventListener('notificationclick', (e) => {

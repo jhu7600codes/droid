@@ -47,7 +47,7 @@ export const account = {
       if ((await derive(password, unb64(local.salt))) !== local.hash) throw new Error('Wrong username or password.')
       return local
     }
-    if (!remote.signIn) throw new Error('Can\'t reach danen right now. Create an account on this device, or tap "Not now".')
+    if (!remote.signIn) throw new Error('Can\'t reach Danen right now. Create an account on this device, or tap "Not now".')
     const r = await remote.signIn(username, password)
     const salt = crypto.getRandomValues(new Uint8Array(16))
     const p: Profile = { nickname: r.nickname, username, salt: b64(salt), hash: await derive(password, salt), created: Date.now(), remote: true }

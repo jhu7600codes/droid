@@ -25,7 +25,7 @@ const PERM_TEXT: Record<string, string> = {
   location: 'access your location',
   fullscreen: 'hide the status and navigation bars',
   'background-audio': 'play audio in the background',
-  danen: 'use your danen account',
+  danen: 'use your Danen account',
 }
 export const permissionText = (p: string) => PERM_TEXT[p] || p
 

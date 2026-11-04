@@ -429,7 +429,7 @@ export class VM {
     if (e instanceof JavaThrow) return e
     if (e instanceof RangeError && /call stack/i.test(e.message)) return this.error('Ljava/lang/StackOverflowError;', 'stack overflow')
     console.error('runtime error', (e as Error)?.stack?.split('\n').slice(0, 4).join(' / '))
-    return this.error('Ljava/lang/RuntimeException;', 'droid runtime: ' + ((e as Error)?.message || String(e)))
+    return this.error('Ljava/lang/RuntimeException;', 'Droid runtime: ' + ((e as Error)?.message || String(e)))
   }
 
   private staticOwner(cls: string, field: string): JClass {
@@ -469,7 +469,7 @@ export class VM {
       // calls into framework parts droid does not have: object constructors are harmless, the rest is reported
       if (ref.name === '<init>') return undefined
       this.missing.add(`${ref.cls}->${ref.key}`)
-      throw this.error('Ljava/lang/NoSuchMethodError;', `${ref.cls}->${ref.key} on ${self == null ? 'static' : this.classOf(self).name} (not in droid's framework shim yet)`)
+      throw this.error('Ljava/lang/NoSuchMethodError;', `${ref.cls}->${ref.key} on ${self == null ? 'static' : this.classOf(self).name} (not in Droid's framework shim yet)`)
     }
     void caller
     return this.invoke(target, self, args)

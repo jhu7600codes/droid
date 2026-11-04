@@ -76,10 +76,10 @@ function accountActivity(ctx: ActivityContext): Activity {
     })
     body.append(
       h('img.svc-logo', { src: 'assets/brand/droid-d-icon.svg' }),
-      h('div.svc-title', {}, mode === 'create' ? 'Create a danen account' : 'Sign in with your danen account'),
+      h('div.svc-title', {}, mode === 'create' ? 'Create a Danen account' : 'Sign in with your Danen account'),
       mode === 'create' ? nick : '', user, pass, err, go,
       pressable(h('button.h-btn-borderless.svc-switch', { onclick: () => { mode = mode === 'create' ? 'signin' : 'create'; draw() } }, mode === 'create' ? 'I already have an account' : 'Create a new account')),
-      h('div.svc-fine', {}, backendUrl() ? 'danen only stores a nickname, a username and a password hash. Never a google password.' : 'No danen backend is set, so the account lives only on this device. Sync starts once a backend is set.'),
+      h('div.svc-fine', {}, backendUrl() ? 'Danen only stores a nickname, a username and a password hash. Never a google password.' : 'No Danen backend is set, so the account lives only on this device. Sync starts once a backend is set.'),
     )
   }
   draw()

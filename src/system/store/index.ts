@@ -57,7 +57,7 @@ function storeApp(ctx: ActivityContext): Activity {
       body.innerHTML = ''
       if (!cat) { body.append(h('div.st-msg', {}, navigator.onLine ? 'Loading…' : 'You are offline and the store has not been opened before.')); return }
       if (tab === 'featured') {
-        body.append(h('div.st-banner', {}, h('img', { src: 'assets/brand/droid-logo.svg' }), h('div', {}, h('div.st-banner-t', {}, 'Apps for droid'), h('div.st-banner-s', {}, 'Every app here is a dpk checked by the danen store action.'))))
+        body.append(h('div.st-banner', {}, h('img', { src: 'assets/brand/droid-logo.svg' }), h('div', {}, h('div.st-banner-t', {}, 'Apps for Droid'), h('div.st-banner-s', {}, 'Every app here is a DPK checked by the Danen store action.'))))
         const grid = h('div.st-grid')
         cat.apps.forEach((l) => grid.append(card(l)))
         body.append(grid)
