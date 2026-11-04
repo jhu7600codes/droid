@@ -1,6 +1,7 @@
 // framework shim, part 2: the android classes a simple old app uses, mapped onto droid and holo dom.
 // (versioned as droid-framework@0.1 in converted manifests)
 import { VM, JObject, JArray, JavaThrow, type NativeFn } from './dalvik.ts'
+import { Block } from './threads.ts'
 import { jstr, jformat } from './java.ts'
 import { parseAxml, attr, attrString, T, type XmlNode, type XmlValue } from './axml.ts'
 import { resolve, entryName, type ResTable } from './arsc.ts'
@@ -346,6 +347,7 @@ export function registerAndroid(vm: VM, env: Env) {
 
   // ---------- activity, context, intents ----------
   let activityObj: JObject = null as any
+  let appObj: JObject | null = null // the app's Application (its own subclass when it has one)
   let content: JObject | null = null
   let menuItems: JObject[] = []
   const APK_PATH = `/data/app/${env.pkg}-1.apk`
@@ -374,14 +376,18 @@ export function registerAndroid(vm: VM, env: Env) {
     'getApplicationInfo()Landroid/content/pm/ApplicationInfo;': () => appInfo(),
     'openFileInput(Ljava/lang/String;)Ljava/io/FileInputStream;': (v, s, [n]) => { const f = new JObject(vm.cls('Ljava/io/FileInputStream;')); vm.callVirtual(f, '<init>(Ljava/lang/String;)V', [`/data/data/${env.pkg}/files/${n}`]); return f },
     'openFileOutput(Ljava/lang/String;I)Ljava/io/FileOutputStream;': (v, s, [n, mode]) => { const f = new JObject(vm.cls('Ljava/io/FileOutputStream;')); vm.callVirtual(f, '<init>(Ljava/lang/String;Z)V', [`/data/data/${env.pkg}/files/${n}`, mode & 0x8792 ? 1 : 0]); return f },
-    'getApplicationContext()Landroid/content/Context;': (v, s) => s,
+    'getApplicationContext()Landroid/content/Context;': (v, s) => appObj ?? s,
     'getSharedPreferences(Ljava/lang/String;I)Landroid/content/SharedPreferences;': (v, s, [name]) => prefsFor(name),
     'getSystemService(Ljava/lang/String;)Ljava/lang/Object;': (v, s, [name]) => { if (name === 'vibrator') return new JObject(vm.cls('Landroid/os/Vibrator;')); if (name === 'layout_inflater') return new JObject(vm.cls('Landroid/view/LayoutInflater;')); if (name === 'audio') return new JObject(vm.cls('Landroid/media/AudioManager;')); if (name === 'notification') return new JObject(vm.cls('Landroid/app/NotificationManager;')); vm.missing.add('system service ' + name); return null },
     'startActivity(Landroid/content/Intent;)V': (v, s, [i]) => startActivity(i),
     'getMainLooper()Landroid/os/Looper;': () => new JObject(vm.cls('Landroid/os/Looper;')),
   }
   def('Landroid/content/Context;', OBJ, contextMethods, { statics: { MODE_PRIVATE: 0, VIBRATOR_SERVICE: 'vibrator', LAYOUT_INFLATER_SERVICE: 'layout_inflater', NOTIFICATION_SERVICE: 'notification', AUDIO_SERVICE: 'audio', ALARM_SERVICE: 'alarm' } })
-  def('Landroid/content/ContextWrapper;', 'Landroid/content/Context;', {})
+  def('Landroid/content/ContextWrapper;', 'Landroid/content/Context;', {
+    '<init>(Landroid/content/Context;)V': () => {},
+    'attachBaseContext(Landroid/content/Context;)V': () => {},
+    'getBaseContext()Landroid/content/Context;': (v, s) => s,
+  })
   def('Landroid/view/ContextThemeWrapper;', 'Landroid/content/ContextWrapper;', {})
   const noop: NativeFn = () => {}
   def('Landroid/app/Activity;', 'Landroid/view/ContextThemeWrapper;', {
@@ -408,10 +414,11 @@ export function registerAndroid(vm: VM, env: Env) {
     'setTitle(Ljava/lang/CharSequence;)V': (v, s, [t]) => env.droid.actionbar.title(textOf(t)),
     'setTitle(I)V': (v, s, [id]) => env.droid.actionbar.title(resString(id)),
     'getWindow()Landroid/view/Window;': () => new JObject(vm.cls('Landroid/view/Window;')),
-    'runOnUiThread(Ljava/lang/Runnable;)V': (v, s, [r]) => runSafe(r),
+    'runOnUiThread(Ljava/lang/Runnable;)V': (v, s, [r]) => { if (vm.current === vm.main) runSafe(r); else setTimeout(() => runSafe(r), 0) },
     'getLayoutInflater()Landroid/view/LayoutInflater;': () => new JObject(vm.cls('Landroid/view/LayoutInflater;')),
     'invalidateOptionsMenu()V': () => buildMenu(),
     'requestWindowFeature(I)Z': () => 1,
+    'getApplication()Landroid/app/Application;': () => appObj,
     'setTheme(I)V': noop, // the holo look comes from the shell; fullscreen themes go through window flags
     'getTheme()Landroid/content/res/Resources$Theme;': () => new JObject(vm.cls('Landroid/content/res/Resources$Theme;')),
     'isFinishing()Z': () => 0,
@@ -428,7 +435,12 @@ export function registerAndroid(vm: VM, env: Env) {
     'requestFeature(I)Z': () => 1, 'setFeatureInt(II)V': noop,
   })
   def('Landroid/content/res/Resources$Theme;', OBJ, { 'applyStyle(IZ)V': noop })
-  def('Landroid/app/Application;', 'Landroid/content/ContextWrapper;', { 'onCreate()V': noop })
+  def('Landroid/app/Application;', 'Landroid/content/ContextWrapper;', {
+    '<init>()V': noop, 'onCreate()V': noop, 'onTerminate()V': noop, 'onLowMemory()V': noop, 'onTrimMemory(I)V': noop,
+    'onConfigurationChanged(Landroid/content/res/Configuration;)V': noop,
+    'registerActivityLifecycleCallbacks(Landroid/app/Application$ActivityLifecycleCallbacks;)V': noop,
+    'unregisterActivityLifecycleCallbacks(Landroid/app/Application$ActivityLifecycleCallbacks;)V': noop,
+  })
   def('Landroid/content/pm/PackageItemInfo;', OBJ, {})
   def('Landroid/content/pm/ApplicationInfo;', 'Landroid/content/pm/PackageItemInfo;', { '<init>()V': noop })
   def('Landroid/content/res/Resources;', OBJ, {
@@ -617,7 +629,7 @@ export function registerAndroid(vm: VM, env: Env) {
     'postDelayed(Ljava/lang/Runnable;J)Z': (v, s, [r, ms]) => { const t = setTimeout(() => runSafe(r), Number(ms)); (s.f.timers ||= new Map()).set(r, t); return 1 },
     'removeCallbacks(Ljava/lang/Runnable;)V': (v, s, [r]) => { const t = s.f.timers?.get(r); if (t) clearTimeout(t) },
   })
-  def('Landroid/os/SystemClock;', OBJ, { 'uptimeMillis()J': () => BigInt(Math.round(performance.now())), 'elapsedRealtime()J': () => BigInt(Math.round(performance.now())), 'sleep(J)V': noop })
+  def('Landroid/os/SystemClock;', OBJ, { 'uptimeMillis()J': () => BigInt(Math.round(performance.now())), 'elapsedRealtime()J': () => BigInt(Math.round(performance.now())), 'sleep(J)V': (v, s, [ms]) => { const until = performance.now() + Number(ms); throw new Block(() => performance.now() >= until, until, 'sleep') }, 'currentThreadTimeMillis()J': () => BigInt(Math.round(performance.now())) })
   def('Landroid/os/Build$VERSION;', OBJ, {}, { statics: { SDK_INT: 19, SDK: '19', RELEASE: '4.4', CODENAME: 'REL', INCREMENTAL: 'droid' } })
   def('Landroid/os/Build$VERSION_CODES;', OBJ, {}, { statics: { BASE: 1, CUPCAKE: 3, DONUT: 4, ECLAIR: 5, FROYO: 8, GINGERBREAD: 9, HONEYCOMB: 11, HONEYCOMB_MR1: 12, HONEYCOMB_MR2: 13, ICE_CREAM_SANDWICH: 14, ICE_CREAM_SANDWICH_MR1: 15, JELLY_BEAN: 16, JELLY_BEAN_MR1: 17, JELLY_BEAN_MR2: 18, KITKAT: 19 } })
   def('Landroid/os/Build;', OBJ, { 'getRadioVersion()Ljava/lang/String;': () => 'droid' }, { statics: {
@@ -772,7 +784,7 @@ export function registerAndroid(vm: VM, env: Env) {
     return i
   }
   function runJob(job: any, receiverClasses: { cls: string; actions: string[] }[]) {
-    const ctxObj = activityObj || (activityObj = vm.newObject('Landroid/app/Application;'))
+    const ctxObj = appObj || activityObj || (activityObj = vm.newObject('Landroid/app/Application;'))
     const intent = intentFrom(job)
     if (job.kind === 'service') {
       if (!job.cls) return
@@ -897,6 +909,13 @@ export function registerAndroid(vm: VM, env: Env) {
 
   // ---------- running an activity ----------
   return {
+    // <application android:name>: made once, before any activity, like android does
+    application(className: string | null) {
+      if (appObj) return
+      appObj = vm.newObject(className && vm.hasClass(className) ? className : 'Landroid/app/Application;')
+      vm.callVirtual(appObj, 'attachBaseContext(Landroid/content/Context;)V', [appObj])
+      vm.callVirtual(appObj, 'onCreate()V')
+    },
     start(className: string, saved: any) {
       activityObj = vm.newObject(className)
       let bundle: JObject | null = null
