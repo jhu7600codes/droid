@@ -148,6 +148,12 @@ export class VM {
       const m = x.methods.get(key)
       if (m && !(m.flags & ACC.ABSTRACT)) return m
     }
+    // covariant returns: javac / kotlinc bridge methods may be missing for shim classes,
+    // so match on name and parameters when the exact key is not there
+    const sig = key.slice(0, key.indexOf(')') + 1)
+    for (let x = c; x; x = x.super) {
+      if (!x.dexClass) for (const [k, m] of x.methods) if (k.startsWith(sig) && !(m.flags & ACC.ABSTRACT) && m.native) return m
+    }
     // default methods and interface shims
     const seen = new Set<JClass>()
     const walk = (x: JClass | null): JMethod | null => {
@@ -463,7 +469,7 @@ export class VM {
       // calls into framework parts droid does not have: object constructors are harmless, the rest is reported
       if (ref.name === '<init>') return undefined
       this.missing.add(`${ref.cls}->${ref.key}`)
-      throw this.error('Ljava/lang/NoSuchMethodError;', `${ref.cls}->${ref.key} (not in droid's framework shim yet)`)
+      throw this.error('Ljava/lang/NoSuchMethodError;', `${ref.cls}->${ref.key} on ${self == null ? 'static' : this.classOf(self).name} (not in droid's framework shim yet)`)
     }
     void caller
     return this.invoke(target, self, args)

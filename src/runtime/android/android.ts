@@ -354,7 +354,7 @@ export function registerAndroid(vm: VM, env: Env) {
     'getPackageName()Ljava/lang/String;': () => env.pkg,
     'getApplicationContext()Landroid/content/Context;': (v, s) => s,
     'getSharedPreferences(Ljava/lang/String;I)Landroid/content/SharedPreferences;': (v, s, [name]) => prefsFor(name),
-    'getSystemService(Ljava/lang/String;)Ljava/lang/Object;': (v, s, [name]) => { if (name === 'vibrator') return new JObject(vm.cls('Landroid/os/Vibrator;')); if (name === 'layout_inflater') return new JObject(vm.cls('Landroid/view/LayoutInflater;')); vm.missing.add('system service ' + name); return null },
+    'getSystemService(Ljava/lang/String;)Ljava/lang/Object;': (v, s, [name]) => { if (name === 'vibrator') return new JObject(vm.cls('Landroid/os/Vibrator;')); if (name === 'layout_inflater') return new JObject(vm.cls('Landroid/view/LayoutInflater;')); if (name === 'audio') return new JObject(vm.cls('Landroid/media/AudioManager;')); vm.missing.add('system service ' + name); return null },
     'startActivity(Landroid/content/Intent;)V': (v, s, [i]) => startActivity(i),
     'getMainLooper()Landroid/os/Looper;': () => new JObject(vm.cls('Landroid/os/Looper;')),
   }
@@ -592,6 +592,115 @@ export function registerAndroid(vm: VM, env: Env) {
   }, { statics: { BLACK: 0xff000000 | 0, WHITE: -1, RED: 0xffff0000 | 0, GREEN: 0xff00ff00 | 0, BLUE: 0xff0000ff | 0, TRANSPARENT: 0, GRAY: 0xff888888 | 0 } })
   def('Landroid/text/TextUtils;', OBJ, { 'isEmpty(Ljava/lang/CharSequence;)Z': (v, s, [t]) => (t == null || jstr(vm, t).length === 0 ? 1 : 0) })
 
+  // ---------- media: MediaPlayer, SoundPool, VideoView, AudioManager ----------
+  const rawUrl = (id: number) => (() => {
+    const v = res(id)
+    if (v?.type !== T.STRING || !env.files.has(v.str!)) return ''
+    const p = v.str!
+    if (!fileUrl.has(p)) {
+      const type = p.endsWith('.mp3') ? 'audio/mpeg' : p.endsWith('.ogg') ? 'audio/ogg' : p.endsWith('.wav') ? 'audio/wav' : p.endsWith('.mp4') ? 'video/mp4' : p.endsWith('.webm') ? 'video/webm' : 'application/octet-stream'
+      fileUrl.set(p, URL.createObjectURL(new Blob([env.files.get(p)! as BlobPart], { type })))
+    }
+    return fileUrl.get(p)!
+  })()
+  const assetUrl = (path: string) => {
+    const p = 'assets/' + path.replace(/^\/+/, '')
+    if (!env.files.has(p)) return ''
+    if (!fileUrl.has(p)) fileUrl.set(p, URL.createObjectURL(new Blob([env.files.get(p)! as BlobPart])))
+    return fileUrl.get(p)!
+  }
+  const players = new Set<HTMLMediaElement>()
+  const callback = (l: any, key: string, args: any[]) => { if (l) try { vm.callVirtual(l, key, args) } catch (e) { report(e) } }
+  const mp = (s: JObject): HTMLAudioElement => (s.f.audio ||= (() => {
+    const a = new Audio()
+    a.addEventListener('ended', () => { if (!a.loop) callback(s.f.onDone, 'onCompletion(Landroid/media/MediaPlayer;)V', [s]) })
+    a.addEventListener('canplay', () => { if (s.f.preparing) { s.f.preparing = false; callback(s.f.onPrepared, 'onPrepared(Landroid/media/MediaPlayer;)V', [s]) } })
+    a.addEventListener('error', () => callback(s.f.onError, 'onError(Landroid/media/MediaPlayer;II)Z', [s, 1, 0]))
+    players.add(a)
+    return a
+  })())
+  const newPlayer = (url: string) => { const p = new JObject(vm.cls('Landroid/media/MediaPlayer;')); mp(p).src = url; return p }
+  def('Landroid/media/MediaPlayer;', OBJ, {
+    '<init>()V': noop,
+    'create(Landroid/content/Context;I)Landroid/media/MediaPlayer;': (v, s, [, id]) => { const u = rawUrl(id); return u ? newPlayer(u) : null },
+    'create(Landroid/content/Context;Landroid/net/Uri;)Landroid/media/MediaPlayer;': (v, s, [, u]) => newPlayer(u.f.s),
+    'setDataSource(Ljava/lang/String;)V': (v, s, [u]) => { mp(s).src = /^https?:/.test(u) ? u : assetUrl(u) || u },
+    'setDataSource(Landroid/content/Context;Landroid/net/Uri;)V': (v, s, [, u]) => { mp(s).src = u.f.s },
+    'setDataSource(Ljava/io/FileDescriptor;JJ)V': (v, s, [fd]) => { if (fd?.f?.url) mp(s).src = fd.f.url },
+    'prepare()V': noop,
+    'prepareAsync()V': (v, s) => { s.f.preparing = true; mp(s).load() },
+    'start()V': (v, s) => { mp(s).play().catch(() => env.droid.toast('Tap again to allow sound')) },
+    'pause()V': (v, s) => mp(s).pause(),
+    'stop()V': (v, s) => { const a = mp(s); a.pause(); a.currentTime = 0 },
+    'reset()V': (v, s) => { mp(s).pause(); mp(s).removeAttribute('src') },
+    'release()V': (v, s) => { const a = mp(s); a.pause(); players.delete(a); a.removeAttribute('src'); a.load() },
+    'isPlaying()Z': (v, s) => (!mp(s).paused && !mp(s).ended ? 1 : 0),
+    'setLooping(Z)V': (v, s, [x]) => { mp(s).loop = !!x },
+    'isLooping()Z': (v, s) => (mp(s).loop ? 1 : 0),
+    'setVolume(FF)V': (v, s, [l, r]) => { mp(s).volume = Math.max(0, Math.min(1, (l + r) / 2)) },
+    'getDuration()I': (v, s) => (isFinite(mp(s).duration) ? Math.round(mp(s).duration * 1000) : -1),
+    'getCurrentPosition()I': (v, s) => Math.round(mp(s).currentTime * 1000),
+    'seekTo(I)V': (v, s, [ms]) => { mp(s).currentTime = ms / 1000 },
+    'setAudioStreamType(I)V': noop, 'setWakeMode(Landroid/content/Context;I)V': noop,
+    'setOnCompletionListener(Landroid/media/MediaPlayer$OnCompletionListener;)V': (v, s, [l]) => { s.f.onDone = l },
+    'setOnPreparedListener(Landroid/media/MediaPlayer$OnPreparedListener;)V': (v, s, [l]) => { s.f.onPrepared = l },
+    'setOnErrorListener(Landroid/media/MediaPlayer$OnErrorListener;)V': (v, s, [l]) => { s.f.onError = l },
+  })
+  // SoundPool: short sounds by id; each play gets a fresh audio element (they may overlap)
+  def('Landroid/media/SoundPool;', OBJ, {
+    '<init>(III)V': (v, s) => { s.f.sounds = new Map(); s.f.streams = new Map(); s.f.next = 1 },
+    'load(Landroid/content/Context;II)I': (v, s, [, id]) => {
+      const n = s.f.next++
+      s.f.sounds.set(n, rawUrl(id))
+      setTimeout(() => callback(s.f.onLoad, 'onLoadComplete(Landroid/media/SoundPool;II)V', [s, n, 0]), 0)
+      return n
+    },
+    'play(IFFIIF)I': (v, s, [id, l, r, , loop, rate]) => {
+      const u = s.f.sounds.get(id)
+      if (!u) return 0
+      const a = new Audio(u)
+      a.volume = Math.max(0, Math.min(1, (l + r) / 2))
+      a.playbackRate = rate || 1
+      a.loop = loop === -1
+      a.play().catch(() => {})
+      const stream = s.f.next++
+      s.f.streams.set(stream, a)
+      a.addEventListener('ended', () => s.f.streams.delete(stream))
+      return stream
+    },
+    'stop(I)V': (v, s, [st]) => { s.f.streams.get(st)?.pause(); s.f.streams.delete(st) },
+    'pause(I)V': (v, s, [st]) => s.f.streams.get(st)?.pause(),
+    'resume(I)V': (v, s, [st]) => { s.f.streams.get(st)?.play().catch(() => {}) },
+    'autoPause()V': (v, s) => s.f.streams.forEach((a: HTMLAudioElement) => a.pause()),
+    'autoResume()V': (v, s) => s.f.streams.forEach((a: HTMLAudioElement) => a.play().catch(() => {})),
+    'setVolume(IFF)V': (v, s, [st, l, r]) => { const a = s.f.streams.get(st); if (a) a.volume = (l + r) / 2 },
+    'unload(I)Z': (v, s, [id]) => (s.f.sounds.delete(id) ? 1 : 0),
+    'release()V': (v, s) => { s.f.streams.forEach((a: HTMLAudioElement) => a.pause()); s.f.streams.clear() },
+    'setOnLoadCompleteListener(Landroid/media/SoundPool$OnLoadCompleteListener;)V': (v, s, [l]) => { s.f.onLoad = l },
+  })
+  def('Landroid/media/AudioManager;', OBJ, {
+    'getStreamVolume(I)I': () => 10, 'getStreamMaxVolume(I)I': () => 15, 'setStreamVolume(III)V': noop,
+    'requestAudioFocus(Landroid/media/AudioManager$OnAudioFocusChangeListener;II)I': () => 1, 'abandonAudioFocus(Landroid/media/AudioManager$OnAudioFocusChangeListener;)I': () => 1,
+    'getRingerMode()I': () => 2,
+  }, { statics: { STREAM_MUSIC: 3, AUDIOFOCUS_GAIN: 1, AUDIOFOCUS_REQUEST_GRANTED: 1 } })
+  contextMethods['setVolumeControlStream(I)V'] = noop
+  def('Landroid/widget/VideoView;', 'Landroid/view/View;', {
+    'setVideoPath(Ljava/lang/String;)V': (v, s, [p]) => { (el(s) as HTMLVideoElement).src = /^https?:/.test(p) ? p : assetUrl(p) || p },
+    'setVideoURI(Landroid/net/Uri;)V': (v, s, [u]) => { const x = String(u.f.s); const m2 = x.match(/android\.resource:\/\/[^/]+\/(\d+)$/); (el(s) as HTMLVideoElement).src = m2 ? rawUrl(+m2[1]) : x },
+    'start()V': (v, s) => { (el(s) as HTMLVideoElement).play().catch(() => {}) },
+    'pause()V': (v, s) => (el(s) as HTMLVideoElement).pause(),
+    'stopPlayback()V': (v, s) => { const e = el(s) as HTMLVideoElement; e.pause(); e.removeAttribute('src') },
+    'isPlaying()Z': (v, s) => ((el(s) as HTMLVideoElement).paused ? 0 : 1),
+    'seekTo(I)V': (v, s, [ms]) => { (el(s) as HTMLVideoElement).currentTime = ms / 1000 },
+    'getDuration()I': (v, s) => Math.round(((el(s) as HTMLVideoElement).duration || 0) * 1000),
+    'getCurrentPosition()I': (v, s) => Math.round((el(s) as HTMLVideoElement).currentTime * 1000),
+    'setMediaController(Landroid/widget/MediaController;)V': (v, s) => { (el(s) as HTMLVideoElement).controls = true },
+    'setOnCompletionListener(Landroid/media/MediaPlayer$OnCompletionListener;)V': (v, s, [l]) => { el(s).addEventListener('ended', () => callback(l, 'onCompletion(Landroid/media/MediaPlayer;)V', [null])) },
+  })
+  def('Landroid/widget/MediaController;', 'Landroid/view/View;', { '<init>(Landroid/content/Context;)V': noop, 'setAnchorView(Landroid/view/View;)V': noop })
+  WIDGET.VideoView = ['Landroid/widget/VideoView;', 'video', 'an-video']
+  const stopAllMedia = () => players.forEach((a) => a.pause())
+
   // ---------- running an activity ----------
   return {
     start(className: string, saved: any) {
@@ -605,6 +714,7 @@ export function registerAndroid(vm: VM, env: Env) {
       buildMenu()
     },
     lifecycle(ev: string) {
+      if (ev === 'destroy') stopAllMedia()
       const map: Record<string, string> = { pause: 'onPause()V', resume: 'onResume()V', stop: 'onStop()V', start: 'onRestart()V', destroy: 'onDestroy()V' }
       try { if (map[ev] && activityObj) vm.callVirtual(activityObj, map[ev]) } catch (e) { report(e) }
     },

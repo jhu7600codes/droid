@@ -6,7 +6,7 @@ import type { SystemApp, ActivityContext, Activity } from '../../shell/types'
 import { h, pressable, dialog, toast } from '../../shell/ui'
 import { img } from '../../shell/assets'
 import { settings } from '../../shell/settings'
-import { proxyConfig } from '../../runtime/netclient'
+import { proxyConfig, ensureProxyToken } from '../../runtime/netclient'
 import './browser.css'
 
 const B = 'apps/browser'
@@ -54,6 +54,7 @@ function browser(ctx: ActivityContext): Activity {
 
   // ---------- loading ----------
   async function session(t: Tab) {
+    await ensureProxyToken()
     const p = proxyConfig()
     if (!p) return null
     if (t.sid) return t.sid

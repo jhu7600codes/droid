@@ -3,6 +3,9 @@
 // half, signed, double, multiple), branches and interworking, movw / movt, clz, extend, bitfield, rev.
 // jumps to addresses in the trap area call js host functions (libc, liblog, jni).
 
+import { execThumb } from './thumb.ts'
+import { FP, execVfp } from './vfp.ts'
+
 export const TRAP_BASE = 0xfff00000
 export const RETURN_TRAP = 0xfffffff0
 
@@ -60,6 +63,8 @@ export class CPU {
   r = new Uint32Array(16)
   N = false; Z = false; C = false; V = false
   thumb = false
+  fp = new FP()
+  it = 0 // thumb IT state: (firstcond << 4) | mask, 0 when outside an IT block
   mem: Memory
   host: { name: string; fn: HostFn }[] = []
   steps = 0
@@ -74,7 +79,9 @@ export class CPU {
   // calls arm code at addr with up to 4 register args (more go on the stack), returns r0 (and r1)
   call(addr: number, args: number[] = []): { r0: number; r1: number } {
     const saved = this.r.slice()
-    const savedFlags = [this.N, this.Z, this.C, this.V, this.thumb]
+    const savedFlags = [this.N, this.Z, this.C, this.V, this.thumb] as const
+    const savedIt = this.it
+    this.it = 0
     let sp = this.r[13]
     const extra = args.slice(4)
     sp = (sp - extra.length * 4) & ~7
@@ -88,6 +95,7 @@ export class CPU {
     const out = { r0: this.r[0], r1: this.r[1] }
     this.r.set(saved)
     ;[this.N, this.Z, this.C, this.V, this.thumb] = savedFlags
+    this.it = savedIt
     return out
   }
 
@@ -106,15 +114,15 @@ export class CPU {
         this.r[15] = lr & ~1
         continue
       }
-      if (this.thumb) throw new Error(`arm: thumb code at 0x${pc.toString(16)} is not supported yet (build the library with -marm)`)
       this.steps++
+      if (this.thumb) { execThumb(this, pc); continue }
       const insn = this.mem.r32(pc)
       this.r[15] = pc + 4
       if (this.cond(insn >>> 28)) this.exec(insn, pc)
     }
   }
 
-  private cond(c: number) {
+  cond(c: number) {
     switch (c) {
       case 0: return this.Z
       case 1: return !this.Z
@@ -135,9 +143,9 @@ export class CPU {
   }
 
   // reading pc gives the instruction address + 8
-  private reg(n: number, pc: number) { return n === 15 ? (pc + 8) >>> 0 : this.r[n] }
+  reg(n: number, pc: number) { return n === 15 ? (pc + 8) >>> 0 : this.r[n] }
 
-  private shift(v: number, type: number, amount: number, carryIn: boolean, byReg: boolean): [number, boolean] {
+  shift(v: number, type: number, amount: number, carryIn: boolean, byReg: boolean): [number, boolean] {
     if (byReg) {
       amount &= 0xff
       if (amount === 0) return [v >>> 0, carryIn]
@@ -158,7 +166,7 @@ export class CPU {
     }
   }
 
-  private addFlags(a: number, b: number, carry: number) {
+  addFlags(a: number, b: number, carry: number) {
     const r = a + b + carry
     const res = r >>> 0
     this.N = (res >>> 31) === 1
@@ -179,6 +187,7 @@ export class CPU {
         this.thumb = true
         return
       }
+      if (execVfp(this, insn, pc, false)) return // neon
       return // pld, dmb, dsb, isb: nothing to do in a single-threaded interpreter
     }
     const rn = (insn >>> 16) & 0xf, rd = (insn >>> 12) & 0xf, rs = (insn >>> 8) & 0xf, rm = insn & 0xf
@@ -274,6 +283,7 @@ export class CPU {
       return
     }
     if (op1 === 7 && (insn >>> 24) & 1) { this.svc(); return }
+    if ((op1 === 6 || op1 === 7) && execVfp(this, insn, pc, false)) return
     throw new Error(`arm: coprocessor / vfp instruction 0x${insn.toString(16)} at 0x${pc.toString(16)} is not supported yet`)
   }
 
@@ -413,7 +423,7 @@ export class CPU {
   }
 
   // linux eabi syscalls (svc 0, number in r7): just enough for small libraries
-  private svc() {
+  svc() {
     const n = this.r[7]
     switch (n) {
       case 4: { // write(fd, buf, len)

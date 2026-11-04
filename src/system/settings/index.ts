@@ -14,6 +14,7 @@ import { listPackages, getPackage, setGrant, uninstall } from '../../runtime/pac
 import { permName } from '../../runtime/manifest'
 import { permissionText } from '../../runtime/bridge'
 import { openDpk } from '../../runtime'
+import { ensureProxyToken } from '../../runtime/netclient'
 import * as store from '../../runtime/db'
 import { applyUpdate } from '../../shell/sw-client'
 import { sound as sfx } from '../../shell/sound'
@@ -42,7 +43,7 @@ function settingsApp(ctx: ActivityContext): Activity {
     { type: 'header', title: 'droid proxy' },
     { type: 'item', title: 'Proxy address', summary: () => (settings.get('proxy.url') as string) || 'Not set', onclick: async () => {
       const r = await dialog({ title: 'droid proxy', kind: 'input', value: settings.get('proxy.url') as string, placeholder: 'https://proxy.example.com' })
-      if (r.button === 'ok') settings.set('proxy.url', (r.value || '').trim())
+      if (r.button === 'ok') { settings.set('proxy.url', (r.value || '').trim()); settings.set('proxy.token', ''); ensureProxyToken().then(() => toast(settings.get('proxy.token') ? 'Connected to the droid proxy' : 'Could not reach the proxy')) }
     } },
     { type: 'item', title: 'Proxy token', summary: () => (settings.get('proxy.token') ? 'Set' : 'Not set'), onclick: async () => {
       const r = await dialog({ title: 'Proxy token', kind: 'input', placeholder: 'token from your proxy', value: '' })

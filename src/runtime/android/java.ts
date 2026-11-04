@@ -289,6 +289,7 @@ export function registerJava(vm: VM) {
 
   // collections: backed by js arrays and maps
   def('Ljava/lang/Iterable;', OBJ, {})
+  for (const n of ['Ljava/io/Serializable;', 'Ljava/util/RandomAccess;', 'Ljava/lang/Cloneable;', 'Ljava/lang/Comparable;', 'Ljava/lang/Appendable;', 'Ljava/util/Set;', 'Ljava/util/Collection;']) if (!vm.shims.has(n)) def(n, OBJ, {})
   def('Ljava/util/Collection;', OBJ, {}, { interfaces: ['Ljava/lang/Iterable;'] })
   def('Ljava/util/List;', OBJ, {}, { interfaces: ['Ljava/util/Collection;'] })
   def('Ljava/util/Iterator;', OBJ, {
