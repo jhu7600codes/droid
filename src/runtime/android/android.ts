@@ -391,11 +391,22 @@ export function registerAndroid(vm: VM, env: Env) {
     'getLayoutInflater()Landroid/view/LayoutInflater;': () => new JObject(vm.cls('Landroid/view/LayoutInflater;')),
     'invalidateOptionsMenu()V': () => buildMenu(),
     'requestWindowFeature(I)Z': () => 1,
+    'setTheme(I)V': noop, // the holo look comes from the shell; fullscreen themes go through window flags
+    'getTheme()Landroid/content/res/Resources$Theme;': () => new JObject(vm.cls('Landroid/content/res/Resources$Theme;')),
     'isFinishing()Z': () => 0,
     'getActionBar()Landroid/app/ActionBar;': () => new JObject(vm.cls('Landroid/app/ActionBar;')),
   })
   def('Landroid/app/ActionBar;', OBJ, { 'setTitle(Ljava/lang/CharSequence;)V': (v, s, [t]) => env.droid.actionbar.title(textOf(t)), 'hide()V': () => env.droid.actionbar.hide(), 'show()V': () => env.droid.actionbar.show(), 'setDisplayHomeAsUpEnabled(Z)V': noop })
-  def('Landroid/view/Window;', OBJ, { 'setFlags(II)V': (v, s, [f]) => { if (f & 0x400) env.droid.system.fullscreen(true).catch(() => {}) }, 'addFlags(I)V': (v, s, [f]) => { if (f & 0x80) env.droid.system.keepawake(true) }, 'setSoftInputMode(I)V': noop })
+  def('Landroid/view/Window;', OBJ, {
+    'setFlags(II)V': (v, s, [f]) => { if (f & 0x400) env.droid.system.fullscreen(true).catch(() => {}) },
+    'addFlags(I)V': (v, s, [f]) => { if (f & 0x400) env.droid.system.fullscreen(true).catch(() => {}); if (f & 0x80) env.droid.system.keepawake(true) },
+    'clearFlags(I)V': (v, s, [f]) => { if (f & 0x400) env.droid.system.fullscreen(false).catch(() => {}); if (f & 0x80) env.droid.system.keepawake(false) },
+    'setSoftInputMode(I)V': noop, 'setFormat(I)V': noop, 'setBackgroundDrawable(Landroid/graphics/drawable/Drawable;)V': noop,
+    'setBackgroundDrawableResource(I)V': noop, 'setLayout(II)V': noop, 'setGravity(I)V': noop, 'setType(I)V': noop,
+    'takeSurface(Landroid/view/SurfaceHolder$Callback2;)V': noop, 'takeInputQueue(Landroid/view/InputQueue$Callback;)V': noop,
+    'requestFeature(I)Z': () => 1, 'setFeatureInt(II)V': noop,
+  })
+  def('Landroid/content/res/Resources$Theme;', OBJ, { 'applyStyle(IZ)V': noop })
   def('Landroid/app/Application;', 'Landroid/content/ContextWrapper;', { 'onCreate()V': noop })
   def('Landroid/content/res/Resources;', OBJ, {
     'getString(I)Ljava/lang/String;': (v, s, [id]) => resString(id),
