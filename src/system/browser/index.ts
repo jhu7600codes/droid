@@ -18,16 +18,18 @@ const store = {
   get<T>(k: string, d: T): T { try { return JSON.parse(localStorage.getItem(`${KEY}.${k}`) || 'null') ?? d } catch { return d } },
   set(k: string, v: unknown) { try { localStorage.setItem(`${KEY}.${k}`, JSON.stringify(v)) } catch { /* full */ } },
 }
-// search: searxng (a metasearch aggregator, it asks several engines at once) by default, through
-// public instances that answer the proxy; when one fails the next one is tried. duckduckgo and a
-// custom searxng instance are options in the browser settings.
+// public searxng instances, tried in turn when one fails
 export const SEARX = ['https://www.isci.si/', 'https://search.lumy.live/', 'https://search.pereira.is/']
-// bing is the default: public searxng instances refuse traffic that comes through a proxy, and
-// duckduckgo asks for a human check first. searxng still works with your own instance.
+// duckduckgo is the default for now (it asks for a human check once). startpage blocks the proxy;
+// qwant, dogpile and swisscows are app-style sites that need the proxy's service worker.
 export const ENGINES = [
-  { id: 'bing', label: 'Bing' },
   { id: 'duckduckgo', label: 'DuckDuckGo' },
-  { id: 'searxng', label: 'SearXNG (public instances, often refuse proxies)' },
+  { id: 'startpage', label: 'Startpage (blocks the proxy for now)' },
+  { id: 'qwant', label: 'Qwant (needs the next proxy update)' },
+  { id: 'dogpile', label: 'Dogpile, aggregator (needs the next proxy update)' },
+  { id: 'swisscows', label: 'Swisscows (needs the next proxy update)' },
+  { id: 'bing', label: 'Bing' },
+  { id: 'searxng', label: 'SearXNG, public instances (often refuse proxies)' },
   { id: 'custom', label: 'Custom SearXNG instance' },
 ]
 const searxBase = () => {
@@ -35,7 +37,11 @@ const searxBase = () => {
   return SEARX[(settings.get('browser.searx.i') as number) % SEARX.length || 0]
 }
 export const SEARCH = (q: string) => {
-  const e = settings.get('browser.engine') || 'bing'
+  const e = settings.get('browser.engine') || 'duckduckgo'
+  if (e === 'startpage') return 'https://www.startpage.com/sp/search?query=' + encodeURIComponent(q)
+  if (e === 'dogpile') return 'https://www.dogpile.com/serp?q=' + encodeURIComponent(q)
+  if (e === 'qwant') return 'https://www.qwant.com/?q=' + encodeURIComponent(q)
+  if (e === 'swisscows') return 'https://swisscows.com/en/web?query=' + encodeURIComponent(q)
   if (e === 'duckduckgo') return 'https://duckduckgo.com/?q=' + encodeURIComponent(q)
   if (e === 'searxng' || e === 'custom') return searxBase() + 'search?q=' + encodeURIComponent(q)
   return 'https://www.bing.com/search?q=' + encodeURIComponent(q)
@@ -344,7 +350,7 @@ function browser(ctx: ActivityContext): Activity {
   async function browserSettings() {
     const r = await dialog({ title: 'Settings', items: ['Search engine', 'Clear history', 'Clear cookies (new proxy sessions)', 'Droid proxy settings'] })
     if (r.index === 0) {
-      const cur = Math.max(0, ENGINES.findIndex((e) => e.id === (settings.get('browser.engine') || 'bing')))
+      const cur = Math.max(0, ENGINES.findIndex((e) => e.id === (settings.get('browser.engine') || 'duckduckgo')))
       const e = await dialog({ title: 'Search engine', kind: 'single', items: ENGINES.map((x) => x.label), checked: cur })
       if (e.button !== 'item' || e.index == null) return
       if (ENGINES[e.index].id === 'custom') {
