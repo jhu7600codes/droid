@@ -13,6 +13,6 @@ await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => 
 await page.waitForTimeout(6000)
 console.log('ready', await page.evaluate(() => window.droid_shell.settings.get('ota.ready')), await page.locator('.sb-ticker').count())
 await page.reload(); await page.waitForTimeout(8000)
-console.log('v2', await keys(), await page.evaluate(() => window.droid_shell?.settings.get('ota.ready')))
+console.log('v2', await keys(), 'booted', await page.evaluate(() => !!window.droid_shell), 'sw', await page.evaluate(() => navigator.serviceWorker.controller?.scriptURL))
 await page.screenshot({ path: '/tmp/claude-0/-home-user-droid/c6f23d82-1f7c-556b-a34a-7f2d25328f99/scratchpad/ota.png' })
 await b.close()

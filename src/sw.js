@@ -6,7 +6,8 @@ const SHELL = JSON.parse('__SHELL__')
 const SHELL_CACHE = 'droid-shell-' + VERSION
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(SHELL_CACHE).then((c) => c.addAll(SHELL)))
+  // take over right away: pages are network-first, so a new worker can't strand an old page
+  e.waitUntil(caches.open(SHELL_CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()))
 })
 self.addEventListener('activate', (e) => {
   e.waitUntil((async () => {
@@ -25,7 +26,17 @@ self.addEventListener('fetch', (e) => {
   if (url.origin !== location.origin) return
   if (url.pathname.endsWith('/sw.js') || url.pathname.endsWith('/version.json')) return
   e.respondWith((async () => {
-    const hit = await caches.match(req, { ignoreSearch: url.pathname.endsWith('.html') || url.pathname.endsWith('/') })
+    // the page itself: always the deployed one when online (its chunks then exist on the server),
+    // the cached one offline
+    if (req.mode === 'navigate') {
+      try {
+        const res = await fetch(req, { cache: 'no-store' })
+        if (res.ok) return res
+      } catch { /* offline */ }
+      const shell = await caches.open(SHELL_CACHE)
+      return (await shell.match('./')) || (await shell.match(req, { ignoreSearch: true })) || (await caches.match(req, { ignoreSearch: true })) || new Response('offline', { status: 503 })
+    }
+    const hit = (await (await caches.open(SHELL_CACHE)).match(req)) || (await caches.match(req))
     if (hit) return hit
     try {
       const res = await fetch(req)
