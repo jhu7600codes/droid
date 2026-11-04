@@ -430,12 +430,13 @@ function settingsApp(ctx: ActivityContext): Activity {
       const status = h('div.upd-msg', {}, navigator.onLine ? 'Checking for updates…' : 'You are offline. Updates are checked when you are online.')
       box.append(status)
       if (!navigator.onLine) return
-      if (await checkUpdate()) return // draw runs again from the ota.ready listener
-      status.textContent = 'Your system is up to date.'
+      const ok = await Promise.race([checkUpdate(), new Promise<null>((r) => setTimeout(() => r(null), 10000))])
+      if (ok) return // draw runs again from the ota.ready listener
+      status.textContent = ok === null ? 'Could not check for updates. Try again later.' : 'Your system is up to date.'
       box.append(pressable(h('button.h-btn', { onclick: () => draw() }, 'Check now')))
     }
     draw()
-    return settings.on('ota.ready', () => draw())
+    return settings.on('ota.ready', (v) => { if (v) draw() })
   }
 
   const pages: Record<string, Build> = { update, developer, main, display, storage, battery, apps, location, security, language, backup, account: accountPage, users: accountPage, about, more, bluetooth, sound, datetime: dateTime }
