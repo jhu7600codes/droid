@@ -257,7 +257,7 @@ function browser(ctx: ActivityContext): Activity {
       ['Bookmarks / History', () => library()],
       ['Share page', () => ctx.start({ action: 'send', type: 'text/plain', extras: { text: t.url, subject: t.title } })],
       ['Find on page', () => find()],
-      [(t.desktop ? '✓ ' : '') + 'Request desktop site', () => { t.desktop = !t.desktop; load(t, t.url.replace('://m.', '://'), false) }],
+      [(t.desktop ? '✓︎ ' : '') + 'Request desktop site', () => { t.desktop = !t.desktop; load(t, t.url.replace('://m.', '://'), false) }],
       ['Open in real tab', () => realTab(t.url)],
       ['Settings', () => browserSettings()],
     ]

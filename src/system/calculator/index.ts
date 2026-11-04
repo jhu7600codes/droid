@@ -4,12 +4,12 @@ import type { SystemApp, ActivityContext, Activity } from '../../shell/types'
 import { h, pressable } from '../../shell/ui'
 import './calculator.css'
 
-const FN: Record<string, (x: number) => number> = { sin: Math.sin, cos: Math.cos, tan: Math.tan, ln: Math.log, log: Math.log10, '√': Math.sqrt }
+const FN: Record<string, (x: number) => number> = { sin: Math.sin, cos: Math.cos, tan: Math.tan, ln: Math.log, log: Math.log10, '√︎': Math.sqrt }
 const fact = (n: number): number => (n < 0 || !Number.isInteger(n) ? NaN : n > 170 ? Infinity : n <= 1 ? 1 : n * fact(n - 1))
 
 // shunting yard over tokens; unary minus, implicit multiply before ( and functions
 export function evaluate(src: string): number {
-  const toks = src.replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-').match(/\d*\.?\d+(e[+-]?\d+)?|sin|cos|tan|ln|log|√|π|e|[-+*/^()!%]/g) || []
+  const toks = src.replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-').match(/\d*\.?\d+(e[+-]?\d+)?|sin|cos|tan|ln|log|√︎|π|e|[-+*/^()!%]/g) || []
   let i = 0
   const peek = () => toks[i], next = () => toks[i++]
   function primary(): number {
@@ -20,7 +20,7 @@ export function evaluate(src: string): number {
     if (t === '(') { const v = expr(); if (peek() === ')') next(); return v }
     if (t === 'π') return Math.PI
     if (t === 'e') return Math.E
-    if (FN[t]) return FN[t](t === '√' ? power() : primary())
+    if (FN[t]) return FN[t](t === '√︎' ? power() : primary())
     const n = parseFloat(t)
     if (isNaN(n)) throw new Error('bad')
     return n
@@ -30,7 +30,7 @@ export function evaluate(src: string): number {
     for (;;) {
       if (peek() === '!') { next(); v = fact(v) }
       else if (peek() === '%') { next(); v = v / 100 }
-      else if (peek() && /^[\d.(πe]|^(sin|cos|tan|ln|log|√)$/.test(peek()!)) v *= primary() // 2π, 3(4)
+      else if (peek() && /^[\d.(πe]|^(sin|cos|tan|ln|log|√︎)$/.test(peek()!)) v *= primary() // 2π, 3(4)
       else return v
     }
   }
@@ -66,7 +66,7 @@ function calculator(ctx: ActivityContext): Activity {
   const key = (k: string, cls = '') => pressable(h('div.calc-key' + cls, { onclick: () => press(k) }, k === 'DEL' ? 'DEL' : k))
   const digits = h('div.calc-digits', {}, ...['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', '='].map((k) => key(k)))
   const ops = h('div.calc-ops', {}, key('DEL'), key('÷'), key('×'), key('−'), key('+'))
-  const adv = h('div.calc-adv', {}, ...['sin', 'cos', 'tan', 'ln', 'log', '!', 'π', 'e', '^', '(', ')', '√'].map((k) => key(k, '.adv')))
+  const adv = h('div.calc-adv', {}, ...['sin', 'cos', 'tan', 'ln', 'log', '!', 'π', 'e', '^', '(', ')', '√︎'].map((k) => key(k, '.adv')))
   const pad = h('div.calc-pad', {}, digits, ops, adv)
   // long press on DEL clears, like kitkat
   let t = 0

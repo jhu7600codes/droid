@@ -1,6 +1,6 @@
 /* systemui: status bar (25dp), nav bar (48dp), shade, quick settings, recents, lockscreen */
 
-#screen > #statusbar { bottom: auto; height: var(--sb); background: #000; transition: background .3s, transform .25s; }
+#screen > #statusbar { bottom: auto; height: var(--sb); box-sizing: border-box; padding-top: var(--sbi, 0px); background: #000; transition: background .3s, transform .25s; }
 #screen > #statusbar.see-through { background: linear-gradient(rgba(0, 0, 0, .55), rgba(0, 0, 0, 0)); }
 .sb { display: flex; height: 100%; align-items: center; padding: 0 6px; touch-action: none; }
 .sb-left { flex: 1; display: flex; gap: 4px; align-items: center; overflow: hidden; height: 100%; }
@@ -21,7 +21,7 @@
 @keyframes sb-tick-in { from { transform: translateY(25px); opacity: 0; } }
 .sb-clock { font-size: 16px; color: #fff; padding-left: 4px; }
 
-#screen > #navbar { top: auto; height: var(--nb); background: #000; transition: background .3s, transform .25s; }
+#screen > #navbar { top: auto; height: var(--nb); box-sizing: border-box; padding-bottom: var(--nbi, 0px); background: #000; transition: background .3s, transform .25s; }
 #screen > #navbar.see-through { background: rgba(0, 0, 0, .3); }
 .nav { display: flex; height: 100%; align-items: stretch; justify-content: center; }
 .nav-btn { width: 80px; display: flex; align-items: center; justify-content: center; position: relative; }

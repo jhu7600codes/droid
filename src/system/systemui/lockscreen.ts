@@ -94,10 +94,10 @@ function bouncer(then?: () => void) {
   const msg = h('div.pin-msg', {}, 'Enter PIN')
   const keys = h('div.pin-keys')
   const upd = () => (dots.textContent = '•'.repeat(entered.length))
-  for (const k of ['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', 'OK']) {
+  for (const k of ['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫︎', '0', 'OK']) {
     const b = pressable(h('div.pin-key', {}, k))
     b.addEventListener('click', () => {
-      if (k === '⌫') entered = entered.slice(0, -1)
+      if (k === '⌫︎') entered = entered.slice(0, -1)
       else if (k === 'OK') {
         if (entered === settings.get('lock.pin')) { box.remove(); unlock(then) }
         else { msg.textContent = 'Wrong PIN'; entered = '' }

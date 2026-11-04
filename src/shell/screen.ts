@@ -57,8 +57,10 @@ export function measure(): ScreenInfo {
   const insets = safeArea()
   if (mode === 'auto') {
     dpi = Math.round((window.devicePixelRatio || 1) * 160 * userScale)
+    // full bleed like a real phone: the status bar reaches up under the notch and the nav bar down
+    // to the home indicator (their insets are added to the bars). only the sides are kept clear.
     width = (vw - insets.left - insets.right) / userScale
-    height = (vh - insets.top - insets.bottom) / userScale
+    height = vh / userScale
     scale = userScale
   } else {
     const p = mode === 'custom' ? settings.get('screen.custom') : PRESETS[settings.get('screen.preset')] || PRESETS['phone-hdpi']
@@ -87,7 +89,7 @@ export function measure(): ScreenInfo {
   return {
     width, height, dpi, bucket, density: dpi / 160, orientation, form, mode: fit as 'native' | 'fit',
     scale, offsetX: Math.round((vw - width * scale) / 2), offsetY: Math.round((vh - height * scale) / 2),
-    insets, statusBar: 25, navBar: 48, navSide,
+    insets, statusBar: 25 + (mode === 'auto' ? Math.round(insets.top / scale) : 0), navBar: 48 + (mode === 'auto' && navSide === 'bottom' ? Math.round(insets.bottom / scale) : 0), navSide,
   }
 }
 
@@ -102,6 +104,8 @@ export function apply(el: HTMLElement, s: ScreenInfo) {
   const st = el.style
   st.setProperty('--sb', s.statusBar + 'px')
   st.setProperty('--nb', s.navBar + 'px')
+  st.setProperty('--sbi', s.statusBar - 25 + 'px') // the part of each bar under the notch / home indicator
+  st.setProperty('--nbi', s.navBar - 48 + 'px')
   st.setProperty('--sp', settings.get('font.scale') + 'px')
 }
 
