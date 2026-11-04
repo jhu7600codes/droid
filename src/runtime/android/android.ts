@@ -442,6 +442,12 @@ export function registerAndroid(vm: VM, env: Env) {
     'unregisterActivityLifecycleCallbacks(Landroid/app/Application$ActivityLifecycleCallbacks;)V': noop,
   })
   def('Landroid/content/pm/PackageItemInfo;', OBJ, {})
+  def('Landroid/content/ContentProvider;', OBJ, {
+    '<init>()V': noop,
+    'onCreate()Z': () => 1,
+    'getContext()Landroid/content/Context;': (v, s) => s.f.context ?? appObj,
+    'attachInfo(Landroid/content/Context;Landroid/content/pm/ProviderInfo;)V': (v, s, [c]) => { s.f.context = c },
+  })
   def('Landroid/content/pm/ApplicationInfo;', 'Landroid/content/pm/PackageItemInfo;', { '<init>()V': noop })
   def('Landroid/content/res/Resources;', OBJ, {
     'getString(I)Ljava/lang/String;': (v, s, [id]) => resString(id),
@@ -910,10 +916,20 @@ export function registerAndroid(vm: VM, env: Env) {
   // ---------- running an activity ----------
   return {
     // <application android:name>: made once, before any activity, like android does
-    application(className: string | null) {
+    application(className: string | null, providers: { cls: string; authorities: string }[] = []) {
       if (appObj) return
       appObj = vm.newObject(className && vm.hasClass(className) ? className : 'Landroid/app/Application;')
       vm.callVirtual(appObj, 'attachBaseContext(Landroid/content/Context;)V', [appObj])
+      // content providers start between attachBaseContext and onCreate (libraries init there)
+      for (const p of providers) {
+        if (!vm.hasClass(p.cls)) continue
+        try {
+          const o = vm.newObject(p.cls)
+          o.f.context = appObj
+          o.f.authority = p.authorities
+          vm.callVirtual(o, 'onCreate()Z')
+        } catch (e) { console.warn('content provider', p.cls, e instanceof JavaThrow ? jstr(vm, e.obj) : e) }
+      }
       vm.callVirtual(appObj, 'onCreate()V')
     },
     start(className: string, saved: any) {

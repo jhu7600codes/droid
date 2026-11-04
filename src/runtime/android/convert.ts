@@ -5,6 +5,9 @@ import { parseAxml, attr, attrString, T } from './axml.ts'
 import { parseArsc, resolve } from './arsc.ts'
 import { writeZip } from './zipwrite.ts'
 
+// bump when converted packages change shape: installed converted apps are converted again on boot
+export const CONVERTER_VERSION = 3
+
 export interface Converted { dpk: Uint8Array; manifest: any; report: string[] }
 
 export async function convertApk(apk: ArrayBuffer, runtimeJs: string): Promise<Converted> {
@@ -60,7 +63,7 @@ export async function convertApk(apk: ArrayBuffer, runtimeJs: string): Promise<C
     id: pkg.toLowerCase().replace(/[^a-z0-9_.]/g, '_'), name: label, version: versionName, versioncode: versionCode, type: 'converted', dpk: '0.1',
     runtime: dexes.length && libs.length ? 'both' : libs.length ? 'arm' : 'dex', shim: 'droid-framework@0.1',
     main, activities, permissions, icon: icon ? 'apk/' + icon : undefined, theme: 'holo-dark', 'legacy-menu': true,
-    'converted-from': { package: pkg, version: versionName, versionCode },
+    'converted-from': { package: pkg, version: versionName, versionCode, converter: CONVERTER_VERSION },
   }
   const out = new Map<string, Uint8Array>()
   const enc = new TextEncoder()

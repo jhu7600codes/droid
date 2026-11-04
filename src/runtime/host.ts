@@ -32,6 +32,9 @@ export interface Host {
 }
 export interface MenuItem { id: string; title: string; icon?: string; always?: boolean }
 
+let runtimeCache: Promise<ArrayBuffer | null> | null = null
+const currentRuntime = () => (runtimeCache ||= fetch('runtime/android-runtime.js').then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null))
+
 export function hostActivity(pkg: string, ctx: ActivityContext): Activity {
   const app = kernel.get(pkg)!
   const m = app.manifest
@@ -119,6 +122,12 @@ export function hostActivity(pkg: string, ctx: ActivityContext): Activity {
       const bytes = await blob.arrayBuffer()
       files[p] = { bytes, type: blob.type || mimeOf(p) }
       transfer.push(bytes)
+    }
+    // converted apks always run the shell's current android runtime, so runtime fixes reach apps
+    // that were converted before them (no reinstall needed)
+    if (m.type === 'converted' && files['runtime/android-runtime.js']) {
+      const fresh = await currentRuntime()
+      if (fresh) { files['runtime/android-runtime.js'] = { bytes: fresh.slice(0), type: 'text/javascript' }; transfer.push(files['runtime/android-runtime.js'].bytes) }
     }
     let imeTarget: ImeTarget | null = null
     let imeBefore = ''
