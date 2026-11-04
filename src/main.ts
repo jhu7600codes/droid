@@ -12,7 +12,7 @@ import { initUi } from './shell/ui'
 import { settings } from './shell/settings'
 import { systemApps } from './system'
 import { lockscreen } from './system/systemui/lockscreen'
-import { registerSw, bootUpdate } from './shell/sw-client'
+import { registerSw, watchUpdates } from './shell/sw-client'
 
 // startup errors are kept so a stuck boot can show them (no dev tools needed, e.g. on an iphone)
 const bootErrors: string[] = []
@@ -24,14 +24,13 @@ const within = <T,>(p: Promise<T> | T | undefined, ms: number, what: string) => 
   new Promise<void>((ok) => setTimeout(() => { bootErrors.push(`${what}: took longer than ${ms / 1000}s, skipped`); ok() }, ms)),
 ])
 
+if (new URLSearchParams(location.search).has('v')) history.replaceState(null, '', location.pathname)
 const screen = document.getElementById('screen')!
 createLayers(screen)
 let info = measure()
 apply(screen, info)
 
 async function start() {
-  // a downloaded system update installs now, on boot (reloads into the new version)
-  if (await within(bootUpdate(), 4000, 'update check')) await new Promise(() => {})
   loadHolo(info.bucket)
   await loadIndex(info.bucket)
   initUi(layers.overlay)
@@ -81,6 +80,7 @@ watch((s) => {
   wm.configchange()
 })
 registerSw()
+watchUpdates()
 import('./shell/push').then((m) => m.listenForPushes())
 // offline-first (spec section 21): once the service worker runs, quietly fetch the essential set
 // (shell, system apps, this density's images) unless it is done already or the connection is metered

@@ -1,51 +1,60 @@
-// registers the service worker (offline-first, spec section 21). a new version installs in the
-// background and waits; it takes over on the next boot, like an ota update.
+// service worker (offline-first, spec section 21) and system updates.
+// every build has its own number (BUILD, baked in at build time). version.json on the server says
+// what is deployed; when the two differ an update is ready: a notification, and Settings > About >
+// System updates restarts into it.
 import { settings } from './settings'
 
-// a waiting version installs on the next boot: called before the boot animation, it swaps the
-// worker and reloads once (a plain refresh never activates a waiting worker)
-export async function bootUpdate() {
-  if (!('serviceWorker' in navigator)) return false
-  const reg = await navigator.serviceWorker.getRegistration().catch(() => undefined)
-  if (!reg?.waiting || !navigator.serviceWorker.controller || sessionStorage.getItem('droid.ota') === reg.waiting.scriptURL + VERSION_KEY()) return false
-  sessionStorage.setItem('droid.ota', reg.waiting.scriptURL + VERSION_KEY())
-  await swap(reg)
-  return true
-}
-const VERSION_KEY = () => String(Date.now() / 60000 | 0) // one try a minute at most
-function swap(reg: ServiceWorkerRegistration) {
-  return new Promise<void>((done) => {
-    navigator.serviceWorker.addEventListener('controllerchange', () => { location.reload(); done() }, { once: true })
-    reg.waiting!.postMessage('skip-waiting')
-    setTimeout(() => { location.reload(); done() }, 4000) // safety net
-  })
-}
+declare const __DROID_BUILD__: string
+export const BUILD: string = typeof __DROID_BUILD__ === 'string' ? __DROID_BUILD__ : 'dev'
 
 export function registerSw() {
   if (!('serviceWorker' in navigator) || location.hostname === 'localhost' && !location.search.includes('sw')) return
   navigator.serviceWorker.register('sw.js', { scope: './', updateViaCache: 'none' }).then((reg) => {
     reg.update().catch(() => {})
-    setInterval(() => reg.update().catch(() => {}), 30 * 60 * 1000)
-    const check = () => {
-      const ready = !!reg.waiting && !!navigator.serviceWorker.controller
-      if (ready && !settings.get('ota.ready')) {
-        import('./notify').then(({ notifications }) => notifications.post({
-          id: 'ota', pkg: 'droid.settings', title: 'System update downloaded', text: 'Touch to restart and install', ticker: 'System update downloaded',
-          icon: 'assets/brand/droid-d-icon.svg',
-          onclick: () => import('./wm').then(({ wm }) => wm.start({ action: 'system-update' })),
-        }))
-      }
-      settings.set('ota.ready', ready)
-    }
-    check()
-    reg.addEventListener('updatefound', () => reg.installing?.addEventListener('statechange', check))
   }).catch((e) => console.warn('sw', e))
 }
 
-// settings > about > system update: apply now (reload into the new version)
+// the deployed build, or null when offline / unknown
+export async function latestBuild(): Promise<string | null> {
+  try {
+    const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
+    return r.ok ? String((await r.json()).version) : null
+  } catch { return null }
+}
+
+let notified = ''
+export async function checkUpdate() {
+  if (BUILD === 'dev') return false
+  const latest = await latestBuild()
+  const ready = !!latest && latest > BUILD
+  settings.set('ota.ready', ready ? latest : false)
+  if (ready && notified !== latest) {
+    notified = latest!
+    const { notifications } = await import('./notify')
+    notifications.post({
+      id: 'ota', pkg: 'droid.settings', title: 'System update available', text: 'Touch to restart and install', ticker: 'System update available',
+      icon: 'assets/brand/droid-d-icon.svg',
+      onclick: () => import('./wm').then(({ wm }) => wm.start({ action: 'system-update' })),
+    })
+  }
+  return ready
+}
+
+// checks on boot and every 30 minutes
+export function watchUpdates() {
+  const r = settings.get('ota.ready')
+  if (r && String(r) <= BUILD) settings.set('ota.ready', false) // just updated
+  setTimeout(checkUpdate, 10000)
+  setInterval(checkUpdate, 30 * 60 * 1000)
+  addEventListener('online', () => checkUpdate())
+}
+
+// restart into the deployed build: a fresh url skips the browser's page cache (github pages keeps
+// pages for 10 minutes), and the service worker always fetches pages from the network when online
 export async function applyUpdate() {
-  const reg = await navigator.serviceWorker?.getRegistration()
+  const latest = settings.get('ota.ready') || (await latestBuild()) || Date.now()
   settings.set('ota.ready', false)
-  if (reg?.waiting) await swap(reg)
-  else location.reload()
+  const reg = await navigator.serviceWorker?.getRegistration().catch(() => undefined)
+  await reg?.update().catch(() => {})
+  location.replace(location.pathname + '?v=' + latest)
 }

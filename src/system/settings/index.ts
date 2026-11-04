@@ -16,7 +16,7 @@ import { permissionText } from '../../runtime/bridge'
 import { openDpk } from '../../runtime'
 import { ensureProxyToken } from '../../runtime/netclient'
 import * as store from '../../runtime/db'
-import { applyUpdate } from '../../shell/sw-client'
+import { applyUpdate, checkUpdate, BUILD } from '../../shell/sw-client'
 import { sound as sfx } from '../../shell/sound'
 import { licensesPage } from './licenses'
 import './settings.css'
@@ -333,8 +333,7 @@ function settingsApp(ctx: ActivityContext): Activity {
 
   const about: Build = (el, pop) => {
     const p = page(el, { title: 'About phone', icon: ic(S, 'ic_settings_about'), up: pop })
-    let ver = '…'
-    fetch('version.json').then((r) => r.json()).then((v) => { ver = v.version; r.render() }).catch(() => {})
+    const ver = BUILD
     let taps = 0
     let verTaps = 0, lastVer = 0
     const r = prefs(p.content, () => [
@@ -400,21 +399,18 @@ function settingsApp(ctx: ActivityContext): Activity {
     p.content.append(box)
     const draw = async () => {
       box.innerHTML = ''
-      const mine = await fetch('version.json').then((r) => r.json()).catch(() => null)
-      box.append(h('img.upd-logo', { src: 'assets/brand/droid-logo.svg' }), h('div.upd-ver', {}, 'Droid 4.4'), h('div.upd-sub', {}, mine ? `build ${mine.version}` : ''))
-      if (settings.get('ota.ready')) {
-        box.append(h('div.upd-msg', {}, 'A system update has been downloaded. Droid will restart to install it.'), pressable(h('button.h-btn', { onclick: () => applyUpdate() }, 'Restart & install')))
+      box.append(h('img.upd-logo', { src: 'assets/brand/droid-logo.svg' }), h('div.upd-ver', {}, 'Droid 4.4'), h('div.upd-sub', {}, `build ${BUILD}`))
+      const ready = settings.get('ota.ready')
+      if (ready) {
+        box.append(h('div.upd-msg', {}, `System update ${ready} is available. Droid will restart to install it.`), pressable(h('button.h-btn', { onclick: () => applyUpdate() }, 'Restart & install')))
         return
       }
       const status = h('div.upd-msg', {}, navigator.onLine ? 'Checking for updates…' : 'You are offline. Updates are checked when you are online.')
       box.append(status)
       if (!navigator.onLine) return
-      const reg = await navigator.serviceWorker?.getRegistration().catch(() => undefined)
-      await reg?.update().catch(() => {})
-      setTimeout(() => {
-        if (settings.get('ota.ready')) draw()
-        else status.textContent = reg?.installing ? 'Downloading an update in the background…' : 'Your system is up to date.'
-      }, 1500)
+      if (await checkUpdate()) return // draw runs again from the ota.ready listener
+      status.textContent = 'Your system is up to date.'
+      box.append(pressable(h('button.h-btn', { onclick: () => draw() }, 'Check now')))
     }
     draw()
     return settings.on('ota.ready', () => draw())
