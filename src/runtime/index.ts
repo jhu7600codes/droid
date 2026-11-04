@@ -9,6 +9,7 @@ export const SAMPLES = ['examples/hello.dpk', 'examples/notes.dpk', 'examples/wa
 
 export async function startRuntime() {
   await loadInstalled()
+  ;(await import('./background')).startBackground()
   if (!settings.get('samples.installed')) {
     for (const url of SAMPLES) {
       try {

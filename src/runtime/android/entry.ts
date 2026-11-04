@@ -8,7 +8,7 @@ import { registerAndroid } from './android.ts'
 import { Native } from './arm/native.ts'
 
 declare const droid: any
-interface Map_ { pkg: string; activities: Record<string, string>; libs: string[] }
+interface Map_ { pkg: string; activities: Record<string, string>; libs: string[]; receivers?: { cls: string; actions: string[] }[]; services?: string[] }
 
 // same renaming as convert.ts (dpk paths are lowercase)
 const norm = (p: string) => p.toLowerCase().replace(/[^a-z0-9/._-]/g, '_')
@@ -54,6 +54,12 @@ droid.on('create', async (saved: any) => {
     vm.natives = (m, self, args) => {
       if (!native) throw vm.error('Ljava/lang/UnsatisfiedLinkError;', `no native library loaded for ${m.cls.name}->${m.key}`)
       return native.call(m, self, args)
+    }
+    // background host (alarms, receivers, services): no activity, jobs arrive as intents
+    if (info.activity === '__bg') {
+      droid.on('intent', (i: any) => { if (i?.action === 'background-job') { app.background(i.extras.job, (map as any).receivers || []); droid.background.idle() } })
+      droid.background.idle()
+      return
     }
     app.start(cls, saved?.bundle)
     const missing = [...vm.missing, ...((native as Native | null)?.missing || [])]

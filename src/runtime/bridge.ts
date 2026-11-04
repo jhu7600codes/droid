@@ -138,15 +138,20 @@ export function makeBridge(pkg: string, ctx: ActivityContext, host: Host) {
     'system.vibrate': async (p: number | number[]) => { await ensure(pkg, 'vibrate'); navigator.vibrate?.(p) },
     'system.clipboard.read': async () => { await ensure(pkg, 'clipboard'); return navigator.clipboard?.readText().catch(() => { throw err('unsupported') }) },
     'system.clipboard.write': async (t: string) => { await navigator.clipboard?.writeText(t).catch(() => { throw err('unsupported') }) },
-    'system.notify': async (n: { id?: string; title: string; text?: string; ongoing?: boolean; progress?: number; activity?: string; extras?: Record<string, unknown> }) => {
+    'system.notify': async (n: { id?: string; title: string; text?: string; ticker?: string; ongoing?: boolean; progress?: number; activity?: string; extras?: Record<string, unknown> }) => {
       await ensure(pkg, 'notifications')
       const app = kernel.get(pkg)!
       // tapping opens the app, or one of its own activities with extras (android PendingIntent)
       const act = n.activity && app.manifest.activities[n.activity] ? n.activity : undefined
       if (n.extras && JSON.stringify(n.extras).length > LIMITS.extras) throw err('toolarge')
-      notifications.post({ id: String(n.id ?? 'default'), pkg, title: String(n.title).slice(0, 200), text: n.text ? String(n.text).slice(0, 1000) : undefined, icon: app.icon, ongoing: !!n.ongoing, progress: n.progress,
+      notifications.post({ id: String(n.id ?? 'default'), pkg, title: String(n.title).slice(0, 200), text: n.text ? String(n.text).slice(0, 1000) : undefined, ticker: n.ticker ? String(n.ticker).slice(0, 300) : undefined, icon: app.icon, ongoing: !!n.ongoing, progress: n.progress,
         onclick: () => wm.start(act ? { package: pkg, action: 'notification', activity: act, extras: n.extras } : { package: pkg, action: 'main' }) })
     },
+    // background work (alarms, broadcasts, services): handled by runtime/background.ts
+    'bg.alarm.set': async (a: any) => (await import('./background')).setAlarm(pkg, a),
+    'bg.alarm.cancel': async (id: string) => (await import('./background')).cancelAlarm(pkg, String(id)),
+    'bg.run': async (job: any) => (await import('./background')).runInBackground(pkg, job),
+    'bg.idle': async () => (await import('./background')).idle(pkg),
     'system.cancel': (id: string) => notifications.cancel(pkg, String(id ?? 'default')),
     'system.orientation': (o: string) => { if (['portrait', 'landscape', 'any'].includes(o)) (kernel.get(pkg)!.manifest.orientation = o as any); host.send('configchange', deviceInfo()) },
     'system.keepawake': async (on: boolean) => {
