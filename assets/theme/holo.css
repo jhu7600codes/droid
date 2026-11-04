@@ -142,3 +142,4 @@
 .an-list .h-item { min-height: 48px; }
 .an-view { min-width: 0; }
 .an-linear > .h-btn { margin: 2px; }
+.an-video { width: 100%; background: #000; }
