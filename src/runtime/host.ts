@@ -8,6 +8,7 @@ import { screenEl } from '../shell/layers'
 import * as store from './db'
 import { getPackage, mimeOf } from './packages'
 import { makeBridge } from './bridge'
+import { ime, imeEnabled, type ImeTarget } from '../shell/ime'
 import sdkSource from '../sdk/droid.js?raw'
 
 const CSP = (shell: string) => [
@@ -119,6 +120,8 @@ export function hostActivity(pkg: string, ctx: ActivityContext): Activity {
       files[p] = { bytes, type: blob.type || mimeOf(p) }
       transfer.push(bytes)
     }
+    let imeTarget: ImeTarget | null = null
+    let imeBefore = ''
     const shellAssets = new URL('assets/', document.baseURI).href
     const ch = new MessageChannel()
     port = ch.port1
@@ -126,6 +129,18 @@ export function hostActivity(pkg: string, ctx: ActivityContext): Activity {
       const msg = e.data
       if (msg.ready) { ready = true; queue.splice(0).forEach((q) => port!.postMessage(q)); return }
       if (msg.reply) { replies.get(msg.reply)?.(msg.value); replies.delete(msg.reply); return }
+      // droid keyboard for the app's text fields: keys go back as "ime" events
+      if (msg.call === 'ime.show' || msg.call === 'ime.hide') {
+        if (msg.call === 'ime.hide') { if (imeTarget) ime.close(imeTarget); imeTarget = null }
+        else if (imeEnabled()) {
+          const o = msg.args?.[0] || {}
+          imeTarget = { kind: o.kind || 'text', enter: o.enter || 'enter', multiline: !!o.multiline, autocap: !!o.autocap, key: (k) => host.send('ime', k), before: () => imeBefore }
+          ime.open(imeTarget)
+        }
+        port!.postMessage({ id: msg.id, value: imeEnabled() })
+        return
+      }
+      if (msg.call === 'ime.text') { imeBefore = String(msg.args?.[0] ?? ''); ime.changed(); port!.postMessage({ id: msg.id, value: null }); return }
       if (msg.call) {
         try { port!.postMessage({ id: msg.id, value: await bridge(msg.call, msg.args || []) }) }
         catch (err) {
@@ -138,7 +153,7 @@ export function hostActivity(pkg: string, ctx: ActivityContext): Activity {
     const info = { id: pkg, name: m.name, version: m.version, versioncode: m.versioncode, activity: ctx.name, intent: ctx.intent }
     frame.contentWindow!.postMessage({
       type: 'droid:boot', entry: decl.entry, files, info, theme, saved: savedState,
-      csp: CSP(shellAssets), links: appStyles(bucket),
+      csp: CSP(shellAssets), links: appStyles(bucket), ime: imeEnabled(),
     }, '*', [ch.port2, ...transfer])
   }
   // the bootstrap page: csp + the sdk, which waits for the boot message

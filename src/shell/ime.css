@@ -1,0 +1,22 @@
+/* droid keyboard, kitkat latinime look */
+#ime { position: absolute; left: 0; right: 0; bottom: var(--nb); z-index: 7; display: none; flex-direction: column; padding: 6px 2px 4px; gap: 0; background: linear-gradient(#282828, #0d0d0d 30%, #000); touch-action: none; user-select: none; -webkit-user-select: none; }
+#screen[data-nav="right"] #ime { right: var(--nb); bottom: 0; }
+#ime.on { display: flex; }
+.ime-row { display: flex; height: 54px; padding: 0; }
+.ime-row.indent { padding: 0 5%; }
+#screen[data-orientation="landscape"] .ime-row { height: 40px; }
+.ime-key { flex: 1; margin: 4px 3px; border-radius: 3px; background: #222; box-shadow: 0 1px 0 rgba(0, 0, 0, .3); color: #fff; font: 400 24px/1 Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-width: 0; }
+#screen[data-orientation="landscape"] .ime-key { font-size: 20px; margin: 3px 3px; }
+.ime-key img { max-height: 60%; max-width: 70%; pointer-events: none; }
+.ime-key.fn { font-size: 16px; }
+.ime-key.small { font-size: 14px; }
+.ime-key.down { background: rgba(131, 131, 131, .72); }
+.ime-key.shift.on img { filter: drop-shadow(0 0 3px #33b5e5); }
+.ime-key.space img { max-width: 90%; }
+#ime[data-kind="number"] .ime-key, #ime[data-kind="phone"] .ime-key { font-size: 26px; }
+.ime-preview { position: absolute; z-index: 8; width: 60px; height: 72px; margin: -76px 0 0 -30px; display: none; align-items: flex-start; justify-content: center; padding-top: 8px; box-sizing: border-box; background: #6b6b6b; clip-path: polygon(0 0, 100% 0, 100% 72%, 50% 100%, 0 72%); border-radius: 4px 4px 0 0; color: #fff; font: 36px Roboto, sans-serif; pointer-events: none; }
+.ime-preview.on { display: flex; }
+/* apps shrink above the keyboard (adjustResize) */
+#windows .window { bottom: calc(var(--nb) + var(--ime, 0px)); }
+#screen[data-nav="right"] #windows .window { bottom: var(--ime, 0px); }
+#windows .window.translucent, #screen.immersive #windows .window { bottom: var(--ime, 0px); }

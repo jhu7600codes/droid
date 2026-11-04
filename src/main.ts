@@ -9,6 +9,7 @@ import { boot } from './shell/boot'
 import { kernel } from './shell/kernel'
 import { wm } from './shell/wm'
 import { initUi } from './shell/ui'
+import { initIme } from './shell/ime'
 import { settings } from './shell/settings'
 import { systemApps } from './system'
 import { lockscreen } from './system/systemui/lockscreen'
@@ -34,6 +35,7 @@ async function start() {
   loadHolo(info.bucket)
   await loadIndex(info.bucket)
   initUi(layers.overlay)
+  initIme()
   wm.init(layers.windows)
   for (const a of systemApps) {
     if (a.iconRef) a.icon = img(...a.iconRef)
