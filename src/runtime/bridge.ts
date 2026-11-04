@@ -138,11 +138,14 @@ export function makeBridge(pkg: string, ctx: ActivityContext, host: Host) {
     'system.vibrate': async (p: number | number[]) => { await ensure(pkg, 'vibrate'); navigator.vibrate?.(p) },
     'system.clipboard.read': async () => { await ensure(pkg, 'clipboard'); return navigator.clipboard?.readText().catch(() => { throw err('unsupported') }) },
     'system.clipboard.write': async (t: string) => { await navigator.clipboard?.writeText(t).catch(() => { throw err('unsupported') }) },
-    'system.notify': async (n: { id?: string; title: string; text?: string; ongoing?: boolean; progress?: number }) => {
+    'system.notify': async (n: { id?: string; title: string; text?: string; ongoing?: boolean; progress?: number; activity?: string; extras?: Record<string, unknown> }) => {
       await ensure(pkg, 'notifications')
       const app = kernel.get(pkg)!
-      notifications.post({ id: String(n.id ?? 'default'), pkg, title: String(n.title), text: n.text, icon: app.icon, ongoing: !!n.ongoing, progress: n.progress,
-        onclick: () => wm.start({ package: pkg, action: 'main' }) })
+      // tapping opens the app, or one of its own activities with extras (android PendingIntent)
+      const act = n.activity && app.manifest.activities[n.activity] ? n.activity : undefined
+      if (n.extras && JSON.stringify(n.extras).length > LIMITS.extras) throw err('toolarge')
+      notifications.post({ id: String(n.id ?? 'default'), pkg, title: String(n.title).slice(0, 200), text: n.text ? String(n.text).slice(0, 1000) : undefined, icon: app.icon, ongoing: !!n.ongoing, progress: n.progress,
+        onclick: () => wm.start(act ? { package: pkg, action: 'notification', activity: act, extras: n.extras } : { package: pkg, action: 'main' }) })
     },
     'system.cancel': (id: string) => notifications.cancel(pkg, String(id ?? 'default')),
     'system.orientation': (o: string) => { if (['portrait', 'landscape', 'any'].includes(o)) (kernel.get(pkg)!.manifest.orientation = o as any); host.send('configchange', deviceInfo()) },

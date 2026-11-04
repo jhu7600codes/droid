@@ -1,6 +1,11 @@
 package com.droid.kt
 
 import android.app.Activity
+import android.app.Notification
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
 import android.media.MediaPlayer
 import android.os.Bundle
 import android.widget.ArrayAdapter
@@ -45,6 +50,18 @@ class MainActivity : Activity() {
             pigeons += p
             adapter.add(p.describe())
             Toast.makeText(this, "${pigeons.size} pigeons, oldest ${pigeons.maxByOrNull { it.age }?.name}", Toast.LENGTH_SHORT).show()
+        }
+        (findViewById(R.id.notify) as Button).setOnClickListener {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java).putExtra("label", "from the notification"), 0)
+            val n = Notification.Builder(this)
+                .setContentTitle("${pigeons.size} pigeons in the flock")
+                .setContentText("tap to open the kotlin test")
+                .setSmallIcon(android.R.drawable.stat_notify_chat)
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .build()
+            nm.notify(1, n)
         }
         (findViewById(R.id.play) as Button).setOnClickListener {
             player?.release()
