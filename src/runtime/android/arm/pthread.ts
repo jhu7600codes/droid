@@ -62,7 +62,7 @@ export class Threads {
     const jt = this.nat.vm.current
     let o = this.outside.get(jt)
     if (!o) {
-      o = { handle: this.nat.mem.malloc(64), tls: new Map(), pendingSignals: [], sigmask: 0, handled: 0, errno: 0, stackBase: this.mainStackBase, stackSize: this.mainStackSize, name: jt.name, jthread: jt }
+      o = { handle: this.nat.mem.malloc(64), tls: new Map(), pendingSignals: [], sigmask: 0, handled: 0, errno: 0, stackBase: (jt as any).armStack?.base ?? this.mainStackBase, stackSize: (jt as any).armStack?.size ?? this.mainStackSize, name: jt.name, jthread: jt }
       this.nat.mem.w32(o.handle + 4, 1000 + this.outside.size) // tid at +4, like bionic's pthread_internal_t
       this.outside.set(jt, o)
       this.all.set(o.handle, o)

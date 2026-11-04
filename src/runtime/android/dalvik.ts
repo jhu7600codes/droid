@@ -23,6 +23,9 @@ export class JThread implements Task {
   frames: Frame[] = []
   obj: JObject | null = null // its java.lang.Thread
   interrupted = false
+  nativeCall = false // stopped inside a native method (resumes there)
+  pendingThrow: JavaThrow | null = null // an exception from a resumed native call, raised at the call
+  lastValue: any = undefined // what the last finished top-level call returned
   onDone?: (err: unknown) => void
   vm: VM
   name: string
@@ -79,6 +82,7 @@ export class VM {
   addDex(d: Dex) { this.dexes.push(d) }
   shim(name: string, c: ShimClass) {
     this.shims.set(name, c)
+    this.missing.delete(name)
     // a class already built from an older shim gets the new methods and statics too
     const built = this.classes.get(name)
     if (built && !built.dexClass) {
@@ -245,6 +249,8 @@ export class VM {
   // ---------- threads ----------
   // the main thread runs everything that comes from js (ui callbacks, lifecycle); other java threads
   // and attached native threads are green threads run by the scheduler (threads.ts)
+  // set by the native runtime: native calls on green threads that can stop and resume
+  nativeAsync: { begin(t: JThread, m: JMethod, self: any, args: any[], deadline: number): { done: true; value: any } | { done: false; block: Block | null }; resumeCall(t: JThread, deadline: number): { done: true; value: any } | { done: false; block: Block | null } } | null = null
   main = new JThread(this, 'main', true)
   current: JThread = this.main
   startThread(name: string, m: JMethod, self: any, args: any[] = [], obj: JObject | null = null) {
@@ -260,10 +266,21 @@ export class VM {
     this.current = t
     t.busy = true
     try {
-      if (t.block) { const b = t.block; t.block = null; const v = b.finish(); if (t.blockValue) t.frames[t.frames.length - 1].result = v }
-      const r = this.exec(t, 0, performance.now() + ms)
+      const deadline = performance.now() + ms
+      if (t.nativeCall) {
+        // a native call that stopped last time: go on with it (its own block, if any, is handled there)
+        t.block = null
+        let n: ReturnType<NonNullable<VM['nativeAsync']>['resumeCall']> | null = null
+        try { n = this.nativeAsync!.resumeCall(t, deadline) }
+        catch (e) { if (!(e instanceof JavaThrow)) throw e; t.pendingThrow = e } // thrown at the call, below
+        if (n && !n.done) { if (n.block) { t.block = n.block; t.state = 'blocked' } return }
+        t.nativeCall = false
+        if (n) t.frames[t.frames.length - 1].result = n.value
+      } else if (t.block) { const b = t.block; t.block = null; const v = b.finish(); if (t.blockValue) t.frames[t.frames.length - 1].result = v }
+      const r = this.exec(t, 0, deadline)
       if (r === YIELD) return
       if (r === BLOCKED) { t.state = 'blocked'; return }
+      t.lastValue = r
       t.state = 'done'
       t.onDone?.(null)
     } catch (e) {
@@ -295,6 +312,8 @@ export class VM {
     finally { t.busy = busy }
   }
 
+  // queue a java call on a thread (driver threads run one call after another)
+  pushCall(t: JThread, m: JMethod, self: any, args: any[]) { this.pushFrame(t, m, self, args) }
   private pushFrame(t: JThread, m: JMethod, self: any, args: any[]) {
     if (t.frames.length > 3000) throw this.error('Ljava/lang/StackOverflowError;', 'stack size ' + t.frames.length)
     const code = m.code!
@@ -324,6 +343,7 @@ export class VM {
       const s32at = (p: number) => ins[p] | (ins[p + 1] << 16)
       let pc = f.pc
       try {
+        if (t.pendingThrow) { const e = t.pendingThrow; t.pendingThrow = null; pc = f.ipc; throw e }
         for (;;) {
           if ((++this.steps & 2047) === 0 && deadline !== Infinity && performance.now() > deadline) { f.pc = pc; return YIELD }
           const w = ins[pc]
@@ -488,8 +508,15 @@ export class VM {
                 this.pushFrame(t, target, self, args)
                 continue outer
               }
-              // framework (js) or native code: runs to completion here, or asks to wait
+              // native code on a green thread: it can stop mid-call and go on in the next slice
               f.ipc = pc
+              if (!target.native && deadline !== Infinity && this.nativeAsync) {
+                const r = this.nativeAsync.begin(t, target, self, args, deadline)
+                if (!r.done) { f.pc = pc + 3; t.nativeCall = true; if (r.block) { t.block = r.block; t.blockValue = false; t.state = 'blocked'; return BLOCKED } return YIELD }
+                f.result = r.value
+                pc += 3; break
+              }
+              // framework (js) or native code: runs to completion here, or asks to wait
               let v: any
               try { v = target.native ? target.native(this, self, args) : this.natives(target, self, args) }
               catch (e) {

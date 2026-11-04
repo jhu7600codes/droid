@@ -1,11 +1,13 @@
 // native side of the android runtime: memory layout, libc / liblog host functions, and jni
 // (JNIEnv / JavaVM tables whose entries trap into js and talk to the dalvik vm).
-import { CPU, Memory, type HostFn } from './cpu.ts'
+import { CPU, Memory, STOP, RETURN_TRAP, newContext, type HostFn, type Context } from './cpu.ts'
+import type { Block } from '../threads.ts'
 import { Threads, PThread, installPthreads } from './pthread.ts'
 import { installPosix } from './posix.ts'
 import { installLibc } from './libc.ts'
+import { GL, installGles } from './gles.ts'
 import { loadElf, type Lib } from './elf.ts'
-import { VM, JObject, JArray, JavaThrow, splitParams, type JMethod } from '../dalvik.ts'
+import { VM, JObject, JArray, JavaThrow, JThread, splitParams, type JMethod } from '../dalvik.ts'
 import { jstr } from '../java.ts'
 
 const MB = 1024 * 1024
@@ -24,6 +26,7 @@ export class Native {
   vfs: import('../javaio.ts').Vfs
   pkg: string
   threads: Threads
+  gles = GL
   heapStart = 0
   // stdio hooks (posix.ts) and the printf formatter (libc.ts)
   writeFile: (fp: number, s: string) => number = () => -1
@@ -48,8 +51,10 @@ export class Native {
     installLibc(this)
     installPosix(this)
     installPthreads(this)
+    installGles(this)
     this.errnoSetup()
     this.jni()
+    vm.nativeAsync = this
   }
   // errno: one slot per thread
   private errnoSlots = new Map<any, number>()
@@ -91,7 +96,7 @@ export class Native {
   // ---------- calling native methods ----------
   // java native method -> Java_<class>_<name> (or the RegisterNatives table), AAPCS argument passing
   registered = new Map<string, number>()
-  call(m: JMethod, self: any, args: any[]) {
+  private target(m: JMethod) {
     const key = `${m.cls.name}->${m.key}`
     let addr = this.registered.get(key)
     if (!addr) {
@@ -103,6 +108,9 @@ export class Native {
       if (!addr) throw this.vm.error('Ljava/lang/UnsatisfiedLinkError;', `No implementation found for ${m.cls.name}->${m.key}`)
       this.registered.set(key, addr)
     }
+    return addr
+  }
+  private words(m: JMethod, self: any, args: any[]) {
     const words: number[] = [this.env, this.ref(self ?? this.vm.classObject(m.cls))]
     m.params.forEach((p, i) => {
       const v = args[i]
@@ -114,12 +122,63 @@ export class Native {
       else if (p[0] === 'L' || p[0] === '[') words.push(this.ref(v))
       else words.push(v | 0)
     })
-    const mark = this.refs.length
-    const { r0, r1 } = this.cpu.call(addr, words)
+    return words
+  }
+  private finishCall(m: JMethod, r0: number, r1: number) {
     const out = this.fromNative(m.ret, r0, r1)
     if (this.pending) { const p = this.pending; this.pending = null; throw p }
-    void mark
     return out
+  }
+  // java native method -> Java_<class>_<name> (or the RegisterNatives table), AAPCS argument passing.
+  // runs to completion on the current context
+  call(m: JMethod, self: any, args: any[]) {
+    const { r0, r1 } = this.cpu.call(this.target(m), this.words(m, self, args))
+    return this.finishCall(m, r0, r1)
+  }
+
+  // ---------- resumable native calls from java threads ----------
+  // a java (green) thread calling native code gets its own registers and stack, so a long native
+  // call (a game's frame) can stop when its slice is over and go on in the next one
+  private armOf(t: JThread) {
+    let a = (t as any).arm as { ctx: Context; waiting: CPU['waiting']; m: JMethod | null } | undefined
+    if (!a) {
+      const ctx = newContext()
+      const stack = 1024 * 1024
+      const base = this.mem.memalign(4096, stack)
+      ctx.r[13] = base + stack - 64
+      ctx.tls = this.mem.malloc(256)
+      this.mem.w32(ctx.tls, ctx.tls)
+      a = { ctx, waiting: null, m: null }
+      ;(t as any).arm = a
+      ;(t as any).armStack = { base, size: stack }
+    }
+    return a
+  }
+  // starts the call; done -> its value, else the thread yielded or waits (resume later)
+  begin(t: JThread, m: JMethod, self: any, args: any[], deadline: number): { done: true; value: any } | { done: false; block: Block | null } {
+    const a = this.armOf(t)
+    const addr = this.target(m), words = this.words(m, self, args)
+    return this.runOn(t, a, deadline, () => { this.cpu.setupCall(addr, words, RETURN_TRAP); a.m = m })
+  }
+  resumeCall(t: JThread, deadline: number) {
+    const a = this.armOf(t)
+    if (a.waiting && !a.waiting.block.ready()) return { done: false as const, block: a.waiting.block }
+    return this.runOn(t, a, deadline, () => { if (a.waiting) { const w = a.waiting; a.waiting = null; this.cpu.waiting = w; this.cpu.resume(w.block.finish()) } })
+  }
+  private runOn(t: JThread, a: { ctx: Context; waiting: CPU['waiting']; m: JMethod | null }, deadline: number, setup: () => void): { done: true; value: any } | { done: false; block: Block | null } {
+    const c = this.cpu
+    const outside = newContext()
+    c.save(outside)
+    c.load(a.ctx)
+    try {
+      setup()
+      const r = c.run(deadline)
+      if (r === STOP.RETURN) { const m = a.m!; a.m = null; const r0 = c.r[0], r1 = c.r[1]; c.save(a.ctx); c.load(outside); return { done: true, value: this.finishCall(m, r0, r1) } }
+      if (r === STOP.BLOCK) { a.waiting = c.waiting; c.waiting = null; c.save(a.ctx); c.load(outside); return { done: false, block: a.waiting!.block } }
+      c.save(a.ctx); c.load(outside)
+      if (r === STOP.YIELD) return { done: false, block: null }
+      throw new Error('arm: a java thread\'s native call ended oddly (' + r + ')')
+    } catch (e) { if (c.r !== outside.r) { c.save(a.ctx); c.load(outside) } throw e }
   }
   fromNative(t: string, r0: number, r1: number) {
     if (t === 'V') return undefined
