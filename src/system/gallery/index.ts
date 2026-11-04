@@ -13,7 +13,7 @@ import './gallery.css'
 
 const G = 'apps/gallery'
 const F = 'framework'
-const isImg = (p: string) => /\.(jpe?g|png|gif|webp)$/i.test(p)
+const isImg = (p: string) => /\.(jpe?g|png|gif|webp|svg|bmp|avif|ico)$/i.test(p)
 const isVid = (p: string) => /\.(webm|mp4|mov|m4v)$/i.test(p)
 const media = (p: string) => isImg(p) || isVid(p)
 const ALBUM_NAMES: Record<string, string> = { 'dcim/camera': 'Camera', download: 'Download', pictures: 'Pictures', 'pictures/screenshots': 'Screenshots' }
