@@ -16,8 +16,12 @@ function walk(dir: string, out: string[] = []) {
   return out
 }
 
+// one number per build: baked into the app (BUILD) and written to version.json
+const version = new Date().toISOString().replace(/\D/g, '').slice(0, 14)
+
 export default defineConfig({
   base: './',
+  define: { __DROID_BUILD__: JSON.stringify(version) },
   publicDir: false,
   build: {
     assetsDir: 'app',
@@ -38,7 +42,6 @@ export default defineConfig({
         for (const f of ['LICENSE', 'NOTICE', 'LICENSE-APACHE-2.0']) cpSync(resolve(__dirname, f), join(dist, 'legal', f))
         const files = walk(dist).map((p) => relative(dist, p).split('\\').join('/'))
         const shell = files.filter((f) => /^(index\.html|manifest\.webmanifest|app\/|assets\/brand\/|assets\/aosp\/(css|fonts)\/|assets\/aosp\/[^/]+\.json$|icons\/)/.test(f))
-        const version = new Date().toISOString().replace(/\D/g, '').slice(0, 12)
         const sw = readFileSync(resolve(__dirname, 'src/sw.js'), 'utf8')
         writeFileSync(join(dist, 'sw.js'), sw.replace('__VERSION__', version).replace("'__SHELL__'", JSON.stringify(JSON.stringify(['./', ...shell]))))
         const precache = files.filter((f) => f.startsWith('assets/') || f.startsWith('apps/') || f.startsWith('examples/')).map((p) => {
