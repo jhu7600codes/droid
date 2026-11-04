@@ -56,7 +56,9 @@ const DEFAULTS: Partial<SystemSettings> = {
   'rotation.lock': false,
   'time.24h': false,
   'sound.touch': true,
-  'proxy.url': '',
+  // the public droid proxy on deno deploy; changing it needs developer options
+  'proxy.url': 'https://sweet-moose-8098.vedeo.deno.net',
+  'dev.enabled': false,
 }
 
 const KEY = 'droid.settings'

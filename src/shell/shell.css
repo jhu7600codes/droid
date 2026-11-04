@@ -100,3 +100,5 @@ img { -webkit-user-drag: none; }
 .dw-dragging iframe { pointer-events: none; }
 #screen[data-form="desktop"] > #statusbar { display: none; }
 #screen[data-form="desktop"] { --sb: 0px; --nb: 40px; }
+#screen.dev-bounds * { outline: 1px solid rgba(255, 64, 64, .55); outline-offset: -1px; }
+.dev-tap { position: absolute; width: 40px; height: 40px; margin: -20px; border-radius: 50%; background: rgba(255, 255, 255, .45); pointer-events: none !important; z-index: 99; }

@@ -67,5 +67,26 @@ const look = () => {
 look()
 settings.on('brightness', look)
 settings.on('battery.saver', look)
+// developer options: layout bounds, show taps, animation scale
+const dev = () => {
+  screen.classList.toggle('dev-bounds', !!settings.get('dev.bounds'))
+  screen.classList.toggle('no-anim', !!settings.get('battery.saver') || settings.get('dev.anim') === 0)
+}
+dev()
+settings.on('*', dev)
+screen.addEventListener('pointerdown', (e) => {
+  if (!settings.get('dev.taps')) return
+  const r = screen.getBoundingClientRect(), k = r.width / screen.offsetWidth || 1
+  const dot = document.createElement('div')
+  dot.className = 'dev-tap'
+  dot.style.left = (e.clientX - r.left) / k + 'px'
+  dot.style.top = (e.clientY - r.top) / k + 'px'
+  layers.overlay.append(dot)
+  setTimeout(() => dot.remove(), 400)
+}, true)
+screen.addEventListener('animationstart', (e) => {
+  const sc = settings.get('dev.anim') as number | undefined
+  if (sc && sc !== 1) (e.target as Element).getAnimations?.().forEach((a) => (a.playbackRate = 1 / sc))
+}, true)
 // debugging from the console
 ;(window as any).droid_shell = { kernel, wm, settings, screen: () => info }
