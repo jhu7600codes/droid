@@ -1,9 +1,9 @@
 // droid browser on the live site: open /secret through the proxy, tap the kotlin apk, it lands in
 // download/ with a notification, tapping it opens the installer
-export default async ({ page, shot }) => {
+export default async ({ page, shot, base }) => {
   const live = 'https://jhu7600codes.github.io/droid/'
   page.on('console', (m) => { if (/download|error/i.test(m.text())) console.log('console:', m.text().slice(0, 200)) })
-  await page.goto(live + 'index.html?fastboot')
+  await page.goto(base + 'index.html?fastboot')
   await page.evaluate(() => localStorage.setItem('droid.settings', JSON.stringify({ 'setup.done': true, 'lock.type': 'none' })))
   await page.reload(); await page.waitForTimeout(3000)
   await page.evaluate((u) => window.droid_shell.wm.start({ action: 'view', data: u }), live + 'secret/')

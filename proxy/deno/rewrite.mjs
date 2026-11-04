@@ -58,7 +58,7 @@ var sa=Element.prototype.setAttribute;Element.prototype.setAttribute=function(n,
 var WS=window.WebSocket;window.WebSocket=function(u,p){var a=new URL(u,TARGET.replace(/^http/,'ws'));return new WS((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws?sid='+SID+'&url='+encodeURIComponent(a.href),p)};window.WebSocket.prototype=WS.prototype;
 window.open=function(u){parent.postMessage({droid:'open',url:new URL(u,TARGET).href},'*');return null};
 var DL=/\.(apk|dpk|zip|7z|rar|tar|gz|pdf|mp3|ogg|wav|mp4|webm|exe|bin|img|iso)$/i;
-addEventListener('click',function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href]');if(!a||e.defaultPrevented)return;var u;try{u=new URL(a.getAttribute('href'),cur())}catch(x){return}
+addEventListener('click',function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href]');if(!a||e.defaultPrevented)return;var u;try{u=new URL(a.href);var m=u.origin===location.origin&&u.pathname.match(/^\\/p\\/[^/]+\\/(https?)\\/([^/]+)(.*)$/);if(m)u=new URL(m[1]+'://'+m[2]+(m[3]||'/')+u.search+u.hash)}catch(x){return}
 if(!a.hasAttribute('download')&&!DL.test(u.pathname))return;if(u.protocol!=='http:'&&u.protocol!=='https:')return;e.preventDefault();parent.postMessage({droid:'download',url:u.href,name:a.getAttribute('download')||''},'*')},true);
 var hp=history.pushState,hr=history.replaceState;
 function cur(){var m=location.pathname.match(/^\\/p\\/[^/]+\\/(https?)\\/([^/]+)(.*)$/);return m?m[1]+'://'+m[2]+(m[3]||'/')+location.search+location.hash:TARGET}
