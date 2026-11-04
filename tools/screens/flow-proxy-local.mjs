@@ -1,0 +1,20 @@
+// a normal site through the LOCAL proxy with the service worker: loads, follows a link, goes back
+export default async ({ page, shot, base }) => {
+  page.on('console', (m) => { if (m.type() === 'error') console.log('console', m.text().slice(0, 140)) })
+  await page.goto(base + 'index.html?fastboot')
+  await page.evaluate(() => localStorage.setItem('droid.settings', JSON.stringify({ 'setup.done': true, 'lock.type': 'none', ime: 'device', 'proxy.url': 'http://localhost:8788' })))
+  await page.reload(); await page.waitForTimeout(2500)
+  await page.evaluate(() => window.droid_shell.wm.start({ action: 'view', data: 'https://en.wikipedia.org/wiki/Android_KitKat' }))
+  await page.waitForTimeout(9000)
+  const url = page.locator('.window.visible .br-url')
+  console.log('1', await url.inputValue())
+  const f = page.frameLocator('.window.visible iframe').first()
+  console.log('frame path:', await f.locator('body').evaluate(() => location.pathname))
+  await f.locator('#mw-content-text a[href*="/wiki/"]').first().click()
+  await page.waitForTimeout(6000)
+  console.log('2', await url.inputValue())
+  await shot('proxy-wiki')
+  await page.evaluate(() => window.droid_shell.wm.back())
+  await page.waitForTimeout(5000)
+  console.log('3 back', await url.inputValue())
+}
