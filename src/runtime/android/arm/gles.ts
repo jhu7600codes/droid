@@ -88,8 +88,10 @@ export function installGles(nat: Native) {
   // ---------- names ----------
   class Names<T> {
     by = new Map<number, T>(); ids = new Map<T, number>(); next = 1
-    add(o: T) { const id = this.next++; this.by.set(id, o); this.ids.set(o, id); return id }
+    add(o: T) { while (this.by.has(this.next)) this.next++; const id = this.next++; this.by.set(id, o); this.ids.set(o, id); return id }
     get(id: number) { return id ? this.by.get(id) ?? null : null }
+    // gles makes the object when a name nobody generated is first bound (webgl does not)
+    bind(id: number, make: () => T | null) { if (!id) return null; let o = this.by.get(id); if (!o) { o = make()!; this.by.set(id, o); this.ids.set(o, id) } return o }
     id(o: T | null) { return o ? this.ids.get(o) ?? 0 : 0 }
     del(id: number) { const o = this.by.get(id); if (o) { this.ids.delete(o); this.by.delete(id) } return o }
   }
@@ -106,8 +108,8 @@ export function installGles(nat: Native) {
     def('glDeleteFramebuffers' + sfx, del(fbs, (o) => gl().deleteFramebuffer(o)))
     def('glGenRenderbuffers' + sfx, gen(rbs, () => gl().createRenderbuffer()))
     def('glDeleteRenderbuffers' + sfx, del(rbs, (o) => gl().deleteRenderbuffer(o)))
-    def('glBindFramebuffer' + sfx, () => { gl().bindFramebuffer(R(0), R(1) ? fbs.get(R(1)) : G.fbo) })
-    def('glBindRenderbuffer' + sfx, () => { gl().bindRenderbuffer(R(0), rbs.get(R(1))) })
+    def('glBindFramebuffer' + sfx, () => { gl().bindFramebuffer(R(0), R(1) ? fbs.bind(R(1), () => gl().createFramebuffer()) : G.fbo) })
+    def('glBindRenderbuffer' + sfx, () => { gl().bindRenderbuffer(R(0), rbs.bind(R(1), () => gl().createRenderbuffer())) })
     def('glRenderbufferStorage' + sfx, () => { gl().renderbufferStorage(R(0), rbFormat(R(1)), R(2), R(3)) })
     def('glFramebufferRenderbuffer' + sfx, () => { gl().framebufferRenderbuffer(R(0), R(1) === 0x8d20 + 0 && false ? R(1) : R(1), R(2), rbs.get(R(3))) })
     def('glFramebufferTexture2D' + sfx, () => { gl().framebufferTexture2D(R(0), R(1), R(2), tex.get(R(3)), S(0)) })
@@ -210,7 +212,7 @@ export function installGles(nat: Native) {
   const shadow = new Map<WebGLBuffer, Uint8Array>()
   let arrayBuf: WebGLBuffer | null = null, elemBuf: WebGLBuffer | null = null
   const bound = (target: number) => (target === 0x8893 ? elemBuf : arrayBuf)
-  def('glBindBuffer', () => { const b = buf.get(R(1)); gl().bindBuffer(R(0), b); if (R(0) === 0x8892) arrayBuf = b; else if (R(0) === 0x8893) elemBuf = b })
+  def('glBindBuffer', () => { const b = buf.bind(R(1), () => gl().createBuffer()); gl().bindBuffer(R(0), b); if (R(0) === 0x8892) arrayBuf = b; else if (R(0) === 0x8893) elemBuf = b })
   def('glBufferData', () => {
     const data = R(2) ? bytes(R(2), R(1)) : new Uint8Array(R(1))
     gl().bufferData(R(0), data, R(3))
@@ -229,7 +231,7 @@ export function installGles(nat: Native) {
 
   // ---------- textures ----------
   def('glActiveTexture', () => { gl().activeTexture(R(0)) })
-  def('glBindTexture', () => { gl().bindTexture(R(0), tex.get(R(1))) })
+  def('glBindTexture', () => { gl().bindTexture(R(0), tex.bind(R(1), () => gl().createTexture())) })
   def('glTexParameteri', () => { gl().texParameteri(R(0), R(1), R(2) | 0) })
   def('glTexParameterf', () => { const p = R(1); if (p === 0x84fe) gl().getExtension('EXT_texture_filter_anisotropic'); gl().texParameterf(R(0), p, F(R(2))) })
   def('glTexParameteriv', () => { gl().texParameteri(R(0), R(1), m.r32(R(2)) | 0) })
@@ -288,7 +290,11 @@ export function installGles(nat: Native) {
     for (let i = 0; i < R(1); i++) { const p = m.r32(R(2) + i * 4); const len = R(3) ? m.r32(R(3) + i * 4) | 0 : -1; src += len >= 0 ? new TextDecoder().decode(bytes(p, len)) : m.cstr(p) }
     gl().shaderSource(shaders.get(R(0))!, src)
   })
-  def('glCompileShader', () => { gl().compileShader(shaders.get(R(0))!) })
+  def('glCompileShader', () => {
+    const sh = shaders.get(R(0))!, g = gl()
+    g.compileShader(sh)
+    if (!g.getShaderParameter(sh, g.COMPILE_STATUS)) console.warn('gl: shader did not compile:', (g.getShaderInfoLog(sh) || '').slice(0, 300), '|', (g.getShaderSource(sh) || '').slice(0, 200).replace(/\s+/g, ' '))
+  })
   def('glGetShaderiv', () => {
     const s = shaders.get(R(0))!, g = gl()
     const v = R(1) === 0x8b84 ? (g.getShaderInfoLog(s) || '').length + 1 : R(1) === 0x8b88 ? (g.getShaderSource(s) || '').length + 1 : g.getShaderParameter(s, R(1))
@@ -302,7 +308,11 @@ export function installGles(nat: Native) {
   def('glAttachShader', () => { gl().attachShader(progs.get(R(0))!, shaders.get(R(1))!) })
   def('glDetachShader', () => { gl().detachShader(progs.get(R(0))!, shaders.get(R(1))!) })
   def('glBindAttribLocation', () => { gl().bindAttribLocation(progs.get(R(0))!, R(1), m.cstr(R(2))) })
-  def('glLinkProgram', () => { const p = progs.get(R(0))!; gl().linkProgram(p); uniforms.delete(p) })
+  def('glLinkProgram', () => {
+    const p = progs.get(R(0))!, g = gl()
+    g.linkProgram(p); uniforms.delete(p)
+    if (!g.getProgramParameter(p, g.LINK_STATUS)) console.warn('gl: program did not link:', (g.getProgramInfoLog(p) || '').slice(0, 300))
+  })
   def('glValidateProgram', () => { gl().validateProgram(progs.get(R(0))!) })
   def('glUseProgram', () => { const p = progs.get(R(0)); gl().useProgram(p); current = p })
   let current: WebGLProgram | null = null

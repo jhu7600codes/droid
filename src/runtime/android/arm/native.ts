@@ -7,7 +7,7 @@ import { installPosix } from './posix.ts'
 import { installLibc } from './libc.ts'
 import { GL, installGles } from './gles.ts'
 import { loadElf, type Lib } from './elf.ts'
-import { VM, JObject, JArray, JavaThrow, JThread, splitParams, type JMethod } from '../dalvik.ts'
+import { VM, JObject, JArray, JavaThrow, JThread, splitParams, type JMethod, type JClass } from '../dalvik.ts'
 import { jstr } from '../java.ts'
 
 const MB = 1024 * 1024
@@ -25,8 +25,9 @@ export class Native {
   jvm = 0
   // the jni pending exception belongs to the thread that raised it (pthread or java thread)
   private pendingBy = new Map<unknown, JavaThrow>()
+
   get pending(): JavaThrow | null { return this.pendingBy.get(this.threads?.task()) ?? null }
-  set pending(e: JavaThrow | null) { const k = this.threads.task(); if (e) this.pendingBy.set(k, e); else this.pendingBy.delete(k) }
+  set pending(e: JavaThrow | null) { const k = this.threads.task();  if (e) this.pendingBy.set(k, e); else this.pendingBy.delete(k) }
   vm: VM
   vfs: import('../javaio.ts').Vfs
   pkg: string
@@ -387,9 +388,18 @@ export class Native {
     set(27, () => this.ref(new JObject(clsOf(R(1))))) // AllocObject
     set(31, () => this.ref(vm.classObject(vm.classOf(this.deref(R(1)))))) // GetObjectClass
     set(32, () => (vm.instanceOf(this.deref(R(1)), clsOf(R(2))) ? 1 : 0))
+    // no exact match: a method of that name whose parameters accept the given types (a subclass where
+    // it takes a superclass), as unity's ReflectionHelper would pick
+    const compatible = (k: JClass, key: string) => {
+      const name = key.slice(0, key.indexOf('(')), want = splitParams(key.slice(key.indexOf('(')))
+      const fits = (decl: string, got: string) => decl === got || (decl[0] === 'L' && got[0] === 'L' && (decl === 'Ljava/lang/Object;' || vm.hasClass(got) && vm.isSubclass(vm.cls(got), vm.cls(decl))))
+      for (let c: JClass | null = k; c; c = c.super) for (const mm of c.methods.values()) if (mm.name === name && mm.params.length === want.length && mm.params.every((p, i) => fits(p, want[i]))) return mm
+      return null
+    }
     const getMethod = (isStatic: boolean) => guard(() => {
-      const k = clsOf(R(1)), key = m.cstr(R(2)) + m.cstr(R(3))
-      const mm = vm.findMethod(k, key)
+      // class names in a signature with dots (unity builds some from Class.getName) mean the same class
+      const k = clsOf(R(1)), key = m.cstr(R(2)) + m.cstr(R(3)).replace(/L[^;()]*;/g, (x) => x.replace(/\./g, '/'))
+      const mm = vm.findMethod(k, key) ?? compatible(k, key)
       if (!mm) throw vm.error('Ljava/lang/NoSuchMethodError;', `${k.name}->${key}`)
       methods.push(mm)
       void isStatic

@@ -2,7 +2,7 @@
 import { readStringPool, readValue, T, type XmlValue } from './axml.ts'
 
 export interface ResConfig { density: number; orientation: number; sdk: number; language: string; width: number; height: number; nightMode: number }
-export interface ResEntry { type: string; name: string; values: { config: ResConfig; value?: XmlValue; map?: { name: number; value: XmlValue }[] }[] }
+export interface ResEntry { type: string; name: string; values: { config: ResConfig; value?: XmlValue; map?: { name: number; value: XmlValue }[]; parent?: number }[] }
 export interface ResTable { pkg: string; entries: Map<number, ResEntry> }
 
 export function parseArsc(buf: Uint8Array): ResTable {
@@ -53,7 +53,7 @@ function parsePackage(d: DataView, o: number, globals: string[], table: ResTable
           const n = d.getUint32(e + 12, true)
           const map = []
           for (let k = 0; k < n; k++) { const m = e + eSize + k * 12; map.push({ name: d.getUint32(m, true), value: readValue(d, m + 4, globals) }) }
-          entry.values.push({ config: cfg, map })
+          entry.values.push({ config: cfg, map, parent: d.getUint32(e + 8, true) })
         } else entry.values.push({ config: cfg, value: readValue(d, e + eSize, globals) })
       }
     }
@@ -94,4 +94,36 @@ export const entryName = (t: ResTable, id: number) => t.entries.get(id >>> 0)
 export function idByName(t: ResTable, type: string, name: string) {
   for (const [id, e] of t.entries) if (e.type === type && e.name === name) return id
   return 0
+}
+
+// window look of a theme: does it hide the title / action bar, the status bar. app styles are walked
+// up their parents (attribute values win, nearest first) to a framework theme
+const FRAMEWORK_THEMES: Record<number, { noTitle: boolean; fullscreen: boolean }> = {
+  0x01030006: { noTitle: true, fullscreen: false }, 0x01030007: { noTitle: true, fullscreen: true }, // Theme.NoTitleBar(.Fullscreen)
+  0x01030009: { noTitle: true, fullscreen: false }, 0x0103000a: { noTitle: true, fullscreen: true }, // Theme.Black.NoTitleBar(.Fullscreen)
+  0x0103000d: { noTitle: true, fullscreen: false }, 0x0103000e: { noTitle: true, fullscreen: true }, // Theme.Light.NoTitleBar(.Fullscreen)
+  0x01030010: { noTitle: true, fullscreen: false }, 0x01030011: { noTitle: true, fullscreen: true }, // Theme.Translucent.NoTitleBar(.Fullscreen)
+  0x0103006c: { noTitle: true, fullscreen: false }, 0x0103006d: { noTitle: true, fullscreen: true }, // Theme.Holo.NoActionBar(.Fullscreen)
+  0x010300f0: { noTitle: true, fullscreen: false }, 0x010300f1: { noTitle: true, fullscreen: true }, // Theme.Holo.Light.NoActionBar(.Fullscreen)
+}
+export function themeWindow(t: ResTable | undefined, id: number): { noTitle: boolean; fullscreen: boolean } {
+  let noTitle: boolean | undefined, fullscreen: boolean | undefined
+  for (let cur = id >>> 0, depth = 0; cur && depth < 20; depth++) {
+    const fw = FRAMEWORK_THEMES[cur]
+    if (fw) { noTitle ??= fw.noTitle; fullscreen ??= fw.fullscreen; break }
+    const e = t?.entries.get(cur)
+    if (!e) break
+    const v = e.values.find((x) => x.map) ?? e.values[0]
+    for (const it of v?.map || []) {
+      const on = !!(it.value as any)?.data
+      if (it.name === 0x01010056) noTitle ??= on // windowNoTitle
+      else if (it.name === 0x010102cd) noTitle ??= !on // windowActionBar
+      else if (it.name === 0x0101020d) fullscreen ??= on // windowFullscreen
+    }
+    // styles named after the framework ones they copy (parent missing from the table)
+    if (/NoTitleBar|NoActionBar/i.test(e.name)) noTitle ??= true
+    if (/Fullscreen/i.test(e.name)) fullscreen ??= true
+    cur = (v?.parent ?? 0) >>> 0
+  }
+  return { noTitle: !!noTitle, fullscreen: !!fullscreen }
 }

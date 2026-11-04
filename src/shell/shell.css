@@ -17,6 +17,9 @@ html, body { margin: 0; height: 100%; background: #000; overflow: hidden; oversc
 #windows .window.visible, #windows .window.win-close, #windows .window.win-to-back { display: block; }
 #screen.immersive #windows .window { top: 0; bottom: 0; right: 0; }
 #screen.immersive #statusbar, #screen.immersive #navbar { transform: translateY(-100%); }
+/* a fullscreen app (no status bar) in front: its window takes the top too */
+#screen:not([data-form="desktop"]) #windows .window.no-statusbar { top: 0; }
+html[data-front-no-status="1"] #screen:not([data-form="desktop"]) #statusbar { transform: translateY(-100%); }
 
 /* kitkat activity transitions (activity_open_enter / close_exit: fade + zoom, 300ms) */
 @keyframes win-open { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: none; } }

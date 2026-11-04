@@ -7,7 +7,7 @@ import { registerGlJava } from './gl-java.ts'
 import { registerAudio, registerNet } from './audio.ts'
 import { jstr, jformat, box } from './java.ts'
 import { parseAxml, attr, attrString, T, type XmlNode, type XmlValue } from './axml.ts'
-import { resolve, entryName, type ResTable } from './arsc.ts'
+import { resolve, entryName, themeWindow, type ResTable } from './arsc.ts'
 
 export const SHIM_VERSION = 'droid-framework@0.1'
 const OBJ = 'Ljava/lang/Object;'
@@ -88,9 +88,27 @@ export function registerAndroid(vm: VM, env: Env) {
     if (!v.f.onClick) return
     try { vm.callVirtual(v.f.onClick, 'onClick(Landroid/view/View;)V', [v]) } catch (e) { report(e) }
   }
+  // this app's window without the status bar (FLAG_FULLSCREEN, fullscreen themes)
+  const statusBar = (visible: boolean) => { env.droid.system.statusbar?.(visible)?.catch?.(() => {}) }
+  // a theme's window look: no title bar, no status bar
+  const applyTheme = (id: number) => {
+    if (!id) return
+    const w = themeWindow(env.res, id)
+    if (w.noTitle) env.droid.actionbar.hide()
+    if (w.fullscreen) statusBar(false)
+  }
+  const manifestTheme = (cls: string) => {
+    const x = (env as any).manifestXml as XmlNode | null
+    const app = x?.children.find((c) => c.tag === 'application')
+    const theme = (n?: XmlNode) => (n?.attrs.find((a) => a.resId === 0x01010000)?.value.data ?? 0) >>> 0
+    const full = (n: string) => (n.startsWith('.') ? env.pkg + n : n.includes('.') ? n : env.pkg + '.' + n)
+    const act = app?.children.find((c) => c.tag === 'activity' && 'L' + full(String(c.attrs.find((a) => a.resId === 0x01010003)?.value.str ?? '')).replace(/\./g, '/') + ';' === cls)
+    return theme(act) || theme(app)
+  }
   const report = (e: unknown) => {
     const msg = e instanceof JavaThrow ? jstr(vm, e.obj) : String((e as Error)?.message || e)
     console.error('android app crashed:', msg)
+    if (e instanceof JavaThrow && e.obj?.f?.jstack?.length) console.error('java stack:', e.obj.f.jstack.join(' < '))
     // runtime errors (not java exceptions): where it happened, in js and in native code
     if (!(e instanceof JavaThrow)) {
       if ((e as Error)?.stack) console.error('stack:', (e as Error).stack!.split('\n').slice(0, 8).join(' | '))
@@ -426,18 +444,19 @@ export function registerAndroid(vm: VM, env: Env) {
     'runOnUiThread(Ljava/lang/Runnable;)V': (v, s, [r]) => { if (vm.current === vm.main) runSafe(r); else setTimeout(() => runSafe(r), 0) },
     'getLayoutInflater()Landroid/view/LayoutInflater;': () => new JObject(vm.cls('Landroid/view/LayoutInflater;')),
     'invalidateOptionsMenu()V': () => buildMenu(),
-    'requestWindowFeature(I)Z': () => 1,
+    'requestWindowFeature(I)Z': (v, s, [f]) => { if (f === 1) env.droid.actionbar.hide() /* FEATURE_NO_TITLE */; return 1 },
     'getApplication()Landroid/app/Application;': () => appObj,
-    'setTheme(I)V': noop, // the holo look comes from the shell; fullscreen themes go through window flags
+    'setTheme(I)V': (v, s, [id]) => applyTheme(id), // the holo look comes from the shell; this does the window part
     'getTheme()Landroid/content/res/Resources$Theme;': () => new JObject(vm.cls('Landroid/content/res/Resources$Theme;')),
     'isFinishing()Z': () => 0,
     'getActionBar()Landroid/app/ActionBar;': () => new JObject(vm.cls('Landroid/app/ActionBar;')),
   })
   def('Landroid/app/ActionBar;', OBJ, { 'setTitle(Ljava/lang/CharSequence;)V': (v, s, [t]) => env.droid.actionbar.title(textOf(t)), 'hide()V': () => env.droid.actionbar.hide(), 'show()V': () => env.droid.actionbar.show(), 'setDisplayHomeAsUpEnabled(Z)V': noop })
   def('Landroid/view/Window;', OBJ, {
-    'setFlags(II)V': (v, s, [f]) => { if (f & 0x400) env.droid.system.fullscreen(true).catch(() => {}) },
-    'addFlags(I)V': (v, s, [f]) => { if (f & 0x400) env.droid.system.fullscreen(true).catch(() => {}); if (f & 0x80) env.droid.system.keepawake(true) },
-    'clearFlags(I)V': (v, s, [f]) => { if (f & 0x400) env.droid.system.fullscreen(false).catch(() => {}); if (f & 0x80) env.droid.system.keepawake(false) },
+    // FLAG_FULLSCREEN 0x400: no status bar for this app; FLAG_KEEP_SCREEN_ON 0x80
+    'setFlags(II)V': (v, s, [f, mask]) => { if (mask & 0x400) statusBar(!(f & 0x400)); if (mask & 0x80) env.droid.system.keepawake(!!(f & 0x80)) },
+    'addFlags(I)V': (v, s, [f]) => { if (f & 0x400) statusBar(false); if (f & 0x80) env.droid.system.keepawake(true) },
+    'clearFlags(I)V': (v, s, [f]) => { if (f & 0x400) statusBar(true); if (f & 0x80) env.droid.system.keepawake(false) },
     'setSoftInputMode(I)V': noop, 'setFormat(I)V': noop, 'setBackgroundDrawable(Landroid/graphics/drawable/Drawable;)V': noop,
     'setBackgroundDrawableResource(I)V': noop, 'setLayout(II)V': noop, 'setGravity(I)V': noop, 'setType(I)V': noop,
     'takeSurface(Landroid/view/SurfaceHolder$Callback2;)V': noop, 'takeInputQueue(Landroid/view/InputQueue$Callback;)V': noop,
@@ -972,6 +991,7 @@ export function registerAndroid(vm: VM, env: Env) {
       vm.callVirtual(appObj, 'onCreate()V')
     },
     start(className: string, saved: any) {
+      applyTheme(manifestTheme(className))
       activityObj = vm.newObject(className)
       let bundle: JObject | null = null
       if (saved && typeof saved === 'object') { bundle = new JObject(vm.cls('Landroid/os/Bundle;')); bundle.f.map = extrasFromJson(saved) }
