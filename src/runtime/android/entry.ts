@@ -1,6 +1,7 @@
 // the android runtime inside a converted dpk's sandbox (built as runtime/android-runtime.js).
 // reads the original apk files from apk/, runs the activity's dex code, loads armeabi-v7a libraries.
 import { parseDex } from './dex.ts'
+import { parseAxml, attrString } from './axml.ts'
 import { parseArsc } from './arsc.ts'
 import { VM } from './dalvik.ts'
 import { registerJava, jstr } from './java.ts'
@@ -18,6 +19,17 @@ interface Map_ { pkg: string; activities: Record<string, string>; libs: string[]
 const norm = (p: string) => p.toLowerCase().replace(/[^a-z0-9/._-]/g, '_')
 async function bytes(path: string) { return new Uint8Array(await (await fetch(path)).arrayBuffer()) }
 
+function manifestParts(bytes: Uint8Array | undefined, pkg: string) {
+  if (!bytes) return { application: null as string | null, providers: [] as { cls: string; authorities: string }[] }
+  const man = parseAxml(bytes)
+  const p = man.attrs.find((a) => a.name === 'package')?.value.str || pkg
+  const full = (n: string) => 'L' + (n.startsWith('.') ? p + n : n.includes('.') ? n : p + '.' + n).replace(/\./g, '/') + ';'
+  const app = man.children.find((c) => c.tag === 'application')
+  const name = app ? attrString(app, 'name') : null
+  const providers = (app?.children || []).filter((c) => c.tag === 'provider' && attrString(c, 'name')).map((c) => ({ cls: full(attrString(c, 'name')!), authorities: attrString(c, 'authorities') || '' }))
+  return { application: name ? full(name) : null, providers }
+}
+
 droid.on('create', async (saved: any) => {
   const root = document.getElementById('app')!
   try {
@@ -26,7 +38,7 @@ droid.on('create', async (saved: any) => {
     const cls = map.activities[info.activity]
     const files = new Map<string, Uint8Array>()
     const list: string[] = await (await fetch('apk-files.json')).json()
-    await Promise.all(list.filter((p) => /^(res\/|resources\.arsc|classes\d*\.dex)/.test(p)).map(async (p) => files.set(p, await bytes('apk/' + norm(p)))))
+    await Promise.all(list.filter((p) => /^(res\/|resources\.arsc|classes\d*\.dex|AndroidManifest\.xml)/.test(p)).map(async (p) => files.set(p, await bytes('apk/' + norm(p)))))
     // preload prefs so SharedPreferences can be synchronous
     const prefs = new Map<string, any>()
     for (const k of await droid.prefs.keys()) if (k.startsWith('sp:')) prefs.set(k, await droid.prefs.get(k))
@@ -72,7 +84,10 @@ droid.on('create', async (saved: any) => {
       if (!native) throw vm.error('Ljava/lang/UnsatisfiedLinkError;', `no native library loaded for ${m.cls.name}->${m.key}`)
       return native.call(m, self, args)
     }
-    app.application((map as any).application || null)
+    // the Application subclass and content providers come from the manifest (also for apps converted
+    // before droid knew about them); android makes them in this order before any activity
+    const { application, providers } = manifestParts(files.get('AndroidManifest.xml'), map.pkg)
+    app.application((map as any).application || application, providers)
     // background host (alarms, receivers, services): no activity, jobs arrive as intents
     if (info.activity === '__bg') {
       droid.on('intent', (i: any) => { if (i?.action === 'background-job') { app.background(i.extras.job, (map as any).receivers || []); droid.background.idle() } })

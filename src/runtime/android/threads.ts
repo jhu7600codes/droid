@@ -11,7 +11,10 @@
 export class Block {
   // ready: can the task go on (it checks the time itself for timed waits).
   // until: when to look again at the latest (ms, performance.now), for the scheduler's timer
-  constructor(public ready: () => boolean, public until = Infinity, public what = 'wait') {}
+  ready: () => boolean
+  until: number
+  what: string
+  constructor(ready: () => boolean, until = Infinity, what = 'wait') { this.ready = ready; this.until = until; this.what = what }
   // the value the blocking call returns once it is ready (computed then, e.g. after re-acquiring a lock)
   finish: () => any = () => undefined
   then(f: () => any) { this.finish = f; return this }

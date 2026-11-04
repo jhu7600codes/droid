@@ -10,6 +10,8 @@ export const SAMPLES = ['examples/hello.dpk', 'examples/notes.dpk', 'examples/wa
 export async function startRuntime() {
   await loadInstalled()
   ;(await import('./background')).startBackground()
+  // converted apps from an older converter: convert them again in the background
+  setTimeout(() => import('./reconvert').then((m) => m.reconvertOld()).catch((e) => console.warn('reconvert', e)), 3000)
   if (!settings.get('samples.installed')) {
     for (const url of SAMPLES) {
       try {

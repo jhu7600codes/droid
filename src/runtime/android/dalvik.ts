@@ -24,7 +24,9 @@ export class JThread implements Task {
   obj: JObject | null = null // its java.lang.Thread
   interrupted = false
   onDone?: (err: unknown) => void
-  constructor(public vm: VM, public name: string, main = false) { this.busy = main }
+  vm: VM
+  name: string
+  constructor(vm: VM, name: string, main = false) { this.vm = vm; this.name = name; this.busy = main }
   step(ms: number) { this.vm.stepThread(this, ms) }
 }
 
