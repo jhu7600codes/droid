@@ -81,7 +81,7 @@ function three(f: FP, insn: number, U: number, Vd: number, Vn: number, Vm: numbe
     const w = bytes / 4
     for (let i = 0; i < w; i++) {
       const x = f.u[Vn * 2 + i], y = f.u[Vm * 2 + i], dv = f.u[Vd * 2 + i]
-      f.u[Vd * 2 + i] = (!U ? [x & y, x & ~y, x | y, x | ~y][size] : [x ^ y, (dv & x) | (~dv & y), (x & dv) | (y & ~dv), (x & ~dv) | (y & dv)][size]) >>> 0
+      f.u[Vd * 2 + i] = (!U ? [x & y, x & ~y, x | y, x | ~y][size] : [x ^ y, (dv & x) | (~dv & y), (x & y) | (dv & ~y), (dv & y) | (x & ~y)][size] /* veor vbsl vbit vbif */) >>> 0
     }
     return true
   }

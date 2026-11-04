@@ -21,6 +21,7 @@ export class FP {
   fpscr = 0
 }
 
+const roundEven = (v: number) => { const r = Math.round(v); return Math.abs(v % 1) === 0.5 && r % 2 !== 0 ? r - 1 : r }
 const NZCV = (c: CPU, n: boolean, z: boolean, cc: boolean, v: boolean) => ((n ? 8 : 0) | (z ? 4 : 0) | (cc ? 2 : 0) | (v ? 1 : 0)) << 28
 
 export function execVfp(c: CPU, insn: number, pc: number, thumb: boolean): boolean {
@@ -115,7 +116,7 @@ export function execVfp(c: CPU, insn: number, pc: number, thumb: boolean): boole
   switch (opc1) {
     // vmla and friends are not fused: the product is rounded first
     case 0x0: { const p = round(a * b); set(sd, round(get(sd) + (opc3 ? -p : p))); return true } // vmla / vmls
-    case 0x1: { const p = round(a * b); set(sd, round(-get(sd) + (opc3 ? p : -p))); return true } // vnmls / vnmla
+    case 0x1: { const p = round(a * b); set(sd, round(-get(sd) + (opc3 ? -p : p))); return true } // vnmls (op 0: -d + n*m) / vnmla (op 1: -d - n*m)
     case 0x2: set(sd, round(opc3 ? -(a * b) : a * b)); return true // vmul / vnmul
     case 0x3: set(sd, round(opc3 ? a - b : a + b)); return true // vadd / vsub
     case 0x8: set(sd, round(a / b)); return true // vdiv
@@ -157,7 +158,9 @@ export function execVfp(c: CPU, insn: number, pc: number, thumb: boolean): boole
     case 0xc: case 0xd: { // vcvt to int (round toward zero)
       const v = get(sm)
       const dst = (Vd << 1) | D
-      const t = isNaN(v) ? 0 : Math.trunc(v)
+      // op7 = 1: toward zero (c casts). op7 = 0 (vcvtr): the fpscr rounding mode, normally nearest-even
+      const rm = op7 ? 3 : (f.fpscr >>> 22) & 3
+      const t = isNaN(v) ? 0 : rm === 3 ? Math.trunc(v) : rm === 1 ? Math.ceil(v) : rm === 2 ? Math.floor(v) : roundEven(v)
       f.u[dst] = opc2 === 0xd ? (Math.max(-2147483648, Math.min(2147483647, t)) | 0) >>> 0 : Math.max(0, Math.min(4294967295, t)) >>> 0
       return true
     }

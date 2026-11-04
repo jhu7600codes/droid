@@ -427,8 +427,10 @@ export function installLibc(nat: Native) {
   def('llrint', () => BigInt.asUintN(64, BigInt(roundEven(D0())))); def('llround', () => BigInt.asUintN(64, BigInt(Math.round(D0()))))
   def('isnan', () => (isNaN(D0()) ? 1 : 0)); def('isnanf', () => (isNaN(F0()) ? 1 : 0)); def('isinf', () => (Math.abs(D0()) === Infinity ? 1 : 0)); def('isinff', () => (Math.abs(F0()) === Infinity ? 1 : 0))
   def('finite', () => (isFinite(D0()) ? 1 : 0)); def('finitef', () => (isFinite(F0()) ? 1 : 0)); def('__isfinite', () => (isFinite(D0()) ? 1 : 0))
-  const cls = (x: number) => (isNaN(x) ? 0 : !isFinite(x) ? 1 : x === 0 ? 2 : Math.abs(x) < 2.2250738585072014e-308 ? 3 : 4) // nan inf zero subnormal normal
-  def('__fpclassifyd', () => cls(D0())); def('__fpclassifyf', () => { const x = F0(); return isNaN(x) ? 0 : !isFinite(x) ? 1 : x === 0 ? 2 : Math.abs(x) < 1.1754943508222875e-38 ? 3 : 4 }); def('__fpclassify', () => cls(D0()))
+  // bionic's fpclassify values are flags (not glibc's 0..4): FP_INFINITE 1, FP_NAN 2, FP_NORMAL 4,
+  // FP_SUBNORMAL 8, FP_ZERO 16. code tests them with masks (physx: (c & 3) == 0 for "finite")
+  const cls = (x: number, tiny: number) => (isNaN(x) ? 2 : !isFinite(x) ? 1 : x === 0 ? 16 : Math.abs(x) < tiny ? 8 : 4)
+  def('__fpclassifyd', () => cls(D0(), 2.2250738585072014e-308)); def('__fpclassifyf', () => cls(F0(), 1.1754943508222875e-38)); def('__fpclassify', () => cls(D0(), 2.2250738585072014e-308))
   def('__signbit', () => (D0() < 0 || Object.is(D0(), -0) ? 1 : 0)); def('__signbitf', () => (F0() < 0 || Object.is(F0(), -0) ? 1 : 0))
   def('sincos', () => { const x = D0(); m.dv.setFloat64(R(2), Math.sin(x), true); m.dv.setFloat64(R(3), Math.cos(x), true) })
   def('sincosf', () => { const x = F0(); m.dv.setFloat32(R(1), Math.sin(x), true); m.dv.setFloat32(R(2), Math.cos(x), true) })

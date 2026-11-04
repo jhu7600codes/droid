@@ -13,6 +13,8 @@ export const RETURN_TRAP = 0xfffffff0
 // guest memory: one growable ArrayBuffer (resizable when the browser can, else re-allocated), with a
 // malloc that keeps a 16-byte header before every block: [total size, distance back to the block start]
 const MAX_MEM = 1024 * 1024 * 1024
+// a guest access to unmapped memory (delivered as SIGSEGV when the program has a handler)
+export class MemFault { addr: number; write: boolean; constructor(addr: number, write: boolean) { this.addr = addr >>> 0; this.write = write } }
 export class Memory {
   buf: ArrayBuffer
   u8: Uint8Array
@@ -26,12 +28,15 @@ export class Memory {
     this.dv = new DataView(this.buf)
     this.brk = 0x10000
   }
-  r32(a: number) { return this.dv.getUint32(a >>> 0, true) }
-  w32(a: number, v: number) { this.dv.setUint32(a >>> 0, v >>> 0, true) }
-  r16(a: number) { return this.dv.getUint16(a >>> 0, true) }
-  w16(a: number, v: number) { this.dv.setUint16(a >>> 0, v & 0xffff, true) }
-  r8(a: number) { return this.u8[a >>> 0] }
-  w8(a: number, v: number) { this.u8[a >>> 0] = v }
+  // while guest instructions run, the first 64 kb is unmapped (a null pointer faults, as on a phone:
+  // mono turns those faults into NullReferenceException); host code reads memory unguarded
+  guard = false
+  r32(a: number) { if (a < 0x10000 && this.guard) throw new MemFault(a, false); return this.dv.getUint32(a >>> 0, true) }
+  w32(a: number, v: number) { if (a < 0x10000 && this.guard) throw new MemFault(a, true); this.dv.setUint32(a >>> 0, v >>> 0, true) }
+  r16(a: number) { if (a < 0x10000 && this.guard) throw new MemFault(a, false); return this.dv.getUint16(a >>> 0, true) }
+  w16(a: number, v: number) { if (a < 0x10000 && this.guard) throw new MemFault(a, true); this.dv.setUint16(a >>> 0, v & 0xffff, true) }
+  r8(a: number) { if ((a < 0x10000 || a >= this.u8.length) && this.guard) throw new MemFault(a, false); return this.u8[a >>> 0] }
+  w8(a: number, v: number) { if ((a < 0x10000 || a >= this.u8.length) && this.guard) throw new MemFault(a, true); this.u8[a >>> 0] = v }
   cstr(a: number, max = 1 << 20) {
     let e = a
     while (this.u8[e] && e - a < max) e++
@@ -184,24 +189,49 @@ export class CPU {
   // (STOP.YIELD) or a host function that waits (STOP.BLOCK; nested runs pass deadline Infinity and
   // wait in place instead)
   run(deadline: number): number {
+    const m = this.mem, guard = m.guard
+    m.guard = true
+    try { return this.loop(deadline) } finally { m.guard = guard }
+  }
+  // fault frames: signal handlers for a fault run inline and come back through the sigreturn trap with
+  // this frame's sp; the (possibly edited) ucontext then gives the registers to go on with
+  faultFrames = new Map<number, { uc: number; fp: ArrayBuffer; fpscr: number }>()
+  onFault: ((addr: number, write: boolean, pc: number) => boolean) | null = null
+  private sigreturn(f: { uc: number; fp: ArrayBuffer; fpscr: number }) {
+    const m = this.mem, mc = f.uc + 20
+    for (let i = 0; i < 16; i++) this.r[i] = m.r32(mc + 12 + i * 4)
+    const cpsr = m.r32(mc + 76)
+    this.N = (cpsr >>> 31) === 1; this.Z = ((cpsr >>> 30) & 1) === 1; this.C = ((cpsr >>> 29) & 1) === 1; this.V = ((cpsr >>> 28) & 1) === 1
+    this.thumb = ((cpsr >>> 5) & 1) === 1 || (this.r[15] & 1) === 1
+    this.r[15] &= ~1
+    this.it = 0
+    new Uint8Array(this.fp.buf).set(new Uint8Array(f.fp))
+    this.fp.fpscr = f.fpscr
+  }
+  private loop(deadline: number): number {
     for (;;) {
       const pc = this.r[15]
       if (pc >= TRAP_BASE) {
         if (pc === RETURN_TRAP) return STOP.RETURN
         if (pc === THREAD_EXIT_TRAP) return STOP.EXIT
-        if (pc === SIGRETURN_TRAP) return STOP.SIGRETURN
+        if (pc === SIGRETURN_TRAP) {
+          const f = this.faultFrames.get(this.r[13])
+          if (f) { this.faultFrames.delete(this.r[13]); this.sigreturn(f); continue }
+          return STOP.SIGRETURN
+        }
         if (pc >= 0xffff0f00 && pc < 0xffff1000) { this.kuser(pc); continue }
         const h = this.host[(pc - TRAP_BASE) >>> 2]
         if (!h) throw new Error(`arm: jump to bad trap 0x${pc.toString(16)}`)
         const lr = this.r[14]
         let v: unknown
+        this.mem.guard = false
         try { v = h.fn(this) }
         catch (e) {
           if (!(e instanceof Error) && (e as any)?.ready) {
             if (deadline === Infinity) v = this.pump(e as any)
             else { this.waiting = { block: e as any, lr }; return STOP.BLOCK }
           } else throw e
-        }
+        } finally { this.mem.guard = true }
         this.retValue(v)
         // the host function may have redirected execution (longjmp, signals, thread exit): it sets pc
         if (this.r[15] !== pc) continue
@@ -214,10 +244,19 @@ export class CPU {
         if (deadline !== Infinity) { if (performance.now() > deadline) return STOP.YIELD }
         else if (this.slowAt && performance.now() > this.slowAt) { this.slowAt += 3000; this.onSlow?.(pc | (this.thumb ? 1 : 0), this.r[14]) }
       }
-      if (this.thumb) { execThumb(this, pc); continue }
-      const insn = this.mem.r32(pc)
-      this.r[15] = pc + 4
-      if (this.cond(insn >>> 28)) this.exec(insn, pc)
+      try {
+        if (this.thumb) { execThumb(this, pc); continue }
+        const insn = this.mem.r32(pc)
+        this.r[15] = pc + 4
+        if (this.cond(insn >>> 28)) this.exec(insn, pc)
+      } catch (e) {
+        const past = e instanceof RangeError && /bounds|offset/i.test(e.message)
+        if (!(e instanceof MemFault) && !past) throw e
+        const addr = e instanceof MemFault ? e.addr : 0xffffffff, write = e instanceof MemFault && e.write
+        this.r[15] = pc
+        if (this.onFault?.(addr, write, pc)) continue
+        throw new Error(`arm: segmentation fault, ${write ? 'write to' : 'read of'} 0x${addr.toString(16)} at pc 0x${pc.toString(16)}`)
+      }
     }
   }
 
@@ -335,6 +374,11 @@ export class CPU {
         this.r[lo] = Number(u & 0xffffffffn)
         this.r[hi] = Number(u >> 32n)
         if ((insn >>> 20) & 1) { this.N = (this.r[hi] >>> 31) === 1; this.Z = u === 0n }
+        return
+      }
+      if (op1 === 0 && (insn & 0x0ff000f0) === 0x00400090) { // umaal: rdhi:rdlo = rn * rm + rdlo + rdhi
+        const u = BigInt(this.r[rm]) * BigInt(this.r[rs]) + BigInt(this.r[rd]) + BigInt(this.r[rn])
+        this.r[rd] = Number(u & 0xffffffffn); this.r[rn] = Number((u >> 32n) & 0xffffffffn)
         return
       }
       if (op1 === 0 && (insn & 0x0ff000f0) === 0x00600090) { // mls

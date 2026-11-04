@@ -71,13 +71,14 @@ export function registerAudio(vm: VM) {
     if (!t) return -3 // ERROR_INVALID_OPERATION
     const go = () => { push(t, decode(t, arr, off, len, kind)); return len }
     if (t.state !== 'playing' || !audio() || audio()!.state !== 'running') {
-      if (!vm.current || vm.current.busy) return len
+      if (!vm.current || vm.current === vm.main) return len // the ui thread never waits here
       // not playing (or the browser has not allowed sound yet): pretend to play in real time
       const secs = len / (kind === 'B' ? bytesPer(t.format) : 1) / t.channels / t.rate
       t.written += Math.floor(secs * t.rate)
       throw new Block(() => true, performance.now() + secs * 1000, 'audio').then(() => len)
     }
-    if (queued(t) < bufSeconds(t) || !vm.current || vm.current.busy) return go()
+    // (a wait inside a nested call is fine: the scheduler runs the others meanwhile)
+    if (queued(t) < bufSeconds(t) || !vm.current || vm.current === vm.main) return go()
     const room = () => queued(t) < bufSeconds(t) || t.state !== 'playing'
     throw new Block(room, performance.now() + (queued(t) - bufSeconds(t)) * 1000 + 1, 'audio').then(go)
   }
@@ -125,3 +126,47 @@ export function registerAudio(vm: VM) {
   void JObject
 }
 function popcount(x: number) { let n = 0; while (x) { n += x & 1; x >>>= 1 } return n }
+
+// java.net.URL and HttpURLConnection, offline: apps see a phone without a connection (their
+// network threads get UnknownHostException and give up the normal way)
+export function registerNet(vm: VM) {
+  const sh = (name: string, sup: string, methods: Record<string, NativeFn>) => { const old = vm.shims.get(name); vm.shim(name, { super: old?.super ?? sup, methods: { ...(old?.methods || {}), ...methods }, statics: old?.statics }) }
+  const ex = (cls: string, msg: string) => vm.error(cls, msg)
+  for (const e of ['Ljava/net/UnknownHostException;', 'Ljava/net/MalformedURLException;', 'Ljava/net/SocketTimeoutException;', 'Ljava/net/ConnectException;'])
+    if (!vm.shims.has(e)) vm.shim(e, { super: 'Ljava/io/IOException;', methods: { '<init>(Ljava/lang/String;)V': (v, s, [m]) => { s.f.message = m }, '<init>()V': () => {} } })
+  const parse = (s: JObject, u: string) => {
+    const m = /^([a-z][a-z0-9+.-]*):\/\/([^/:?#]*)(?::(\d+))?([^?#]*)(\?[^#]*)?(#.*)?$/i.exec(u)
+    if (!m) throw ex('Ljava/net/MalformedURLException;', 'no protocol: ' + u)
+    Object.assign(s.f, { url: u, protocol: m[1].toLowerCase(), host: m[2], port: m[3] ? Number(m[3]) : -1, path: m[4] || '', query: m[5] ? m[5].slice(1) : null, ref: m[6] ? m[6].slice(1) : null })
+  }
+  const offline = (s: JObject) => { throw ex('Ljava/net/UnknownHostException;', `Unable to resolve host "${s.f.host ?? ''}": No address associated with hostname`) }
+  sh('Ljava/net/URL;', 'Ljava/lang/Object;', {
+    '<init>(Ljava/lang/String;)V': (v, s, [u]) => parse(s, String(u)),
+    '<init>(Ljava/net/URL;Ljava/lang/String;)V': (v, s, [base, rel]) => { try { parse(s, new URL(String(rel), base?.f?.url).href) } catch { parse(s, String(rel)) } },
+    '<init>(Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;)V': (v, s, [p, h, port, f]) => parse(s, `${p}://${h}${port >= 0 ? ':' + port : ''}${f}`),
+    '<init>(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V': (v, s, [p, h, f]) => parse(s, `${p}://${h}${f}`),
+    'toString()Ljava/lang/String;': (v, s) => s.f.url, 'toExternalForm()Ljava/lang/String;': (v, s) => s.f.url,
+    'getProtocol()Ljava/lang/String;': (v, s) => s.f.protocol, 'getHost()Ljava/lang/String;': (v, s) => s.f.host,
+    'getPort()I': (v, s) => s.f.port, 'getDefaultPort()I': (v, s) => (s.f.protocol === 'https' ? 443 : 80),
+    'getPath()Ljava/lang/String;': (v, s) => s.f.path, 'getQuery()Ljava/lang/String;': (v, s) => s.f.query, 'getRef()Ljava/lang/String;': (v, s) => s.f.ref,
+    'getFile()Ljava/lang/String;': (v, s) => s.f.path + (s.f.query ? '?' + s.f.query : ''),
+    'equals(Ljava/lang/Object;)Z': (v, s, [o]) => (o?.f?.url === s.f.url ? 1 : 0), 'hashCode()I': (v, s) => [...String(s.f.url)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) | 0, 0),
+    'openConnection()Ljava/net/URLConnection;': (v, s) => { const c = new JObject(vm.cls(s.f.protocol === 'https' ? 'Ljavax/net/ssl/HttpsURLConnection;' : 'Ljava/net/HttpURLConnection;')); c.f.url = s; c.f.host = s.f.host; c.f.headers = new Map(); return c },
+    'openStream()Ljava/io/InputStream;': (v, s) => offline(s),
+  })
+  const conn: Record<string, NativeFn> = {
+    'connect()V': (v, s) => offline(s), 'getInputStream()Ljava/io/InputStream;': (v, s) => offline(s), 'getOutputStream()Ljava/io/OutputStream;': (v, s) => offline(s),
+    'getResponseCode()I': (v, s) => offline(s), 'getResponseMessage()Ljava/lang/String;': (v, s) => offline(s), 'getContent()Ljava/lang/Object;': (v, s) => offline(s),
+    'getErrorStream()Ljava/io/InputStream;': () => null, 'getContentLength()I': () => -1, 'getContentType()Ljava/lang/String;': () => null,
+    'getHeaderField(Ljava/lang/String;)Ljava/lang/String;': () => null, 'getURL()Ljava/net/URL;': (v, s) => s.f.url,
+    'setRequestProperty(Ljava/lang/String;Ljava/lang/String;)V': (v, s, [k, x]) => { s.f.headers.set(k, x) }, 'addRequestProperty(Ljava/lang/String;Ljava/lang/String;)V': (v, s, [k, x]) => { s.f.headers.set(k, x) },
+    'getRequestProperty(Ljava/lang/String;)Ljava/lang/String;': (v, s, [k]) => s.f.headers.get(k) ?? null,
+    'setRequestMethod(Ljava/lang/String;)V': (v, s, [m]) => { s.f.method = m }, 'getRequestMethod()Ljava/lang/String;': (v, s) => s.f.method ?? 'GET',
+    'setDoOutput(Z)V': () => {}, 'setDoInput(Z)V': () => {}, 'setUseCaches(Z)V': () => {}, 'setConnectTimeout(I)V': () => {}, 'setReadTimeout(I)V': () => {},
+    'setInstanceFollowRedirects(Z)V': () => {}, 'setChunkedStreamingMode(I)V': () => {}, 'setFixedLengthStreamingMode(I)V': () => {}, 'setAllowUserInteraction(Z)V': () => {},
+    'disconnect()V': () => {},
+  }
+  sh('Ljava/net/URLConnection;', 'Ljava/lang/Object;', conn)
+  sh('Ljava/net/HttpURLConnection;', 'Ljava/net/URLConnection;', {})
+  sh('Ljavax/net/ssl/HttpsURLConnection;', 'Ljava/net/HttpURLConnection;', { 'setSSLSocketFactory(Ljavax/net/ssl/SSLSocketFactory;)V': () => {}, 'setHostnameVerifier(Ljavax/net/ssl/HostnameVerifier;)V': () => {} })
+}

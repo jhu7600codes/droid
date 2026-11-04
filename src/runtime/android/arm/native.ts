@@ -1,6 +1,6 @@
 // native side of the android runtime: memory layout, libc / liblog host functions, and jni
 // (JNIEnv / JavaVM tables whose entries trap into js and talk to the dalvik vm).
-import { CPU, Memory, STOP, RETURN_TRAP, newContext, type HostFn, type Context } from './cpu.ts'
+import { CPU, Memory, STOP, RETURN_TRAP, SIGRETURN_TRAP, newContext, type HostFn, type Context } from './cpu.ts'
 import type { Block } from '../threads.ts'
 import { Threads, PThread, installPthreads } from './pthread.ts'
 import { installPosix } from './posix.ts'
@@ -23,7 +23,10 @@ export class Native {
   free: number[] = []
   env = 0
   jvm = 0
-  pending: JavaThrow | null = null
+  // the jni pending exception belongs to the thread that raised it (pthread or java thread)
+  private pendingBy = new Map<unknown, JavaThrow>()
+  get pending(): JavaThrow | null { return this.pendingBy.get(this.threads?.task()) ?? null }
+  set pending(e: JavaThrow | null) { const k = this.threads.task(); if (e) this.pendingBy.set(k, e); else this.pendingBy.delete(k) }
   vm: VM
   vfs: import('../javaio.ts').Vfs
   pkg: string
@@ -58,10 +61,40 @@ export class Native {
     this.errnoSetup()
     this.jni()
     vm.nativeAsync = this
+    // a fault in guest code: SIGSEGV to the program's handler (mono: NullReferenceException), on a
+    // linux-shaped frame (siginfo, ucontext with the registers at the fault). no handler: a crash
+    this.cpu.onFault = (addr, write, pc) => this.deliverFault(addr, write, pc)
+    // ByteBuffer.allocateDirect takes native memory from here on
+    ;(vm as any).directAlloc = { alloc: (n: number) => this.mem.memalign(16, n), bytes: () => this.mem.u8 }
     // a native call that runs for seconds without returning says where it is (finding hangs)
     // debugging aid: set ARM_SAMPLE to log where native code is every 8M instructions, with all threads
     if (ARM_SAMPLE) { let t0 = performance.now(), s0 = 0; (globalThis as any).__armSample = (c: any, pc: number) => { const t = performance.now(); console.log(`SAMPLE ${((c.steps - s0) / (t - t0) / 1000).toFixed(1)}M/s at ${this.where(pc | (c.thumb ? 1 : 0))} lr ${this.where(c.r[14])} on ${this.threads.current?.name ?? 'java ' + this.vm.current?.name} | ${[...(this.threads as any).all.values()].map((x: any) => `${x.name}:${x.state ?? 'outside'}${x.block ? '/' + x.block.what : ''}${x.waiting ? '@' + this.where(x.ctx?.r?.[14] ?? 0) : ''}`).join(', ')}`); t0 = t; s0 = c.steps } }
     this.cpu.onSlow = (pc, lr) => console.warn(`native: still running after a long time at ${this.where(pc)} (lr ${this.where(lr)}) on ${this.threads.current?.name ?? 'main'}`)
+  }
+  private deliverFault(addr: number, write: boolean, pc: number) {
+    const h = (this.threads as any).handlers.get(11) as { fn: number; flags: number } | undefined
+    if (!h || h.fn < 2) return false
+    const c = this.cpu, m = this.mem
+    const sp0 = c.r[13]
+    // frames below the current sp on this stack are gone (a handler that left by longjmp or by
+    // restoring a context itself, as mono's does)
+    for (const k of c.faultFrames.keys()) if (k < sp0 && k > sp0 - 0x100000) c.faultFrames.delete(k)
+    if (sp0 < 0x20000) return false // no usable stack: a real crash
+    const size = 1024, sp = ((sp0 - 128) & ~15) - size
+    const info = sp, uc = sp + 128, mc = uc + 20
+    m.u8.fill(0, sp, sp + size)
+    m.w32(info, 11); m.w32(info + 8, 1) // si_signo SIGSEGV, si_code SEGV_MAPERR
+    m.w32(info + 12, addr) // si_addr
+    m.w32(mc, 14) // trap_no
+    m.w32(mc + 4, write ? 0x800 : 0) // error_code
+    for (let i = 0; i < 15; i++) m.w32(mc + 12 + i * 4, c.r[i])
+    m.w32(mc + 12 + 15 * 4, pc)
+    m.w32(mc + 76, ((c.N ? 1 : 0) << 31 | (c.Z ? 1 : 0) << 30 | (c.C ? 1 : 0) << 29 | (c.V ? 1 : 0) << 28 | (c.thumb ? 0x20 : 0) | 0x10) >>> 0)
+    m.w32(mc + 80, addr) // fault_address
+    c.faultFrames.set(sp, { uc, fp: c.fp.buf.slice(0), fpscr: c.fp.fpscr })
+    c.r[13] = sp
+    c.setupCall(h.fn, [11, info, uc], SIGRETURN_TRAP)
+    return true
   }
   // lib+offset and the nearest exported symbol below it
   where(a: number) {
@@ -470,7 +503,11 @@ export class Native {
     set(219, () => { m.w32(R(1), this.jvm); return 0 }) // GetJavaVM
     set(226, () => this.ref(this.deref(R(1)))); set(227, () => this.unref(R(1)))
     set(228, () => (this.pending ? 1 : 0)) // ExceptionCheck
-    set(229, () => 0); set(230, () => 0); set(231, () => 0n as any)
+    // direct byte buffers (java.nio, see nio.ts): native memory both sides see
+    const nio = () => (vm as any).nio as { address(o: any): number; capacity(o: any): number; wrapNative(a: number, n: number, bytes: () => Uint8Array): any }
+    set(229, () => this.ref(nio().wrapNative(R(1), R(2), () => m.u8))) // NewDirectByteBuffer(env, addr, jlong capacity: r2 low word)
+    set(230, () => nio().address(this.deref(R(1)))) // GetDirectBufferAddress
+    set(231, () => BigInt(nio().capacity(this.deref(R(1)))) as any) // GetDirectBufferCapacity
     set(232, () => 1)
     for (let i = 0; i < table.length; i++) if (!table[i]) table[i] = c.hostFn(name(i), () => { this.missing.add(`jni function ${i}`); console.warn('jni function not supported', i); return 0 })
     // JNIEnv: pointer to a pointer to the table
