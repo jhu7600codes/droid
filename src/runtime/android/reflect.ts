@@ -125,7 +125,7 @@ export function registerReflect(vm: VM) {
     if (!o) { o = new JObject(vm.cls('Ljava/lang/Class;')); o.f.prim = d; o.f.of = { name: d, super: null, interfaces: [], methods: new Map(), staticValues: {}, fieldTypes: {}, initialized: true, flags: PUBLIC }; prim.set(d, o) }
     return o
   }
-  for (const [d, b] of Object.entries(BOXES)) { const sh = vm.shims.get(b); if (sh) sh.statics = { ...(sh.statics || {}), TYPE: primClass(d) } }
+  for (const [d, b] of Object.entries(BOXES)) { const sh = vm.shims.get(b); if (sh) vm.shim(b, { ...sh, statics: { ...(sh.statics || {}), TYPE: primClass(d) } }) }
   vm.shims.set('Ljava/lang/Void;', { super: OBJ, methods: {}, statics: { TYPE: primClass('V') } })
   const classFor = (desc: string): JObject => (PRIM[desc] ? primClass(desc) : vm.classObject(vm.cls(desc)))
   const ofClass = (c: JObject): JClass => c.f.of

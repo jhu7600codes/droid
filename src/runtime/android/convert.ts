@@ -76,7 +76,10 @@ export async function convertApk(apk: ArrayBuffer, runtimeJs: string): Promise<C
   const services = (app?.children || []).filter((c) => c.tag === 'service').map((x) => cls(attrString(x, 'name') || ''))
   const orig = new Uint8Array(apk), PART = 16 * 1024 * 1024
   const parts = libs.length ? Math.ceil(orig.length / PART) : 0
-  out.set('apk-map.json', enc.encode(JSON.stringify({ pkg, activities: map, libs, receivers, services, original: parts })))
+  // the app's own Application subclass (<application android:name>), created before any activity
+  const appName = app ? attrString(app, 'name') : null
+  const application = appName ? cls(appName) : null
+  out.set('apk-map.json', enc.encode(JSON.stringify({ pkg, activities: map, libs, receivers, services, original: parts, application })))
   ;(manifest as any)['android-receivers'] = [...new Set(receivers.flatMap((r) => r.actions))]
   out.set('manifest.json', enc.encode(JSON.stringify(manifest, null, 1)))
   // apps that keep the original apk read assets/ from it, so those are not unpacked twice

@@ -15,6 +15,10 @@ import android.widget.Button
 import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
+import java.util.concurrent.Executors
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 
 data class Pigeon(val name: String, val age: Int) {
     fun describe() = "$name ($age)"
@@ -71,6 +75,40 @@ class MainActivity : Activity() {
             am.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 10000, pi)
             Toast.makeText(this, "reminder in 10 seconds", Toast.LENGTH_SHORT).show()
             true
+        }
+        // threads: a producer / consumer pair over a blocking queue, wait / notify, a spinning thread,
+        // an executor future, and a latch; the result comes back to the ui thread
+        (findViewById(R.id.threads) as Button).setOnClickListener {
+            val info = findViewById(R.id.info) as TextView
+            info.text = "threads running..."
+            Thread {
+                val q = LinkedBlockingQueue<Int>(4)
+                val producer = Thread { for (i in 1..20) q.put(i); q.put(-1) }
+                producer.start()
+                var sum = 0
+                while (true) { val x = q.take(); if (x < 0) break; sum += x }
+                producer.join()
+                val lock = Object()
+                var ready = false
+                val waiter = Thread { synchronized(lock) { while (!ready) lock.wait(); } }
+                waiter.start()
+                Thread.sleep(50)
+                synchronized(lock) { ready = true; lock.notifyAll() }
+                waiter.join(2000)
+                val spins = longArrayOf(0)
+                val spinner = Thread { val end = System.currentTimeMillis() + 300; while (System.currentTimeMillis() < end) spins[0]++ }
+                spinner.start()
+                val pool = Executors.newSingleThreadExecutor()
+                val f = pool.submit<Int> { (1..10).map { it * it }.sum() }
+                val latch = CountDownLatch(3)
+                repeat(3) { Thread { Thread.sleep(20); latch.countDown() }.start() }
+                val ok = latch.await(2, TimeUnit.SECONDS)
+                spinner.join()
+                val squares = f.get()
+                pool.shutdown()
+                val text = "threads ok: queue sum $sum, waiter done ${!waiter.isAlive}, latch $ok, squares $squares, spins ${if (spins[0] > 0) "yes" else "no"}"
+                runOnUiThread { info.text = text }
+            }.start()
         }
         (findViewById(R.id.play) as Button).setOnClickListener {
             player?.release()

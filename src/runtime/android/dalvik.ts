@@ -6,6 +6,27 @@
 // wide values take two registers: the value sits in the first, the second is unused.
 import type { Dex, DexClass, Code, MethodRef } from './dex.ts'
 import { ACC } from './dex.ts'
+import { scheduler, isBlock, tryEnter, enterBlock, exit, taskId, type Block, type Task } from './threads.ts'
+
+export interface Frame {
+  m: JMethod; r: any[]; pc: number; ipc: number; ins: Uint16Array; dex: Dex; code: Code; kinds: Map<number, string>
+  result: any; exc: any
+}
+const YIELD = Symbol('yield'), BLOCKED = Symbol('blocked'), NO_CALL = Symbol('no call')
+// a java thread: its own frame stack, scheduled as a green thread
+export class JThread implements Task {
+  id = taskId()
+  state: Task['state'] = 'runnable'
+  block: Block | null = null
+  blockValue = false // does the block's finish() give the value of the call that waited
+  busy: boolean
+  frames: Frame[] = []
+  obj: JObject | null = null // its java.lang.Thread
+  interrupted = false
+  onDone?: (err: unknown) => void
+  constructor(public vm: VM, public name: string, main = false) { this.busy = main }
+  step(ms: number) { this.vm.stepThread(this, ms) }
+}
 
 export type NativeFn = (vm: VM, self: any, args: any[]) => any
 
@@ -54,7 +75,20 @@ export class VM {
   steps = 0
 
   addDex(d: Dex) { this.dexes.push(d) }
-  shim(name: string, c: ShimClass) { this.shims.set(name, c) }
+  shim(name: string, c: ShimClass) {
+    this.shims.set(name, c)
+    // a class already built from an older shim gets the new methods and statics too
+    const built = this.classes.get(name)
+    if (built && !built.dexClass) {
+      for (const [key, fn] of Object.entries(c.methods || {})) {
+        const n = key.slice(0, key.indexOf('(')), desc = key.slice(key.indexOf('('))
+        built.methods.set(key, { cls: built, name: n, key, desc, ret: desc.slice(desc.indexOf(')') + 1), params: splitParams(desc), flags: ACC.PUBLIC, code: null, native: fn })
+      }
+      Object.assign(built.staticValues, c.statics || {})
+      if (c.super && built.super?.name !== c.super) built.super = this.cls(c.super)
+      if (c.interfaces) built.interfaces = c.interfaces.map((i) => this.cls(i))
+    }
+  }
 
   // ---------- classes ----------
   findDexClass(name: string) {
@@ -192,12 +226,10 @@ export class VM {
     if (m) this.invoke(m, o, args)
     return o
   }
-  // the java methods running right now (innermost last), for error reports
-  callStack: string[] = []
   error(cls: string, message: string) {
     const o = new JObject(this.cls(cls))
     o.f.message = message
-    o.f.jstack = this.callStack.slice(-12).reverse()
+    o.f.jstack = this.javaStack()
     return new JavaThrow(o)
   }
   newArray(type: string, n: number): JArray {
@@ -208,24 +240,62 @@ export class VM {
     return new JArray(this.cls(type), data)
   }
 
+  // ---------- threads ----------
+  // the main thread runs everything that comes from js (ui callbacks, lifecycle); other java threads
+  // and attached native threads are green threads run by the scheduler (threads.ts)
+  main = new JThread(this, 'main', true)
+  current: JThread = this.main
+  startThread(name: string, m: JMethod, self: any, args: any[] = [], obj: JObject | null = null) {
+    const t = new JThread(this, name)
+    t.obj = obj
+    this.pushFrame(t, m, self, args)
+    scheduler.add(t)
+    return t
+  }
+  // the scheduler gives thread t up to `ms` milliseconds
+  stepThread(t: JThread, ms: number) {
+    const prev = this.current
+    this.current = t
+    t.busy = true
+    try {
+      if (t.block) { const b = t.block; t.block = null; const v = b.finish(); if (t.blockValue) t.frames[t.frames.length - 1].result = v }
+      const r = this.exec(t, 0, performance.now() + ms)
+      if (r === YIELD) return
+      if (r === BLOCKED) { t.state = 'blocked'; return }
+      t.state = 'done'
+      t.onDone?.(null)
+    } catch (e) {
+      t.state = 'done'
+      t.frames.length = 0
+      if (t.onDone) t.onDone(e)
+      else console.warn(`java thread "${t.name}" ended with`, e instanceof JavaThrow ? (e.obj.f.message ?? e.obj.cls.name) : e)
+    } finally { t.busy = false; this.current = prev }
+  }
+
+  // calls a method from js and returns its value (framework -> app callbacks, reflection, jni).
+  // java methods run on the current thread, nested; if they have to wait, other threads run meanwhile
   invoke(m: JMethod, self: any, args: any[]): any {
-    if (m.native) return m.native(this, self, args)
-    if (m.flags & ACC.NATIVE) return this.natives(m, self, args)
+    if (m.native || m.flags & ACC.NATIVE) {
+      try { return m.native ? m.native(this, self, args) : this.natives(m, self, args) }
+      catch (e) { if (isBlock(e)) return scheduler.pump(this.current, e); throw e }
+    }
     if (!m.code) {
       this.missing.add(`${m.cls.name}->${m.key}`)
       throw this.error('Ljava/lang/AbstractMethodError;', `${m.cls.name}->${m.key}`)
     }
-    this.callStack.push(`${m.cls.name.slice(1, -1).replace(/\//g, '.')}.${m.name}`)
-    try { return this.run(m, self, args) }
-    catch (e: any) { if (e && typeof e === 'object' && !e.jstack) e.jstack = this.callStack.slice(-12).reverse(); throw e }
-    finally { this.callStack.pop() }
+    const t = this.current
+    const stop = t.frames.length
+    this.pushFrame(t, m, self, args)
+    const busy = t.busy
+    t.busy = true
+    try { return this.exec(t, stop, Infinity) }
+    catch (e) { t.frames.length = stop; throw e }
+    finally { t.busy = busy }
   }
 
-  // ---------- the interpreter ----------
-  private run(m: JMethod, self: any, args: any[]): any {
+  private pushFrame(t: JThread, m: JMethod, self: any, args: any[]) {
+    if (t.frames.length > 3000) throw this.error('Ljava/lang/StackOverflowError;', 'stack size ' + t.frames.length)
     const code = m.code!
-    const ins = code.insns
-    const dex = m.dex!
     const r: any[] = new Array(code.registers).fill(0)
     // arguments go in the last `ins` registers; wide arguments take two
     let a = code.registers - code.ins
@@ -234,21 +304,26 @@ export class VM {
       r[a] = args[i]
       a += m.params[i] === 'J' || m.params[i] === 'D' ? 2 : 1
     }
-    let pc = 0
-    let result: any = undefined
-    let exc: any = null
+    t.frames.push({ m, r, pc: 0, ipc: 0, ins: code.insns, dex: m.dex!, code, kinds: constKinds(m, m.dex!), result: undefined, exc: null })
+  }
+
+  // ---------- the interpreter ----------
+  // runs thread t until its frame count drops back to `stop` (returns the last frame's value),
+  // or the deadline passes (YIELD), or it has to wait (BLOCKED). nested calls pass deadline Infinity:
+  // they never yield and wait in place.
+  private exec(t: JThread, stop: number, deadline: number): any {
     const s16 = (x: number) => (x << 16) >> 16
     const s8 = (x: number) => (x << 24) >> 24
-    const u32at = (p: number) => (ins[p] | (ins[p + 1] << 16)) >>> 0
-    const s32at = (p: number) => ins[p] | (ins[p + 1] << 16)
     const npe = () => this.error('Ljava/lang/NullPointerException;', 'null')
-    // consts are raw bits in dex; the type pass says which ones are floats or doubles
-    const kinds = constKinds(m, dex)
-
-    for (;;) {
+    outer: for (;;) {
+      const f = t.frames[t.frames.length - 1]
+      const { r, ins, dex, kinds } = f
+      const u32at = (p: number) => (ins[p] | (ins[p + 1] << 16)) >>> 0
+      const s32at = (p: number) => ins[p] | (ins[p + 1] << 16)
+      let pc = f.pc
       try {
         for (;;) {
-          this.steps++
+          if ((++this.steps & 2047) === 0 && deadline !== Infinity && performance.now() > deadline) { f.pc = pc; return YIELD }
           const w = ins[pc]
           const op = w & 0xff
           const AA = w >> 8, A = (w >> 8) & 0xf, B = w >> 12
@@ -257,11 +332,15 @@ export class VM {
             case 0x01: case 0x04: case 0x07: r[A] = r[B]; pc += 1; break
             case 0x02: case 0x05: case 0x08: r[AA] = r[ins[pc + 1]]; pc += 2; break
             case 0x03: case 0x06: case 0x09: r[ins[pc + 1]] = r[ins[pc + 2]]; pc += 3; break
-            case 0x0a: case 0x0b: case 0x0c: r[AA] = result; pc += 1; break
-            case 0x0d: r[AA] = exc; pc += 1; break
-            case 0x0e: return undefined
-            case 0x0f: case 0x10: return r[AA]
-            case 0x11: return obj(r[AA])
+            case 0x0a: case 0x0b: case 0x0c: r[AA] = f.result; pc += 1; break
+            case 0x0d: r[AA] = f.exc; pc += 1; break
+            case 0x0e: case 0x0f: case 0x10: case 0x11: {
+              const value = op === 0x0e ? undefined : op === 0x11 ? obj(r[AA]) : r[AA]
+              t.frames.pop()
+              if (t.frames.length === stop) return value
+              t.frames[t.frames.length - 1].result = value
+              continue outer
+            }
             case 0x12: r[A] = conv(kinds, pc, (B << 28) >> 28); pc += 1; break
             case 0x13: r[AA] = conv(kinds, pc, s16(ins[pc + 1])); pc += 2; break
             case 0x14: r[AA] = conv(kinds, pc, s32at(pc + 1)); pc += 3; break
@@ -273,7 +352,19 @@ export class VM {
             case 0x1a: r[AA] = dex.strings[ins[pc + 1]]; pc += 2; break
             case 0x1b: r[AA] = dex.strings[u32at(pc + 1)]; pc += 3; break
             case 0x1c: r[AA] = this.classObject(this.cls(dex.types[ins[pc + 1]])); pc += 2; break
-            case 0x1d: case 0x1e: pc += 1; break
+            case 0x1d: { // monitor-enter
+              const o = obj(r[AA])
+              if (o == null) throw npe()
+              pc += 1
+              if (!tryEnter(o, t)) {
+                const b = enterBlock(o, t)
+                if (deadline === Infinity) { scheduler.pump(t, b); break }
+                f.pc = pc; t.block = b; t.blockValue = false; t.state = 'blocked'
+                return BLOCKED
+              }
+              break
+            }
+            case 0x1e: { const o = obj(r[AA]); if (o == null) throw npe(); exit(o, t); pc += 1; break }
             case 0x1f: {
               const v = r[AA], c = this.cls(dex.types[ins[pc + 1]])
               if (v != null && !this.instanceOf(v, c)) throw this.error('Ljava/lang/ClassCastException;', `${this.classOf(v).name} cannot be cast to ${c.name}`)
@@ -288,7 +379,7 @@ export class VM {
               const regs = op === 0x24 ? this.regs35c(ins, pc) : this.regs3rc(ins, pc)
               const arr = this.newArray(t, regs.length)
               regs.forEach((x, i) => ((arr.data as any)[i] = r[x]))
-              result = arr
+              f.result = arr
               pc += 3; break
             }
             case 0x26: {
@@ -386,7 +477,25 @@ export class VM {
               const kind = range ? op - 0x74 : op - 0x6e // 0 virtual 1 super 2 direct 3 static 4 interface
               const ref = dex.methods[ins[pc + 1]]
               const regs = range ? this.regs3rc(ins, pc) : this.regs35c(ins, pc)
-              result = this.invokeRef(kind, ref, regs.map((x) => r[x]), m)
+              const c = this.resolveInvoke(kind, ref, regs.map((x) => r[x]))
+              if (c === NO_CALL) { f.result = undefined; pc += 3; break }
+              const { target, self, args } = c
+              if (target.code && !target.native && !(target.flags & ACC.NATIVE)) {
+                // a java method: a new frame on this thread, the loop goes on there
+                f.ipc = pc; f.pc = pc + 3
+                this.pushFrame(t, target, self, args)
+                continue outer
+              }
+              // framework (js) or native code: runs to completion here, or asks to wait
+              f.ipc = pc
+              let v: any
+              try { v = target.native ? target.native(this, self, args) : this.natives(target, self, args) }
+              catch (e) {
+                if (!isBlock(e)) throw e
+                if (deadline === Infinity) v = scheduler.pump(t, e)
+                else { f.pc = pc + 3; t.block = e; t.blockValue = true; t.state = 'blocked'; return BLOCKED }
+              }
+              f.result = v
               pc += 3; break
             }
             case 0x7b: r[A] = (-r[B]) | 0; pc += 1; break
@@ -417,21 +526,30 @@ export class VM {
                 r[AA] = op === 0xd9 ? (lit - r[bb]) | 0 : this.binop([0, 0, 2, 3, 4, 5, 6, 7, 8, 9, 10][op - 0xd8], r[bb], lit)
                 pc += 2; break
               }
-              throw this.error('Ljava/lang/VerifyError;', `opcode 0x${op.toString(16)} not supported in ${m.cls.name}->${m.key}`)
+              throw this.error('Ljava/lang/VerifyError;', `opcode 0x${op.toString(16)} not supported in ${f.m.cls.name}->${f.m.key}`)
             }
           }
         }
       } catch (e) {
-        // a java exception: look for a handler in this method, else pass it up
-        const t = e instanceof JavaThrow ? e : this.wrapJsError(e)
-        const tr = code.tries.find((x) => pc >= x.start && pc < x.end)
-        const h = tr?.handlers.find((x) => x.type === null || this.isSubclass(t.obj.cls, this.cls(x.type)))
-        if (!h) throw t
-        exc = t.obj
-        pc = h.addr
+        if (isBlock(e)) throw new Error('droid: a wait outside of a call (' + e.what + ')')
+        // a java exception: look for a handler in this frame, else in the callers
+        const err = e instanceof JavaThrow ? e : this.wrapJsError(e)
+        if (!err.obj.f.jstack) err.obj.f.jstack = this.javaStack(t)
+        let at = pc
+        for (;;) {
+          const fr = t.frames[t.frames.length - 1]
+          const tr = fr.code.tries.find((x) => at >= x.start && at < x.end)
+          const h = tr?.handlers.find((x) => x.type === null || this.isSubclass(err.obj.cls, this.cls(x.type)))
+          if (h) { fr.exc = err.obj; fr.pc = h.addr; continue outer }
+          t.frames.pop()
+          if (t.frames.length === stop) throw err
+          at = t.frames[t.frames.length - 1].ipc
+        }
       }
     }
   }
+  // "pkg.Class.method" of the running frames, innermost first
+  javaStack(t: JThread = this.current) { return t.frames.slice(-12).reverse().map((f) => `${f.m.cls.name.slice(1, -1).replace(/\//g, '.')}.${f.m.name}`) }
 
   private wrapJsError(e: unknown): JavaThrow {
     if (e instanceof JavaThrow) return e
@@ -455,7 +573,7 @@ export class VM {
     return Array.from({ length: n }, (_, i) => first + i)
   }
 
-  private invokeRef(kind: number, ref: MethodRef, raw: any[], caller: JMethod) {
+  private resolveInvoke(kind: number, ref: MethodRef, raw: any[]): typeof NO_CALL | { target: JMethod; self: any; args: any[] } {
     // registers -> arguments: wide values take two registers, keep only the first
     const isStatic = kind === 3
     const args: any[] = []
@@ -475,12 +593,11 @@ export class VM {
     }
     if (!target) {
       // calls into framework parts droid does not have: object constructors are harmless, the rest is reported
-      if (ref.name === '<init>') return undefined
+      if (ref.name === '<init>') return NO_CALL
       this.missing.add(`${ref.cls}->${ref.key}`)
       throw this.error('Ljava/lang/NoSuchMethodError;', `${ref.cls}->${ref.key} on ${self == null ? 'static' : this.classOf(self).name} (not in Droid's framework shim yet)`)
     }
-    void caller
-    return this.invoke(target, self, args)
+    return { target, self, args }
   }
 
   // index: add sub mul div rem and or xor shl shr ushr for int (0-10), long (11-21); float (22-26), double (27-31)

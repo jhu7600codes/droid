@@ -210,7 +210,7 @@ export function registerJava(vm: VM) {
     const r = m[2] ? (m[2] === '0' ? 8 : 16) : 10
     return (Number.parseInt(m[3], r) * (m[1] === '-' ? -1 : 1)) | 0
   }
-  vm.shims.get('Ljava/lang/Integer;')!.statics = { MAX_VALUE: 2147483647, MIN_VALUE: -2147483648 }
+  vm.shim('Ljava/lang/Integer;', { ...vm.shims.get('Ljava/lang/Integer;')!, statics: { ...(vm.shims.get('Ljava/lang/Integer;')!.statics || {}), ...{ MAX_VALUE: 2147483647, MIN_VALUE: -2147483648 } } })
   const parseLong = (x: string, r = 10) => {
     if (x == null || !/^[+-]?[0-9a-zA-Z]+$/.test(x)) throw vm.error('Ljava/lang/NumberFormatException;', `Invalid long: "${x}"`)
     const neg = x[0] === '-', d = x.replace(/^[+-]/, '')
@@ -230,7 +230,7 @@ export function registerJava(vm: VM) {
     'signum(J)I': (v: VM, s: any, [x]: any[]) => (x > 0n ? 1 : x < 0n ? -1 : 0),
     'numberOfLeadingZeros(J)I': (v: VM, s: any, [x]: any[]) => { const u = BigInt.asUintN(64, x); return u === 0n ? 64 : 64 - u.toString(2).length },
   })
-  vm.shims.get('Ljava/lang/Long;')!.statics = { MAX_VALUE: 9223372036854775807n, MIN_VALUE: -9223372036854775808n }
+  vm.shim('Ljava/lang/Long;', { ...vm.shims.get('Ljava/lang/Long;')!, statics: { ...(vm.shims.get('Ljava/lang/Long;')!.statics || {}), ...{ MAX_VALUE: 9223372036854775807n, MIN_VALUE: -9223372036854775808n } } })
   Object.assign(vm.shims.get('Ljava/lang/Double;')!.methods!, { 'parseDouble(Ljava/lang/String;)D': (v: VM, s: any, [x]: any[]) => { const n = Number(x); if (isNaN(n) && x?.trim() !== 'NaN') throw vm.error('Ljava/lang/NumberFormatException;', x); return n }, 'isNaN(D)Z': (v: VM, s: any, [x]: any[]) => (isNaN(x) ? 1 : 0) })
   Object.assign(vm.shims.get('Ljava/lang/Float;')!.methods!, { 'parseFloat(Ljava/lang/String;)F': (v: VM, s: any, [x]: any[]) => Math.fround(Number(x)) })
   Object.assign(vm.shims.get('Ljava/lang/Boolean;')!.methods!, { 'parseBoolean(Ljava/lang/String;)Z': (v: VM, s: any, [x]: any[]) => (x?.toLowerCase() === 'true' ? 1 : 0) })
@@ -278,7 +278,7 @@ export function registerJava(vm: VM) {
     'loadLibrary(Ljava/lang/String;)V': () => { /* replaced by the android runtime */ },
   })
   const out = new JObject(vm.cls('Ljava/io/PrintStream;'))
-  vm.shims.get('Ljava/lang/System;')!.statics = { out, err: out }
+  vm.shim('Ljava/lang/System;', { ...vm.shims.get('Ljava/lang/System;')!, statics: { ...(vm.shims.get('Ljava/lang/System;')!.statics || {}), ...{ out, err: out } } })
 
   // throwables
   def('Ljava/lang/Throwable;', OBJ, {
@@ -312,20 +312,6 @@ export function registerJava(vm: VM) {
   throwable('Ljava/lang/StackOverflowError;', 'Ljava/lang/VirtualMachineError;')
   throwable('Ljava/lang/OutOfMemoryError;', 'Ljava/lang/VirtualMachineError;')
 
-  // threads: no real threads; Thread.start runs on the event loop
-  def('Ljava/lang/Runnable;', OBJ, {})
-  def('Ljava/lang/Thread;', OBJ, {
-    '<init>()V': () => {},
-    '<init>(Ljava/lang/Runnable;)V': (v, s, [r]) => { s.f.target = r },
-    '<init>(Ljava/lang/Runnable;Ljava/lang/String;)V': (v, s, [r]) => { s.f.target = r },
-    'start()V': (v, s) => setTimeout(() => { try { s.f.target ? vm.callVirtual(s.f.target, 'run()V') : vm.callVirtual(s, 'run()V') } catch (e) { console.warn('thread', e instanceof JavaThrow ? jstr(vm, e.obj) : e) } }, 0),
-    'run()V': (v, s) => { if (s.f.target) vm.callVirtual(s.f.target, 'run()V') },
-    'sleep(J)V': () => {},
-    'currentThread()Ljava/lang/Thread;': () => mainThread,
-    'getName()Ljava/lang/String;': () => 'main',
-    'interrupt()V': () => {}, 'setDaemon(Z)V': () => {}, 'setPriority(I)V': () => {}, 'join()V': () => {},
-  }, { interfaces: ['Ljava/lang/Runnable;'] })
-  const mainThread = new JObject(vm.cls('Ljava/lang/Thread;'))
 
   // collections: backed by js arrays and maps
   def('Ljava/lang/Iterable;', OBJ, {})

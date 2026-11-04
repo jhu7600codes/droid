@@ -7,6 +7,8 @@ import { registerJava, jstr } from './java.ts'
 import { registerAndroid } from './android.ts'
 import { Vfs, registerJavaIo } from './javaio.ts'
 import { registerReflect } from './reflect.ts'
+import { registerConcurrent } from './concurrent.ts'
+import { scheduler } from './threads.ts'
 import { Native } from './arm/native.ts'
 
 declare const droid: any
@@ -34,6 +36,7 @@ droid.on('create', async (saved: any) => {
     const vfs = new Vfs()
     registerJavaIo(vm, vfs)
     registerReflect(vm)
+    registerConcurrent(vm)
     const env = {
       vfs,
       pkg: map.pkg, files, res: parseArsc(files.get('resources.arsc')!), root, droid, prefs,
@@ -69,6 +72,7 @@ droid.on('create', async (saved: any) => {
       if (!native) throw vm.error('Ljava/lang/UnsatisfiedLinkError;', `no native library loaded for ${m.cls.name}->${m.key}`)
       return native.call(m, self, args)
     }
+    app.application((map as any).application || null)
     // background host (alarms, receivers, services): no activity, jobs arrive as intents
     if (info.activity === '__bg') {
       droid.on('intent', (i: any) => { if (i?.action === 'background-job') { app.background(i.extras.job, (map as any).receivers || []); droid.background.idle() } })
@@ -84,6 +88,7 @@ droid.on('create', async (saved: any) => {
     droid.on('destroy', () => app.lifecycle('destroy'))
     droid.on('back', () => { app.back(); return true })
     droid.on('menu', (e: any) => { if (e?.id != null) app.menu(e.id) })
+    ;(window as any).__threads = () => scheduler.tasks.map((t: any) => `${t.name} ${t.state}${t.busy ? " busy" : ""} f${t.frames?.length}${t.block ? ' (' + t.block.what + ')' : ''} ${t.frames?.length ? t.frames[t.frames.length - 1].m.cls.name + '.' + t.frames[t.frames.length - 1].m.name + '@' + t.frames[t.frames.length - 1].pc : ''}`)
     ;(window as any).__androidReport = () => ({ missing, dalvikSteps: vm.steps, armSteps: native?.cpu.steps || 0 })
   } catch (e: any) {
     root.innerHTML = ''

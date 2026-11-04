@@ -8,6 +8,7 @@ import { VM } from '../../src/runtime/android/dalvik.ts'
 import { registerJava } from '../../src/runtime/android/java.ts'
 import { Vfs, registerJavaIo } from '../../src/runtime/android/javaio.ts'
 import { registerReflect } from '../../src/runtime/android/reflect.ts'
+import { registerConcurrent } from '../../src/runtime/android/concurrent.ts'
 import { registerAndroid } from '../../src/runtime/android/android.ts'
 
 const buf = fs.readFileSync(process.argv[2])
@@ -20,6 +21,7 @@ const vm = new VM()
 registerJava(vm)
 registerJavaIo(vm, new Vfs())
 registerReflect(vm)
+registerConcurrent(vm)
 const fake = new Proxy({}, { get: () => () => Promise.resolve() })
 registerAndroid(vm, { vfs: new Vfs(), pkg: 'x', files, res: parseArsc(files.get('resources.arsc')), root: document.createElement('div'), droid: { system: fake, app: fake, prefs: fake, background: fake, media: fake, device: fake }, prefs: new Map(), density: 2, landscape: false, lang: 'en', intent: {}, self: 'main', activityFor: () => null })
 const dexes = [...files.keys()].filter((k) => k.endsWith('.dex')).map((k) => parseDex(files.get(k)))
