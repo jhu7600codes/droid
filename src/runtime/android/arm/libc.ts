@@ -440,6 +440,21 @@ export function installLibc(nat: Native) {
   const ll = (lo: number, hi: number) => BigInt.asIntN(64, (BigInt(hi >>> 0) << 32n) | BigInt(lo >>> 0))
   def('__aeabi_ldivmod', () => { const a = ll(R(0), R(1)), b = ll(R(2), R(3)); if (!b) return 0n; const r = BigInt.asUintN(64, a % b); c.r[2] = Number(r & 0xffffffffn); c.r[3] = Number(r >> 32n); return BigInt.asUintN(64, a / b) })
   def('__aeabi_uldivmod', () => { const a = BigInt.asUintN(64, ll(R(0), R(1))), b = BigInt.asUintN(64, ll(R(2), R(3))); if (!b) return 0n; c.r[2] = Number((a % b) & 0xffffffffn); c.r[3] = Number((a % b) >> 32n); return a / b })
+  // long <-> float / double (softfp: floats travel in core registers as raw bits)
+  const cv = new DataView(new ArrayBuffer(8))
+  const fbits = (x: number) => { cv.setFloat32(0, x, true); return cv.getUint32(0, true) }
+  const dbits = (x: number) => { cv.setFloat64(0, x, true); return cv.getBigUint64(0, true) }
+  const asF = (u: number) => { cv.setUint32(0, u >>> 0, true); return cv.getFloat32(0, true) }
+  const asD = (lo: number, hi: number) => { cv.setUint32(0, lo >>> 0, true); cv.setUint32(4, hi >>> 0, true); return cv.getFloat64(0, true) }
+  const toL = (x: number, signed: boolean) => { if (Number.isNaN(x)) return 0n; const t = Math.trunc(x); const v = signed ? (t >= 2 ** 63 ? 2n ** 63n - 1n : t < -(2 ** 63) ? -(2n ** 63n) : BigInt(t)) : (t <= 0 ? 0n : t >= 2 ** 64 ? 2n ** 64n - 1n : BigInt(t)); return BigInt.asUintN(64, v) }
+  def('__aeabi_l2f', () => fbits(Number(ll(R(0), R(1)))))
+  def('__aeabi_ul2f', () => fbits(Number(BigInt.asUintN(64, ll(R(0), R(1))))))
+  def('__aeabi_l2d', () => dbits(Number(ll(R(0), R(1)))))
+  def('__aeabi_ul2d', () => dbits(Number(BigInt.asUintN(64, ll(R(0), R(1))))))
+  def('__aeabi_f2lz', () => toL(asF(R(0)), true))
+  def('__aeabi_f2ulz', () => toL(asF(R(0)), false))
+  def('__aeabi_d2lz', () => toL(asD(R(0), R(1)), true))
+  def('__aeabi_d2ulz', () => toL(asD(R(0), R(1)), false))
 
   // ---------- time ----------
   const t0 = performance.now()

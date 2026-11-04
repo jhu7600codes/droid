@@ -11,5 +11,6 @@
             </intent-filter>
         </activity>
         <activity android:name=".SecondActivity" android:label="@string/second" />
+        <activity android:name=".GlActivity" android:label="GL" />
     </application>
 </manifest>

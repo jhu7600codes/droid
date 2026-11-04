@@ -10,8 +10,10 @@ OUT=$C/build
 rm -rf $OUT && mkdir -p $OUT/res $OUT/gen $OUT/classes $OUT/lib/armeabi-v7a
 $C/aapt2 compile --dir testapp/res -o $OUT/res.zip
 $C/aapt2 link -o $OUT/base.apk -I $C/android.jar --manifest testapp/AndroidManifest.xml --java $OUT/gen $OUT/res.zip --min-sdk-version 9 --target-sdk-version 19
-javac -nowarn --release 8 -classpath $C/android.jar -d $OUT/classes $(find testapp/src $OUT/gen -name '*.java') 2>&1 | grep -v "warning" || true
-java -cp $C/r8.jar com.android.tools.r8.D8 --min-api 19 --lib $C/android.jar --output $OUT $(find $OUT/classes -name '*.class') 2>&1 | grep -v JAVA_TOOL || true
+# compile-only stubs for javax.microedition.khronos (this android.jar lacks them; droid provides them at runtime)
+mkdir -p $OUT/stubs && javac -nowarn --release 8 -d $OUT/stubs $(find testapp/stubs -name '*.java')
+javac -nowarn --release 8 -classpath $C/android.jar:$OUT/stubs -d $OUT/classes $(find testapp/src $OUT/gen -name '*.java') 2>&1 | grep -v "warning" || true
+java -cp $C/r8.jar com.android.tools.r8.D8 --min-api 19 --lib $C/android.jar --classpath $OUT/stubs --output $OUT $(find $OUT/classes -name '*.class') 2>&1 | grep -v JAVA_TOOL || true
 # arm mode for now; thumb-2 comes with the next runtime step
 clang --target=armv7a-linux-androideabi19 -marm -O1 -fPIC -shared -nostdlib -fuse-ld=lld -fno-builtin -Wl,-soname,libhello.so -o $OUT/lib/armeabi-v7a/libhello.so testapp/jni/hello.c
 cp $OUT/base.apk test.apk
