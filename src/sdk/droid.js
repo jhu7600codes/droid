@@ -242,6 +242,64 @@
     else droid.intent.start({ action: 'view', data: new URL(href, base).href })
   }, true) }
 
+  // ---- droid keyboard: text fields ask the shell for it, keys come back as "ime" events ----
+  // no text selection outside text fields (like android views)
+  function installIme(on) {
+    var st = document.createElement('style')
+    st.textContent = 'html{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}input,textarea,[contenteditable],[contenteditable] *{-webkit-user-select:text;user-select:text}'
+    document.head.appendChild(st)
+    if (!on) return
+    var TEXTY = /^(text|search|email|url|tel|number|password)$/
+    var cur = null
+    function ok(el) { return el && ((el.tagName === 'INPUT' && TEXTY.test(el.type)) || el.tagName === 'TEXTAREA') && !el.readOnly && !el.disabled }
+    function kind(el) {
+      var m = el.getAttribute('inputmode') || '', t = el.type
+      if (m === 'numeric' || m === 'decimal' || t === 'number') return 'number'
+      if (m === 'tel' || t === 'tel') return 'phone'
+      if (m === 'email' || t === 'email') return 'email'
+      if (m === 'url' || t === 'url') return 'url'
+      if (t === 'password') return 'password'
+      return 'text'
+    }
+    function before(el) { try { return el.value.slice(0, el.selectionStart == null ? el.value.length : el.selectionStart) } catch (e) { return el.value } }
+    document.addEventListener('focusin', function (e) {
+      var el = e.target
+      if (!ok(el)) return
+      cur = el
+      var k = kind(el)
+      el.setAttribute('inputmode', 'none')
+      var h = (el.getAttribute('enterkeyhint') || '').toLowerCase()
+      var ac = el.getAttribute('autocapitalize')
+      call('ime.show', [{ kind: k, enter: /^(go|search|send|next|done)$/.test(h) ? h : el.type === 'search' ? 'search' : 'enter', multiline: el.tagName === 'TEXTAREA', autocap: k === 'text' && ac !== 'none' && ac !== 'off' }])
+      call('ime.text', [before(el)])
+    })
+    document.addEventListener('focusout', function (e) { if (e.target === cur) { cur = null; call('ime.hide', []) } })
+    droid.on('ime', function (k) {
+      var el = cur
+      if (!el) return
+      if (k.enter) {
+        ['keydown', 'keypress', 'keyup'].forEach(function (t) { el.dispatchEvent(new KeyboardEvent(t, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true })) })
+        if (el.form && el.form.requestSubmit) el.form.requestSubmit()
+        return
+      }
+      var s, end, v = el.value
+      try { s = el.selectionStart == null ? v.length : el.selectionStart; end = el.selectionEnd == null ? s : el.selectionEnd } catch (x) { s = end = v.length }
+      if (k.del) {
+        if (s === end) { if (s === 0) return; s -= /[\udc00-\udfff]/.test(v[s - 1]) && s > 1 ? 2 : 1 }
+        el.value = v.slice(0, s) + v.slice(end)
+        try { el.setSelectionRange(s, s) } catch (x) {}
+        el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }))
+      } else {
+        var t = k.text || ''
+        if (el.maxLength > 0 && v.length - (end - s) + t.length > el.maxLength) return
+        el.value = v.slice(0, s) + t + v.slice(end)
+        try { el.setSelectionRange(s + t.length, s + t.length) } catch (x) {}
+        el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: t }))
+      }
+      call('ime.text', [before(el)])
+    })
+  }
+
   // ---- building the page ----
   var JS = /\.m?js$/
   function rewriteJs(text, path) {
@@ -323,6 +381,7 @@
     document.close()
     window.droid = droid
     installLinks()
+    installIme(msg.ime)
     // create fires once the page's own scripts ran (modules run deferred, so wait for load)
     var fire = function () { emit('create', msg.saved); port.postMessage({ ready: true }) }
     if (document.readyState === 'complete') setTimeout(fire, 0)

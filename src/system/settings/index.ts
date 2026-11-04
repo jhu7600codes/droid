@@ -17,6 +17,7 @@ import { openDpk } from '../../runtime'
 import { ensureProxyToken } from '../../runtime/netclient'
 import * as store from '../../runtime/db'
 import { applyUpdate, checkUpdate, BUILD } from '../../shell/sw-client'
+import { imeEnabled } from '../../shell/ime'
 import { sound as sfx } from '../../shell/sound'
 import { licensesPage } from './licenses'
 import './settings.css'
@@ -262,7 +263,8 @@ function settingsApp(ctx: ActivityContext): Activity {
   const language: Build = sub('Language & input', () => [
     { type: 'list', title: 'Language', options: [['en', 'English (United States)'], ['ru', 'Русский'], ['de', 'Deutsch'], ['es', 'Español'], ['fr', 'Français'], ['uk', 'Українська'], ['pl', 'Polski'], ['ja', '日本語'], ['zh', '中文']], key: 'locale' },
     { type: 'header', title: 'Keyboard & input methods' },
-    { type: 'item', title: 'Default', summary: 'Keyboard of this device (Droid keyboard comes with an update)' },
+    { type: 'list', title: 'Default', options: [['droid', 'Droid keyboard'], ['device', 'Keyboard of this device']], get: () => (imeEnabled() ? 'droid' : 'device'), set: (v) => settings.set('ime', v) },
+    { type: 'check', title: 'Sound on keypress', get: () => settings.get('ime.sound') !== false, set: (v) => settings.set('ime.sound' as any, v) },
   ], ic(S, 'ic_settings_language'))
 
   const lastBackup = () => {
