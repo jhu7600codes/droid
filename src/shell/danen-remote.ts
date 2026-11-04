@@ -8,11 +8,12 @@ async function call(path: string, method = 'GET', body?: unknown) {
   const url = backendUrl()
   if (!url) throw new Error('no Danen backend set')
   const session = settings.get('danen.session') as string | undefined
-  const r = await fetch(url + path, {
+  let r: Response
+  try { r = await fetch(url + path, {
     method,
     headers: { 'content-type': 'application/json', ...(session ? { authorization: 'Danen ' + session } : {}) },
     body: body ? JSON.stringify(body) : undefined,
-  })
+  }) } catch { throw new Error('Danen is not reachable. Check your connection.') }
   const data = await r.json().catch(() => ({}))
   if (!r.ok) throw Object.assign(new Error(data.error || 'Danen is not reachable'), { status: r.status })
   return data

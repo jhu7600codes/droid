@@ -36,14 +36,19 @@ export const account = {
     if (password.length < 8) throw new Error('Password: at least 8 characters.')
     const salt = crypto.getRandomValues(new Uint8Array(16))
     const p: Profile = { nickname: nickname.slice(0, 40) || username, username, salt: b64(salt), hash: await derive(password, salt), created: Date.now(), remote: false }
-    try { if (remote.create) { await remote.create(p, password); p.remote = true } } catch { /* backend down: local only, sync later */ }
+    if (remote.create) {
+      try { await remote.create(p, password); p.remote = true } catch (e) {
+        // the backend said no (taken username, bad input): tell the user. unreachable: local only
+        if ((e as any).status) throw e
+      }
+    }
     settings.set('danen.account', p)
     return p
   },
   async signIn(username: string, password: string) {
     username = username.toLowerCase()
     const local = account.get()
-    if (local && local.username === username) {
+    if (local && local.username === username && (local.remote || !remote.signIn)) {
       if ((await derive(password, unb64(local.salt))) !== local.hash) throw new Error('Wrong username or password.')
       return local
     }
