@@ -15,6 +15,18 @@
 </head>
 <body>
 <div id="screen"></div>
+<script>
+// if the app code itself fails to load (old browser, broken download), say so instead of a black screen
+window.__early = [];
+addEventListener('error', function (e) { __early.push((e.message || 'load error') + ' ' + ((e.filename || (e.target && (e.target.src || e.target.href)) || '') + '').split('/').pop()); }, true);
+setTimeout(function () {
+  if (window.droid_shell || document.getElementById('boot-errors')) return;
+  var b = document.createElement('div');
+  b.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;background:#300;color:#fff;font:12px monospace;padding:10px;z-index:99;border:1px solid #f44;white-space:pre-wrap';
+  b.textContent = 'Droid did not start.\n' + navigator.userAgent + '\n\n' + (__early.join('\n') || 'no errors were reported');
+  document.body.appendChild(b);
+}, 25000);
+</script>
 <script type="module" src="./src/main.ts"></script>
 </body>
 </html>
