@@ -354,11 +354,11 @@ export function registerAndroid(vm: VM, env: Env) {
     'getPackageName()Ljava/lang/String;': () => env.pkg,
     'getApplicationContext()Landroid/content/Context;': (v, s) => s,
     'getSharedPreferences(Ljava/lang/String;I)Landroid/content/SharedPreferences;': (v, s, [name]) => prefsFor(name),
-    'getSystemService(Ljava/lang/String;)Ljava/lang/Object;': (v, s, [name]) => { if (name === 'vibrator') return new JObject(vm.cls('Landroid/os/Vibrator;')); if (name === 'layout_inflater') return new JObject(vm.cls('Landroid/view/LayoutInflater;')); if (name === 'audio') return new JObject(vm.cls('Landroid/media/AudioManager;')); vm.missing.add('system service ' + name); return null },
+    'getSystemService(Ljava/lang/String;)Ljava/lang/Object;': (v, s, [name]) => { if (name === 'vibrator') return new JObject(vm.cls('Landroid/os/Vibrator;')); if (name === 'layout_inflater') return new JObject(vm.cls('Landroid/view/LayoutInflater;')); if (name === 'audio') return new JObject(vm.cls('Landroid/media/AudioManager;')); if (name === 'notification') return new JObject(vm.cls('Landroid/app/NotificationManager;')); vm.missing.add('system service ' + name); return null },
     'startActivity(Landroid/content/Intent;)V': (v, s, [i]) => startActivity(i),
     'getMainLooper()Landroid/os/Looper;': () => new JObject(vm.cls('Landroid/os/Looper;')),
   }
-  def('Landroid/content/Context;', OBJ, contextMethods, { statics: { MODE_PRIVATE: 0, VIBRATOR_SERVICE: 'vibrator', LAYOUT_INFLATER_SERVICE: 'layout_inflater' } })
+  def('Landroid/content/Context;', OBJ, contextMethods, { statics: { MODE_PRIVATE: 0, VIBRATOR_SERVICE: 'vibrator', LAYOUT_INFLATER_SERVICE: 'layout_inflater', NOTIFICATION_SERVICE: 'notification', AUDIO_SERVICE: 'audio' } })
   def('Landroid/content/ContextWrapper;', 'Landroid/content/Context;', {})
   def('Landroid/view/ContextThemeWrapper;', 'Landroid/content/ContextWrapper;', {})
   const noop: NativeFn = () => {}
@@ -591,6 +591,79 @@ export function registerAndroid(vm: VM, env: Env) {
     'parseColor(Ljava/lang/String;)I': (v, s, [x]) => { const h = x.replace('#', ''); return (parseInt(h.length === 6 ? 'ff' + h : h, 16)) | 0 },
   }, { statics: { BLACK: 0xff000000 | 0, WHITE: -1, RED: 0xffff0000 | 0, GREEN: 0xff00ff00 | 0, BLUE: 0xff0000ff | 0, TRANSPARENT: 0, GRAY: 0xff888888 | 0 } })
   def('Landroid/text/TextUtils;', OBJ, { 'isEmpty(Ljava/lang/CharSequence;)Z': (v, s, [t]) => (t == null || jstr(vm, t).length === 0 ? 1 : 0) })
+
+  // ---------- notifications: NotificationManager, Notification(.Builder), PendingIntent ----------
+  def('Landroid/app/PendingIntent;', OBJ, {
+    'getActivity(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;': (v, s, [, , i]) => { const p = new JObject(vm.cls('Landroid/app/PendingIntent;')); p.f.intent = i; return p },
+    'getBroadcast(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;': (v, s, [, , i]) => { vm.missing.add('PendingIntent.getBroadcast'); const p = new JObject(vm.cls('Landroid/app/PendingIntent;')); p.f.intent = i; return p },
+    'getService(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;': (v, s, [, , i]) => { vm.missing.add('PendingIntent.getService'); const p = new JObject(vm.cls('Landroid/app/PendingIntent;')); p.f.intent = i; return p },
+    'cancel()V': noop,
+  }, { statics: { FLAG_UPDATE_CURRENT: 0x8000000, FLAG_CANCEL_CURRENT: 0x10000000, FLAG_ONE_SHOT: 0x40000000, FLAG_IMMUTABLE: 0x4000000 } })
+  const FLAG_ONGOING = 2, FLAG_NO_CLEAR = 32
+  def('Landroid/app/Notification;', OBJ, {
+    '<init>()V': (v, s) => { s.f.n = {} },
+    '<init>(ILjava/lang/CharSequence;J)V': (v, s, [, ticker]) => { s.f.n = { ticker: textOf(ticker) } },
+    'setLatestEventInfo(Landroid/content/Context;Ljava/lang/CharSequence;Ljava/lang/CharSequence;Landroid/app/PendingIntent;)V': (v, s, [, t, x, pi]) => { Object.assign((s.f.n ||= {}), { title: textOf(t), text: textOf(x), pi }) },
+  }, { statics: { FLAG_ONGOING_EVENT: FLAG_ONGOING, FLAG_NO_CLEAR, FLAG_AUTO_CANCEL: 16, DEFAULT_ALL: -1, DEFAULT_SOUND: 1, DEFAULT_VIBRATE: 2, PRIORITY_DEFAULT: 0, PRIORITY_HIGH: 1, PRIORITY_LOW: -1 } })
+  const B = 'Landroid/app/Notification$Builder;'
+  const bset = (field: string, conv: (x: any) => any = (x) => x): NativeFn => (v, s, [x]) => { s.f.n[field] = conv(x); return s }
+  def(B, OBJ, {
+    '<init>(Landroid/content/Context;)V': (v, s) => { s.f.n = {} },
+    '<init>(Landroid/content/Context;Ljava/lang/String;)V': (v, s) => { s.f.n = {} },
+    [`setContentTitle(Ljava/lang/CharSequence;)${B}`]: bset('title', textOf),
+    [`setContentText(Ljava/lang/CharSequence;)${B}`]: bset('text', textOf),
+    [`setSubText(Ljava/lang/CharSequence;)${B}`]: bset('sub', textOf),
+    [`setTicker(Ljava/lang/CharSequence;)${B}`]: bset('ticker', textOf),
+    [`setContentInfo(Ljava/lang/CharSequence;)${B}`]: bset('info', textOf),
+    [`setSmallIcon(I)${B}`]: bset('icon'),
+    [`setSmallIcon(II)${B}`]: bset('icon'),
+    [`setLargeIcon(Landroid/graphics/Bitmap;)${B}`]: (v, s) => s,
+    [`setContentIntent(Landroid/app/PendingIntent;)${B}`]: bset('pi'),
+    [`setDeleteIntent(Landroid/app/PendingIntent;)${B}`]: (v, s) => s,
+    [`setAutoCancel(Z)${B}`]: bset('autoCancel', (x) => !!x),
+    [`setOngoing(Z)${B}`]: bset('ongoing', (x) => !!x),
+    [`setOnlyAlertOnce(Z)${B}`]: (v, s) => s,
+    [`setWhen(J)${B}`]: (v, s) => s,
+    [`setShowWhen(Z)${B}`]: (v, s) => s,
+    [`setDefaults(I)${B}`]: bset('defaults'),
+    [`setPriority(I)${B}`]: (v, s) => s,
+    [`setNumber(I)${B}`]: (v, s) => s,
+    [`setVibrate([J)${B}`]: (v, s) => s,
+    [`setLights(III)${B}`]: (v, s) => s,
+    [`setSound(Landroid/net/Uri;)${B}`]: (v, s) => s,
+    [`setProgress(IIZ)${B}`]: (v, s, [max, p, ind]) => { s.f.n.progress = ind ? -1 : max > 0 ? p / max : undefined; return s },
+    [`setStyle(Landroid/app/Notification$Style;)${B}`]: (v, s, [st]) => { if (st?.f?.big) s.f.n.text = st.f.big; return s },
+    'build()Landroid/app/Notification;': (v, s) => { const n = new JObject(vm.cls('Landroid/app/Notification;')); n.f.n = { ...s.f.n }; return n },
+    'getNotification()Landroid/app/Notification;': (v, s) => { const n = new JObject(vm.cls('Landroid/app/Notification;')); n.f.n = { ...s.f.n }; return n },
+  })
+  def('Landroid/app/Notification$Style;', OBJ, {})
+  def('Landroid/app/Notification$BigTextStyle;', 'Landroid/app/Notification$Style;', {
+    '<init>()V': noop,
+    'bigText(Ljava/lang/CharSequence;)Landroid/app/Notification$BigTextStyle;': (v, s, [t]) => { s.f.big = textOf(t); return s },
+    'setBigContentTitle(Ljava/lang/CharSequence;)Landroid/app/Notification$BigTextStyle;': (v, s) => s,
+  })
+  const notifKey = (tag: any, id: number) => `android:${tag == null ? '' : textOf(tag)}:${id | 0}`
+  const post = (tag: any, id: number, n: JObject) => {
+    const d = n?.f?.n || {}
+    const flags = n?.f?.flags | 0
+    // the PendingIntent's target activity and extras, so a tap lands on the right screen
+    let activity: string | undefined, extras: any
+    const it = d.pi?.f?.intent
+    if (it?.f?.target) { activity = env.activityFor(it.f.target) || undefined; extras = { android: Object.fromEntries(Object.entries(it.f.extras || {}).map(([k, x]) => [k, typeof x === 'bigint' ? { long: String(x) } : x])), androidAction: it.f.action } }
+    ;((env as any).posted ||= new Set()).add(notifKey(tag, id))
+    env.droid.system.notify({ id: notifKey(tag, id), title: d.title || d.ticker || env.res.pkg, text: d.text || d.sub, ongoing: !!d.ongoing || !!(flags & (FLAG_ONGOING | FLAG_NO_CLEAR)), progress: d.progress, activity, extras }).catch((e: any) => console.warn('notification', e?.message))
+    if (d.defaults && (d.defaults === -1 || d.defaults & 2)) env.droid.system.vibrate(200).catch(() => {})
+  }
+  def('Landroid/app/NotificationManager;', OBJ, {
+    'notify(ILandroid/app/Notification;)V': (v, s, [id, n]) => post(null, id, n),
+    'notify(Ljava/lang/String;ILandroid/app/Notification;)V': (v, s, [tag, id, n]) => post(tag, id, n),
+    'cancel(I)V': (v, s, [id]) => { env.droid.system.cancel(notifKey(null, id)) },
+    'cancel(Ljava/lang/String;I)V': (v, s, [tag, id]) => { env.droid.system.cancel(notifKey(tag, id)) },
+    'cancelAll()V': () => { (env as any).posted?.forEach?.((k: string) => env.droid.system.cancel(k)) },
+    'areNotificationsEnabled()Z': () => 1,
+  })
+  def('Landroid/graphics/Bitmap;', OBJ, {})
+  def('Landroid/graphics/BitmapFactory;', OBJ, { 'decodeResource(Landroid/content/res/Resources;I)Landroid/graphics/Bitmap;': () => new JObject(vm.cls('Landroid/graphics/Bitmap;')) })
 
   // ---------- media: MediaPlayer, SoundPool, VideoView, AudioManager ----------
   const rawUrl = (id: number) => (() => {

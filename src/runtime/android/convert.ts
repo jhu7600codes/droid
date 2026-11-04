@@ -26,7 +26,8 @@ export async function convertApk(apk: ArrayBuffer, runtimeJs: string): Promise<C
   if (min > 19) report.push(`needs android api ${min}, droid is 19 (it may still run)`)
   const perms = man.children.filter((c) => c.tag === 'uses-permission').map((c) => attrString(c, 'name') || '')
   const PERM: Record<string, string> = { 'android.permission.INTERNET': 'network', 'android.permission.VIBRATE': 'vibrate', 'android.permission.CAMERA': 'camera', 'android.permission.RECORD_AUDIO': 'microphone', 'android.permission.ACCESS_FINE_LOCATION': 'location', 'android.permission.ACCESS_COARSE_LOCATION': 'location', 'android.permission.WRITE_EXTERNAL_STORAGE': 'storage', 'android.permission.READ_EXTERNAL_STORAGE': 'storage' }
-  const permissions = [...new Set(perms.map((p) => PERM[p]).filter(Boolean))]
+  // android before 13 had no notification permission: every converted app may post notifications
+  const permissions = [...new Set([...perms.map((p) => PERM[p]).filter(Boolean), 'notifications'])]
   // activities: the launcher one becomes "main"
   const acts = (app?.children || []).filter((c) => c.tag === 'activity' || c.tag === 'activity-alias')
   const full = (n: string) => (n.startsWith('.') ? pkg + n : n.includes('.') ? n : pkg + '.' + n)
