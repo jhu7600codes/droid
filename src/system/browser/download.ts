@@ -32,7 +32,18 @@ async function freeName(name: string) {
   for (let i = 1; ; i++) { const n = `${m[1]}-${i}${m[2] || ''}`; if (!have.has(n)) return n }
 }
 
+// the proxy rewrites links to /p/<session>/<scheme>/<host>/<path>; a link read back from a page
+// can carry that form glued onto the site's address. turn it into the real address again.
+export function realUrl(url: string) {
+  try {
+    const u = new URL(url)
+    const m = u.pathname.match(/\/p\/[^/]+\/(https?)\/([^/]+)(\/.*)?$/)
+    return m ? `${m[1]}://${m[2]}${m[3] || '/'}${u.search}${u.hash}` : url
+  } catch { return url }
+}
+
 export async function download(url: string, suggested = '') {
+  url = realUrl(url)
   const id = 'dl' + nextId++
   const fromUrl = (() => { try { return decodeURIComponent(new URL(url).pathname.split('/').pop() || '') } catch { return '' } })()
   let name = clean(suggested || fromUrl)
