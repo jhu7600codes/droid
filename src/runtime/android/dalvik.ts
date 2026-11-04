@@ -31,6 +31,7 @@ export class JThread implements Task {
   name: string
   constructor(vm: VM, name: string, main = false) { this.vm = vm; this.name = name; this.busy = main }
   step(ms: number) { this.vm.stepThread(this, ms) }
+  urgent() { return !!this.vm.nativeAsync?.signalsPending(this) }
 }
 
 export type NativeFn = (vm: VM, self: any, args: any[]) => any
@@ -250,7 +251,7 @@ export class VM {
   // the main thread runs everything that comes from js (ui callbacks, lifecycle); other java threads
   // and attached native threads are green threads run by the scheduler (threads.ts)
   // set by the native runtime: native calls on green threads that can stop and resume
-  nativeAsync: { begin(t: JThread, m: JMethod, self: any, args: any[], deadline: number): { done: true; value: any } | { done: false; block: Block | null }; resumeCall(t: JThread, deadline: number): { done: true; value: any } | { done: false; block: Block | null } } | null = null
+  nativeAsync: { begin(t: JThread, m: JMethod, self: any, args: any[], deadline: number): { done: true; value: any } | { done: false; block: Block | null }; resumeCall(t: JThread, deadline: number): { done: true; value: any } | { done: false; block: Block | null }; signalsPending(t: JThread): boolean; takeSignals(t: JThread): void } | null = null
   main = new JThread(this, 'main', true)
   current: JThread = this.main
   startThread(name: string, m: JMethod, self: any, args: any[] = [], obj: JObject | null = null) {
@@ -267,6 +268,12 @@ export class VM {
     t.busy = true
     try {
       const deadline = performance.now() + ms
+      // native signal handlers (a garbage collector stopping the world) run even while the thread waits
+      if (this.nativeAsync?.signalsPending(t)) {
+        this.nativeAsync.takeSignals(t)
+        if (t.state === 'blocked' && t.block && !t.block.ready()) return
+        if (t.state === 'blocked') t.state = 'runnable'
+      }
       if (t.nativeCall) {
         // a native call that stopped last time: go on with it (its own block, if any, is handled there)
         t.block = null
@@ -584,7 +591,15 @@ export class VM {
 
   private wrapJsError(e: unknown): JavaThrow {
     if (e instanceof JavaThrow) return e
-    if (e instanceof RangeError && /call stack/i.test(e.message)) return this.error('Ljava/lang/StackOverflowError;', 'stack overflow')
+    if (e instanceof RangeError && /call stack/i.test(e.message)) {
+      // the host's stack ran out: say which calls repeat, so the loop can be found
+      const names = (e.stack || '').split('\n').slice(1).map((l) => l.trim().replace(/^at /, '').split(' (')[0])
+      const counts = new Map<string, number>()
+      for (const n of names) counts.set(n, (counts.get(n) || 0) + 1)
+      const top = [...counts].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([n, c]) => `${n} x${c}`).join(', ')
+      console.error('stack overflow in the runtime; repeating:', top, '| java:', this.javaStack().join(' < '))
+      return this.error('Ljava/lang/StackOverflowError;', 'stack overflow')
+    }
     console.error('runtime error', (e as Error)?.stack?.split('\n').slice(0, 4).join(' / '))
     return this.error('Ljava/lang/RuntimeException;', 'Droid runtime: ' + ((e as Error)?.message || String(e)))
   }

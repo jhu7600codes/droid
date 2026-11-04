@@ -1,6 +1,7 @@
 // framework shim, part 1: java.lang and java.util basics, written in js on top of the vm.
 // keys are "name(params)return", exactly like dex method keys.
 import { VM, JObject, JArray, JavaThrow, type NativeFn } from './dalvik.ts'
+import { registerNio } from './nio.ts'
 
 const OBJ = 'Ljava/lang/Object;'
 export const jstr = (vm: VM, v: any): string => {
@@ -396,6 +397,7 @@ export function registerJava(vm: VM) {
     'toString([I)Ljava/lang/String;': (v, s, [a]) => '[' + [...a.data].join(', ') + ']',
     ...arraysAll(vm),
   })
+  ;(vm as any).nio = registerNio(vm)
 }
 
 // java.util.Arrays for every element type: copyOf, copyOfRange, fill, sort, equals, hashCode, toString

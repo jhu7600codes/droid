@@ -62,7 +62,13 @@ export class Threads {
     const jt = this.nat.vm.current
     let o = this.outside.get(jt)
     if (!o) {
-      o = { handle: this.nat.mem.malloc(64), tls: new Map(), pendingSignals: [], sigmask: 0, handled: 0, errno: 0, stackBase: (jt as any).armStack?.base ?? this.mainStackBase, stackSize: (jt as any).armStack?.size ?? this.mainStackSize, name: jt.name, jthread: jt }
+      // a java thread runs native code on its own stack (resumable calls) or, for calls made from
+      // the runtime itself, on the main one: its stack is whichever holds the current sp
+      const nat = this.nat, main = this
+      const onOwn = () => { const a = (jt as any).armStack; const sp = nat.cpu.r[13]; return a && (main.nat.vm.current !== jt || (sp >= a.base && sp <= a.base + a.size)) ? a : null }
+      o = { handle: this.nat.mem.malloc(64), tls: new Map(), pendingSignals: [], sigmask: 0, handled: 0, errno: 0,
+        get stackBase() { return onOwn()?.base ?? main.mainStackBase }, get stackSize() { return onOwn()?.size ?? main.mainStackSize },
+        name: jt.name, jthread: jt }
       this.nat.mem.w32(o.handle + 4, 1000 + this.outside.size) // tid at +4, like bionic's pthread_internal_t
       this.outside.set(jt, o)
       this.all.set(o.handle, o)
@@ -191,6 +197,9 @@ export class Threads {
     t.block = s.block
     if (s.waiting) { t.state = 'blocked'; t.block = s.waiting.block }
   }
+  // a java thread with signals waiting (they run before its native code goes on; see Native.runOn)
+  hasSignals(jt: JThread) { const o = this.outside.get(jt); return !!o && o.pendingSignals.length > 0 && !this.blockedSignal(o) }
+  deliverFor(jt: JThread) { const prev = this.nat.vm.current; this.nat.vm.current = jt; try { this.deliverOutside() } finally { this.nat.vm.current = prev } }
   // outside threads (java calling native) take their signals while they wait in place
   private deliverOutside() {
     if (this.current || this.signalDepth > 4) return

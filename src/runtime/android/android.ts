@@ -4,6 +4,7 @@ import { VM, JObject, JArray, JavaThrow, splitParams, type NativeFn } from './da
 import { Block } from './threads.ts'
 import { registerMore } from './android-more.ts'
 import { registerGlJava } from './gl-java.ts'
+import { registerAudio, registerNet } from './audio.ts'
 import { jstr, jformat, box } from './java.ts'
 import { parseAxml, attr, attrString, T, type XmlNode, type XmlValue } from './axml.ts'
 import { resolve, entryName, type ResTable } from './arsc.ts'
@@ -90,6 +91,12 @@ export function registerAndroid(vm: VM, env: Env) {
   const report = (e: unknown) => {
     const msg = e instanceof JavaThrow ? jstr(vm, e.obj) : String((e as Error)?.message || e)
     console.error('android app crashed:', msg)
+    // runtime errors (not java exceptions): where it happened, in js and in native code
+    if (!(e instanceof JavaThrow)) {
+      if ((e as Error)?.stack) console.error('stack:', (e as Error).stack!.split('\n').slice(0, 8).join(' | '))
+      const nat = (vm as any).nativeAsync
+      if (nat?.where) { const f = nat.fault || { pc: nat.cpu.r[15], lr: nat.cpu.r[14] }; console.error(`native: pc ${nat.where(f.pc)} lr ${nat.where(f.lr)}`) }
+    }
     env.droid.dialog({ title: 'Unfortunately, the app has stopped.', message: msg, ok: 'OK' })
   }
 
@@ -936,8 +943,16 @@ export function registerAndroid(vm: VM, env: Env) {
 
   // ---------- running an activity ----------
   // last: it extends classes defined (and patched) above
-  registerMore(vm, env, { el, report, runSafe, activity: () => activityObj, app: () => appObj, prefsFor, noop })
+  registerMore(vm, env, { el, report, runSafe, activity: () => activityObj, app: () => appObj, prefsFor, noop, appInfo: () => appInfo() })
   registerGlJava(vm, env, report)
+  registerAudio(vm)
+  registerNet(vm)
+  // the app-wide default prefs file android names <package>_preferences
+  vm.shim('Landroid/preference/PreferenceManager;', { methods: {
+    'getDefaultSharedPreferences(Landroid/content/Context;)Landroid/content/SharedPreferences;': () => prefsFor(env.pkg + '_preferences'),
+    'getDefaultSharedPreferencesName(Landroid/content/Context;)Ljava/lang/String;': () => env.pkg + '_preferences',
+    'setDefaultValues(Landroid/content/Context;IZ)V': noop,
+  } })
   return {
     // <application android:name>: made once, before any activity, like android does
     application(className: string | null, providers: { cls: string; authorities: string }[] = []) {

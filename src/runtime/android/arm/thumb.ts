@@ -1,6 +1,7 @@
 // thumb and thumb-2 (armv7-a) integer instructions: all 16-bit encodings, IT blocks, and the 32-bit
 // load / store, data processing (immediate, plain immediate, shifted register, register), multiply,
 // divide, branch and misc groups. most real ndk libraries are built as thumb-2.
+import { thumbMul, thumbParallel, smlalxy, dualLong, sat16 } from './dsp.ts'
 import type { CPU } from './cpu.ts'
 import { execVfp } from './vfp.ts'
 
@@ -221,6 +222,7 @@ function coproc(c: CPU, pc: number, h1: number, h2: number) {
 function exec32(c: CPU, pc: number, h1: number, h2: number) {
   const m = c.mem
   if (h1 === 0xee1d && (h2 & 0x0fff) === 0x0f70) { c.r[h2 >>> 12] = c.tls; return } // mrc p15 c13: the tls pointer
+  if (h1 === 0xee07 && (h2 & 0x0f10) === 0x0f10) return // mcr p15 c7: cache maintenance, armv6 barriers
   if ((h1 & 0xec00) === 0xec00 || (h1 & 0xff10) === 0xf900) return coproc(c, pc, h1, h2)
   const op1 = (h1 >>> 11) & 3, op2 = (h1 >>> 4) & 0x7f, op = (h2 >>> 15) & 1
   const rn = h1 & 0xf, rd = (h2 >>> 8) & 0xf, rt = (h2 >>> 12) & 0xf
@@ -274,6 +276,7 @@ function exec32(c: CPU, pc: number, h1: number, h2: number) {
       const opc = (h1 >>> 5) & 0xf, s = (h1 >>> 4) & 1, rm = h2 & 0xf
       const imm = ((h2 >>> 10) & 0x1c) | ((h2 >>> 6) & 3), type = (h2 >>> 4) & 3
       const [b, cy] = c.shift(c.r[rm], type, imm, c.C, false)
+      if (opc === 6) { c.r[rd] = type === 2 ? ((c.r[rn] & 0xffff0000) | (b & 0xffff)) >>> 0 : ((c.r[rn] & 0xffff) | (b & 0xffff0000)) >>> 0; return } // pkhtb / pkhbt
       return dp(c, opc, s, rn, rd, b, cy, R)
     }
     throw new Error(`arm: coprocessor / vfp instruction 0x${h1.toString(16)}${h2.toString(16).padStart(4, '0')} at 0x${pc.toString(16)} not supported yet`)
@@ -307,9 +310,12 @@ function exec32(c: CPU, pc: number, h1: number, h2: number) {
           c.r[rd] = ((c.r[rd] & ~mask) | (src & mask)) >>> 0
           return
         }
-        case 0x10: case 0x12: case 0x18: case 0x1a: { // ssat / usat (rare): clamp
+        case 0x10: case 0x12: case 0x18: case 0x1a: { // ssat / usat, with an lsl / asr of the input first
           const sat = (h2 & 0x1f) + ((h1 >>> 7) & 1 ? 0 : 1)
-          const v = c.r[rn] | 0
+          const shAmt = (imm3 << 2) | ((h2 >>> 6) & 3)
+          if ((h1 >>> 5) & 1 && shAmt === 0) { c.r[rd] = sat16(c, c.r[rn], (h2 & 0xf) + ((h1 >>> 7) & 1 ? 0 : 1), ((h1 >>> 7) & 1) === 1); return } // ssat16 / usat16
+          let v = c.r[rn] | 0
+          if ((h1 >>> 5) & 1) v >>= shAmt; else v <<= shAmt
           if ((h1 >>> 7) & 1) c.r[rd] = Math.max(0, Math.min((2 ** (h2 & 0x1f)) - 1, v)) >>> 0
           else { const mx = 2 ** (sat - 1) - 1; c.r[rd] = Math.max(-mx - 1, Math.min(mx, v)) >>> 0 }
           return
@@ -342,13 +348,18 @@ function exec32(c: CPU, pc: number, h1: number, h2: number) {
   if ((op2 & 0x78) === 0x30) { // multiply, mla, mls
     const rm = h2 & 0xf, ra = rt, k = (h2 >>> 4) & 3
     const p = Math.imul(c.r[rn], c.r[rm])
-    if (((h1 >>> 4) & 7) !== 0) throw new Error('arm: thumb-2 dsp multiply not supported')
+    if (((h1 >>> 4) & 7) !== 0) { if (thumbMul(c, h1, h2)) return; throw new Error(`arm: thumb-2 multiply 0x${h1.toString(16)} 0x${h2.toString(16)}`) }
     c.r[rd] = k === 1 ? (c.r[ra] - p) >>> 0 : ra === 15 ? p >>> 0 : (c.r[ra] + p) >>> 0
     return
   }
   if ((op2 & 0x78) === 0x38) { // long multiply, divide
     const rm = h2 & 0xf, k = (h1 >>> 4) & 7, rdlo = rt, rdhi = rd
     if (k === 1 || k === 3) { const n = c.r[rn], d = c.r[rm]; c.r[rdhi] = d === 0 ? 0 : k === 3 ? Math.floor(n / d) >>> 0 : (((n | 0) / (d | 0)) | 0) >>> 0; return } // sdiv udiv
+    const op = (h2 >>> 4) & 0xf
+    if (k === 4 && (op & 0xc) === 0x8) { const [lo, hi] = smlalxy(c.r[rn], c.r[rm], (op >>> 1) & 1, op & 1, c.r[rdlo], c.r[rdhi]); c.r[rdlo] = lo; c.r[rdhi] = hi; return } // smlalxy
+    if ((k === 4 || k === 5) && (op & 0xe) === 0xc) { const [lo, hi] = dualLong(c.r[rn], c.r[rm], op & 1, k === 5, c.r[rdlo], c.r[rdhi]); c.r[rdlo] = lo; c.r[rdhi] = hi; return } // smlald / smlsld
+    if (k === 6 && op === 6) { const u = BigInt(c.r[rn]) * BigInt(c.r[rm]) + BigInt(c.r[rdlo]) + BigInt(c.r[rdhi]); c.r[rdlo] = Number(u & 0xffffffffn); c.r[rdhi] = Number((u >> 32n) & 0xffffffffn); return } // umaal
+    if (op !== 0) throw new Error(`arm: thumb-2 long multiply 0x${h1.toString(16)} 0x${h2.toString(16)}`)
     const signed = k === 0 || k === 4
     let res = signed ? BigInt(c.r[rn] | 0) * BigInt(c.r[rm] | 0) : BigInt(c.r[rn]) * BigInt(c.r[rm])
     if (k >= 4) res += (BigInt(c.r[rdhi]) << 32n) | BigInt(c.r[rdlo])
@@ -405,6 +416,7 @@ function dpReg(c: CPU, h1: number, h2: number) {
     else c.r[rd] = ((((v & 0xff) << 24) >> 16) | ((v >>> 8) & 0xff)) >>> 0
     return
   }
+  if ((op1 & 8) && thumbParallel(c, h1, h2)) return
   throw new Error(`arm: thumb-2 register op 0x${h1.toString(16)} 0x${h2.toString(16)}`)
 }
 
