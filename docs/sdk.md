@@ -46,7 +46,7 @@ pack it: `npm run pack-dpk -- path/to/folder out.dpk --integrity`, then drop the
 | `droid.system.orientation(o)`, `keepawake(on)`, `fullscreen(on)`, `exit()` | fullscreen needs `fullscreen` |
 | `droid.device.info()` | size in dp and px, density, bucket, orientation, mode, api 19, locale |
 | `droid.net.fetch(url, init)`, `droid.net.websocket(url)`, `state()`, `isonline()` | `network`, optional `hosts` list |
-| `droid.danen.account()`, `.sync.get/set`, `.push.subscribe()` | `danen` |
+| `droid.danen.account()`, `.sync.get/set`, `.push.subscribe()`, `.push.send(title, body)` | `danen` (push also `notifications`); send reaches the user's own devices that subscribed for this app |
 | `droid.wasm.instantiate(path, imports)` | see below |
 
 errors have a `code`: `denied`, `notfound`, `invalid`, `toolarge`, `unsupported`, `offline`.

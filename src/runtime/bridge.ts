@@ -190,6 +190,12 @@ export function makeBridge(pkg: string, ctx: ActivityContext, host: Host) {
     },
     'danen.sync.get': async (k: string) => { await ensure(pkg, 'danen'); return store.get('kv', `danen:${pkg}:${k}`) },
     'danen.sync.set': async (k: string, v: unknown) => { await ensure(pkg, 'danen'); await store.put('kv', `danen:${pkg}:${k}`, v); window.dispatchEvent(new CustomEvent('danen:dirty', { detail: pkg })) },
+    // push to your own devices, for this app (e.g. a reminder that also reaches your other devices)
+    'danen.push.send': async (title: string, body?: string, data?: unknown) => {
+      await ensure(pkg, 'danen'); await ensure(pkg, 'notifications')
+      const { danenApi } = await import('../shell/danen-remote')
+      return danenApi.push(pkg, String(title), String(body ?? ''), data)
+    },
     'danen.push.subscribe': async () => { await ensure(pkg, 'danen'); await ensure(pkg, 'notifications'); return (await import('../shell/push')).subscribe(pkg) },
   }
 

@@ -40,6 +40,9 @@ const firstBoot = !settings.get('setup.done')
 boot(layers.boot, ready, { short: new URLSearchParams(location.search).has('fastboot') }).then(() => {
   if (firstBoot) wm.start({ action: 'setup' })
   else lockscreen.lock()
+  // a tapped push notification opens its app (?open=<package>)
+  const open = new URLSearchParams(location.search).get('open')
+  if (open && kernel.get(open)) wm.start({ package: open, action: 'main' })
 })
 
 watch((s) => {
@@ -51,6 +54,7 @@ watch((s) => {
   wm.configchange()
 })
 registerSw()
+import('./shell/push').then((m) => m.listenForPushes())
 // offline-first (spec section 21): once the service worker runs, quietly fetch the essential set
 // (shell, system apps, this density's images) unless it is done already or the connection is metered
 import('./shell/offline').then(async ({ offline }) => {

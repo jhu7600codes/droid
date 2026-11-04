@@ -36,5 +36,6 @@ export const danenApi = {
   putSync: (items: Record<string, unknown>) => call('/sync', 'PUT', { items }),
   subscribe: (pkg: string, subscription: unknown) => call('/push/subscribe', 'POST', { pkg, subscription }),
   vapid: () => call('/vapid'),
+  push: (pkg: string | null, title: string, body: string, data?: unknown) => call('/push/send', 'POST', { pkg, title, body, data }),
   deleteAccount: () => call('/account/delete', 'POST'),
 }

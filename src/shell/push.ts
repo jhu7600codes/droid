@@ -13,3 +13,18 @@ export async function subscribe(pkg: string) {
   await danenApi.subscribe(pkg, sub.toJSON())
   return { endpoint: sub.endpoint }
 }
+
+// pushes that arrive while droid is open become droid notifications (with the app's icon)
+export function listenForPushes() {
+  navigator.serviceWorker?.addEventListener('message', async (e) => {
+    const { notifications } = await import('./notify')
+    const { kernel } = await import('./kernel')
+    const { wm } = await import('./wm')
+    if (e.data?.droidPush) {
+      const d = e.data.droidPush
+      const app = d.pkg && kernel.get(d.pkg)
+      notifications.post({ id: 'push-' + Date.now(), pkg: d.pkg || 'droid.services', title: String(d.title || 'droid'), text: d.body ? String(d.body) : undefined, icon: app?.icon || 'assets/brand/droid-d-icon.svg', onclick: () => { if (app) wm.start({ package: d.pkg, action: 'main' }) } })
+    }
+    if (e.data?.droidOpen && kernel.get(e.data.droidOpen)) wm.start({ package: e.data.droidOpen, action: 'main' })
+  })
+}

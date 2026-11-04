@@ -295,6 +295,20 @@ function settingsApp(ctx: ActivityContext): Activity {
         { type: 'item', title: a.nickname, summary: a.username + (a.remote ? '' : ' · only on this device') },
         { type: 'check', title: 'Sync settings and app data', key: 'danen.sync' },
         { type: 'item', title: 'Sync now', summary: () => { const t = settings.get('danen.lastSync') as number; return t ? 'Last synced ' + new Date(t).toLocaleString() : 'Never synced' }, onclick: () => window.dispatchEvent(new Event('danen:sync-now')) },
+        { type: 'item', title: 'Push notifications', summary: () => (settings.get('danen.push') ? 'On for this device' : 'Off'), onclick: async () => {
+          if (!a.remote) return toast('Push needs a danen account on the backend')
+          const { subscribe } = await import('../../shell/push')
+          const perm = await Notification.requestPermission?.().catch(() => 'denied')
+          if (perm !== 'granted') return toast('Notifications are blocked for droid in this browser')
+          const r = await subscribe('droid.services').catch(() => null)
+          settings.set('danen.push', !!r)
+          toast(r ? 'Push notifications are on' : 'This browser can\'t do push')
+        } },
+        { type: 'item', title: 'Send a test push', onclick: async () => {
+          const { danenApi } = await import('../../shell/danen-remote')
+          const r = await danenApi.push(null, 'Hello from danen', 'Push notifications work on this device.').catch((e) => ({ error: e.message }))
+          toast((r as any).error ? 'Failed: ' + (r as any).error : `Sent to ${(r as any).sent} device${(r as any).sent === 1 ? '' : 's'}`)
+        } },
         { type: 'check', title: 'Check for app updates', get: () => settings.get('danen.updates') !== false, set: (v) => settings.set('danen.updates', v) },
         ...(settings.get('dev.enabled') ? [backend] : []),
         { type: 'item', title: 'Remove account', onclick: async () => {
