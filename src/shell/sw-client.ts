@@ -27,7 +27,8 @@ export async function checkUpdate() {
   if (BUILD === 'dev') return false
   const latest = await latestBuild()
   const ready = !!latest && latest > BUILD
-  settings.set('ota.ready', ready ? latest : false)
+  // only on a change: the update screen redraws on this setting, and redrawing checks again
+  if ((settings.get('ota.ready') || false) !== (ready ? latest : false)) settings.set('ota.ready', ready ? latest : false)
   if (ready && notified !== latest) {
     notified = latest!
     const { notifications } = await import('./notify')
