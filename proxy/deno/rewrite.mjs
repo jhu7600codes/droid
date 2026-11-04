@@ -49,7 +49,14 @@ export function rewriteHtml(html, pageUrl, sid, shim) {
 export function shimFor(sid, target) {
   return `(function(){
 var SID=${JSON.stringify(sid)}, TARGET=${JSON.stringify(target)};
-function toP(u){try{var a=new URL(u,TARGET);if(a.protocol!=='http:'&&a.protocol!=='https:')return u;if(a.origin===location.origin)return u;return '/p/'+SID+'/'+a.protocol.slice(0,-1)+'/'+a.host+a.pathname+a.search+a.hash}catch(e){return u}}
+var REAL=(function(){var m=location.pathname.match(/^\\/p\\/[^/]+\\/(https?)\\/([^/]+)(.*)$/);return m?{origin:m[1]+'://'+m[2],path:(m[3]||'/')+location.search+location.hash}:null})();
+var ORIGIN=REAL?REAL.origin:new URL(TARGET).origin;
+// with the proxy's service worker in charge, the page sees its real path (app-style sites route on
+// location.pathname); the worker maps the page's own-origin requests back into the proxy
+(function(){try{var sw=navigator.serviceWorker;if(!sw||!REAL)return;
+if(sw.controller){sw.controller.postMessage({droidCtx:{sid:SID,origin:ORIGIN}});history.replaceState(history.state,'',REAL.path)}
+else sw.register('/__droid_sw.js',{scope:'/'}).then(function(){return sw.ready}).then(function(){var k='droid-sw-'+SID;try{if(sessionStorage.getItem(k))return;sessionStorage.setItem(k,'1')}catch(e){return}location.reload()}).catch(function(){})}catch(e){}})();
+function toP(u){try{var a=new URL(u,cur());if(a.protocol!=='http:'&&a.protocol!=='https:')return u;if(a.origin===location.origin)return u;return '/p/'+SID+'/'+a.protocol.slice(0,-1)+'/'+a.host+a.pathname+a.search+a.hash}catch(e){return u}}
 var f=window.fetch;window.fetch=function(i,o){if(typeof i==='string'||i instanceof URL)i=toP(String(i));else if(i&&i.url)i=new Request(toP(i.url),i);return f.call(this,i,o)};
 var xo=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){arguments[1]=toP(u);return xo.apply(this,arguments)};
 function ps(p,a){var d=Object.getOwnPropertyDescriptor(p,a);if(!d||!d.set)return;Object.defineProperty(p,a,{get:d.get,set:function(v){d.set.call(this,toP(v))},configurable:true})}
@@ -61,7 +68,7 @@ var DL=/\.(apk|dpk|zip|7z|rar|tar|gz|pdf|mp3|ogg|wav|mp4|webm|exe|bin|img|iso)$/
 addEventListener('click',function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href]');if(!a||e.defaultPrevented)return;var u;try{u=new URL(a.href);var m=u.origin===location.origin&&u.pathname.match(/^\\/p\\/[^/]+\\/(https?)\\/([^/]+)(.*)$/);if(m)u=new URL(m[1]+'://'+m[2]+(m[3]||'/')+u.search+u.hash)}catch(x){return}
 if(!a.hasAttribute('download')&&!DL.test(u.pathname))return;if(u.protocol!=='http:'&&u.protocol!=='https:')return;e.preventDefault();parent.postMessage({droid:'download',url:u.href,name:a.getAttribute('download')||''},'*')},true);
 var hp=history.pushState,hr=history.replaceState;
-function cur(){var m=location.pathname.match(/^\\/p\\/[^/]+\\/(https?)\\/([^/]+)(.*)$/);return m?m[1]+'://'+m[2]+(m[3]||'/')+location.search+location.hash:TARGET}
+function cur(){var m=location.pathname.match(/^\\/p\\/[^/]+\\/(https?)\\/([^/]+)(.*)$/);return m?m[1]+'://'+m[2]+(m[3]||'/')+location.search+location.hash:ORIGIN+location.pathname+location.search+location.hash}
 function report(){var l=document.querySelector('link[rel~="icon"]');parent.postMessage({droid:'page',url:cur(),title:document.title,icon:l?l.href:''},'*')}
 history.pushState=function(){hp.apply(this,arguments);report()};history.replaceState=function(){hr.apply(this,arguments);report()};
 addEventListener('DOMContentLoaded',report);addEventListener('load',function(){report();parent.postMessage({droid:'loaded'},'*')});
@@ -84,3 +91,33 @@ export function downloadName(url, headers) {
 export function downloadPage(url, name) {
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><body style="font-family:Roboto,sans-serif;margin:24px;color:#222;background:#fff">Downloading ${name.replace(/[&<>"]/g, '')}…<script>parent.postMessage({droid:'download',url:${JSON.stringify(url)},name:${JSON.stringify(name)},back:true},'*')</script>`
 }
+
+// the proxy's service worker (served at /__droid_sw.js, scope /). pages learn their real path through
+// history.replaceState; their requests to the proxy's own origin outside /p/ are sent to the site
+// they belong to, found by the page (client) that made them.
+export const SW_SOURCE = `
+const ctx = new Map()
+let last = null
+const SKIP = /^\\/(p\\/|fetch$|ws$|session$|register$|health$|__droid_sw\\.js$)/
+self.addEventListener('install', () => self.skipWaiting())
+self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()))
+self.addEventListener('message', (e) => { const d = e.data && e.data.droidCtx; if (d && e.source) { ctx.set(e.source.id, d); last = d } })
+self.addEventListener('fetch', (e) => {
+  const u = new URL(e.request.url)
+  if (u.origin !== location.origin) return
+  const m = u.pathname.match(/^\\/p\\/([^/]+)\\/(https?)\\/([^/]+)/)
+  if (m) { if (e.resultingClientId) { const c = { sid: m[1], origin: m[2] + '://' + m[3] }; ctx.set(e.resultingClientId, c); last = c } return }
+  if (SKIP.test(u.pathname)) return
+  const c = ctx.get(e.clientId) || last
+  if (!c) return
+  const o = new URL(c.origin)
+  const to = '/p/' + c.sid + '/' + o.protocol.slice(0, -1) + '/' + o.host + u.pathname + u.search
+  if (e.request.mode === 'navigate') { e.respondWith(Response.redirect(to, 302)); return }
+  e.respondWith((async () => {
+    const r = e.request
+    const init = { method: r.method, headers: r.headers, credentials: 'include', redirect: 'follow' }
+    if (r.method !== 'GET' && r.method !== 'HEAD') init.body = await r.clone().arrayBuffer()
+    return fetch(to, init)
+  })())
+})
+`

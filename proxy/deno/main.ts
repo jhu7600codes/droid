@@ -2,7 +2,7 @@
 //   GET /health, POST /register, POST /session, ANY /fetch?url=, GET /p/<sid>/..., WS /ws?url=
 // tokens and sessions live in deno kv (hashed), limits per token, ssrf checks on every hop.
 // deploy: link the repo on dash.deno.com with entrypoint proxy/deno/main.ts (no build step).
-import { toProxy, fromProxy, rewriteHtml, rewriteCss, shimFor, downloadName, downloadPage } from './rewrite.mjs'
+import { toProxy, fromProxy, rewriteHtml, rewriteCss, shimFor, downloadName, downloadPage, SW_SOURCE } from './rewrite.mjs'
 
 const env = (k: string, d = '') => Deno.env.get(k) ?? d
 const cfg = {
@@ -219,7 +219,8 @@ export async function handler(req: Request, info?: Deno.ServeHandlerInfo): Promi
   const u = new URL(req.url)
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(req) })
   try {
-    if (u.pathname === '/health') return json(req, { ok: true, droid: 'proxy 0.1 (deno)' })
+    if (u.pathname === '/health') return json(req, { ok: true, droid: 'proxy 0.2 (deno)' })
+    if (u.pathname === '/__droid_sw.js') return new Response(SW_SOURCE, { headers: { 'content-type': 'text/javascript; charset=utf-8', 'service-worker-allowed': '/', 'cache-control': 'no-cache' } })
     if (u.pathname === '/register' && req.method === 'POST') {
       if (cfg.registration !== 'open') return json(req, { error: 'registration is closed on this proxy' }, 403)
       const ip = (info?.remoteAddr as Deno.NetAddr | undefined)?.hostname || 'ip'
