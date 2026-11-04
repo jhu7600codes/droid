@@ -58,6 +58,8 @@ const DEFAULTS: Partial<SystemSettings> = {
   'sound.touch': true,
   // the public droid proxy on deno deploy; changing it needs developer options
   'proxy.url': 'https://sweet-moose-8098.vedeo.deno.net',
+  // the danen backend (supabase edge function); changing it needs developer options
+  'danen.backend': 'https://kicqdpzodcwiuzrdriie.supabase.co/functions/v1/danen',
   'dev.enabled': false,
 }
 
