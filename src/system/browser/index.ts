@@ -218,6 +218,11 @@ function browser(ctx: ActivityContext): Activity {
     if (d.droid === 'loaded') setLoading(t, false)
     if (d.droid === 'error') errorPage(t, d.reason || '')
     if (d.droid === 'open' && d.url) newTab(d.url, t.incognito)
+    if (d.droid === 'download' && typeof d.url === 'string' && /^https?:/.test(d.url)) {
+      import('./download').then((m) => m.download(d.url, typeof d.name === 'string' ? d.name : ''))
+      // the frame went to the file itself: back to the page that linked it
+      if (d.back) { if (t.back.length) load(t, t.back.pop()!, false); else setLoading(t, false) }
+    }
     if (d.droid === 'go' && d.url) load(t, d.url)
   }
   addEventListener('message', onMsg)

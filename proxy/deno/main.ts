@@ -2,7 +2,7 @@
 //   GET /health, POST /register, POST /session, ANY /fetch?url=, GET /p/<sid>/..., WS /ws?url=
 // tokens and sessions live in deno kv (hashed), limits per token, ssrf checks on every hop.
 // deploy: link the repo on dash.deno.com with entrypoint proxy/deno/main.ts (no build step).
-import { toProxy, fromProxy, rewriteHtml, rewriteCss, shimFor } from './rewrite.mjs'
+import { toProxy, fromProxy, rewriteHtml, rewriteCss, shimFor, downloadName, downloadPage } from './rewrite.mjs'
 
 const env = (k: string, d = '') => Deno.env.get(k) ?? d
 const cfg = {
@@ -179,6 +179,8 @@ async function handlePage(req: Request, u: URL) {
     await s.save()
     if ([301, 302, 303, 307, 308].includes(r.status) && r.headers.get('location')) return new Response(null, { status: r.status, headers: { location: toProxy(r.headers.get('location'), p.url, p.sid), 'cache-control': 'no-store' } })
     const type = r.headers.get('content-type') || ''
+    const dl = isDoc && r.ok ? downloadName(p.url, r.headers) : null
+    if (dl) { r.body?.cancel(); return new Response(downloadPage(p.url, dl), { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } }) }
     const h = new Headers({ 'referrer-policy': 'no-referrer' })
     r.headers.forEach((v, k) => { if (!DROP.has(k) && k !== 'location') h.set(k, v) })
     if (/text\/html|application\/xhtml/.test(type)) { const html = await r.text(); bucket(s.key).bytes += html.length; return new Response(rewriteHtml(html, p.url, p.sid, shimFor(p.sid, p.url)), { status: r.status, headers: h }) }
