@@ -116,6 +116,7 @@ export function registerAndroid(vm: VM, env: Env) {
   const runSafe = (r: any) => { try { vm.callVirtual(r, 'run()V') } catch (e) { report(e) } }
   def('Landroid/view/View;', OBJ, viewMethods)
   def('Landroid/view/View$OnClickListener;', OBJ, {})
+  def('Landroid/view/View$OnLongClickListener;', OBJ, {})
   def('Landroid/view/ViewGroup;', 'Landroid/view/View;', {
     'addView(Landroid/view/View;)V': (v, s, [c]) => el(s).append(el(c)),
     'removeAllViews()V': (v, s) => { el(s).innerHTML = '' },
@@ -358,7 +359,7 @@ export function registerAndroid(vm: VM, env: Env) {
     'startActivity(Landroid/content/Intent;)V': (v, s, [i]) => startActivity(i),
     'getMainLooper()Landroid/os/Looper;': () => new JObject(vm.cls('Landroid/os/Looper;')),
   }
-  def('Landroid/content/Context;', OBJ, contextMethods, { statics: { MODE_PRIVATE: 0, VIBRATOR_SERVICE: 'vibrator', LAYOUT_INFLATER_SERVICE: 'layout_inflater', NOTIFICATION_SERVICE: 'notification', AUDIO_SERVICE: 'audio' } })
+  def('Landroid/content/Context;', OBJ, contextMethods, { statics: { MODE_PRIVATE: 0, VIBRATOR_SERVICE: 'vibrator', LAYOUT_INFLATER_SERVICE: 'layout_inflater', NOTIFICATION_SERVICE: 'notification', AUDIO_SERVICE: 'audio', ALARM_SERVICE: 'alarm' } })
   def('Landroid/content/ContextWrapper;', 'Landroid/content/Context;', {})
   def('Landroid/view/ContextThemeWrapper;', 'Landroid/content/ContextWrapper;', {})
   const noop: NativeFn = () => {}
@@ -594,9 +595,9 @@ export function registerAndroid(vm: VM, env: Env) {
 
   // ---------- notifications: NotificationManager, Notification(.Builder), PendingIntent ----------
   def('Landroid/app/PendingIntent;', OBJ, {
-    'getActivity(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;': (v, s, [, , i]) => { const p = new JObject(vm.cls('Landroid/app/PendingIntent;')); p.f.intent = i; return p },
-    'getBroadcast(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;': (v, s, [, , i]) => { vm.missing.add('PendingIntent.getBroadcast'); const p = new JObject(vm.cls('Landroid/app/PendingIntent;')); p.f.intent = i; return p },
-    'getService(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;': (v, s, [, , i]) => { vm.missing.add('PendingIntent.getService'); const p = new JObject(vm.cls('Landroid/app/PendingIntent;')); p.f.intent = i; return p },
+    'getActivity(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;': (v, s, [, code, i]) => { const p = new JObject(vm.cls('Landroid/app/PendingIntent;')); p.f.intent = i; p.f.kind = 'activity'; p.f.code = code; return p },
+    'getBroadcast(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;': (v, s, [, code, i]) => { const p = new JObject(vm.cls('Landroid/app/PendingIntent;')); p.f.intent = i; p.f.kind = 'broadcast'; p.f.code = code; return p },
+    'getService(Landroid/content/Context;ILandroid/content/Intent;I)Landroid/app/PendingIntent;': (v, s, [, code, i]) => { const p = new JObject(vm.cls('Landroid/app/PendingIntent;')); p.f.intent = i; p.f.kind = 'service'; p.f.code = code; return p },
     'cancel()V': noop,
   }, { statics: { FLAG_UPDATE_CURRENT: 0x8000000, FLAG_CANCEL_CURRENT: 0x10000000, FLAG_ONE_SHOT: 0x40000000, FLAG_IMMUTABLE: 0x4000000 } })
   const FLAG_ONGOING = 2, FLAG_NO_CLEAR = 32
@@ -649,9 +650,9 @@ export function registerAndroid(vm: VM, env: Env) {
     // the PendingIntent's target activity and extras, so a tap lands on the right screen
     let activity: string | undefined, extras: any
     const it = d.pi?.f?.intent
-    if (it?.f?.target) { activity = env.activityFor(it.f.target) || undefined; extras = { android: Object.fromEntries(Object.entries(it.f.extras || {}).map(([k, x]) => [k, typeof x === 'bigint' ? { long: String(x) } : x])), androidAction: it.f.action } }
+    if (it?.f?.target && d.pi.f.kind === 'activity') { activity = env.activityFor(it.f.target) || undefined; extras = { android: Object.fromEntries(Object.entries(it.f.extras || {}).map(([k, x]) => [k, typeof x === 'bigint' ? { long: String(x) } : x])), androidAction: it.f.action } }
     ;((env as any).posted ||= new Set()).add(notifKey(tag, id))
-    env.droid.system.notify({ id: notifKey(tag, id), title: d.title || d.ticker || env.res.pkg, text: d.text || d.sub, ongoing: !!d.ongoing || !!(flags & (FLAG_ONGOING | FLAG_NO_CLEAR)), progress: d.progress, activity, extras }).catch((e: any) => console.warn('notification', e?.message))
+    env.droid.system.notify({ id: notifKey(tag, id), title: d.title || d.ticker || env.res.pkg, text: d.text || d.sub, ticker: d.ticker, ongoing: !!d.ongoing || !!(flags & (FLAG_ONGOING | FLAG_NO_CLEAR)), progress: d.progress, activity, extras }).catch((e: any) => console.warn('notification', e?.message))
     if (d.defaults && (d.defaults === -1 || d.defaults & 2)) env.droid.system.vibrate(200).catch(() => {})
   }
   def('Landroid/app/NotificationManager;', OBJ, {
@@ -664,6 +665,87 @@ export function registerAndroid(vm: VM, env: Env) {
   })
   def('Landroid/graphics/Bitmap;', OBJ, {})
   def('Landroid/graphics/BitmapFactory;', OBJ, { 'decodeResource(Landroid/content/res/Resources;I)Landroid/graphics/Bitmap;': () => new JObject(vm.cls('Landroid/graphics/Bitmap;')) })
+
+  // ---------- background: AlarmManager, Service, IntentService, BroadcastReceiver ----------
+  const jobOf = (pi: JObject) => {
+    const it = pi?.f?.intent
+    const extras = Object.fromEntries(Object.entries(it?.f?.extras || {}).map(([k, x]) => [k, typeof x === 'bigint' ? { long: String(x) } : x]))
+    const kind = pi?.f?.kind || 'activity'
+    return { kind, cls: it?.f?.target, action: it?.f?.action, extras, activity: kind === 'activity' && it?.f?.target ? env.activityFor(it.f.target) : undefined }
+  }
+  const alarmId = (pi: JObject) => `${pi?.f?.kind}:${pi?.f?.code}:${pi?.f?.intent?.f?.target || pi?.f?.intent?.f?.action || ''}`
+  // RTC types are wall clock, ELAPSED_REALTIME types count from boot (our performance.now)
+  const toEpoch = (type: number, t: bigint) => (type >= 2 ? Date.now() + (Number(t) - performance.now()) : Number(t))
+  const setAlarm = (type: number, at: bigint, interval: number, pi: JObject) => {
+    env.droid.background.alarm({ id: alarmId(pi), at: toEpoch(type, at), interval, job: jobOf(pi) }).catch((e: any) => console.warn('alarm', e?.message))
+  }
+  def('Landroid/app/AlarmManager;', OBJ, {
+    'set(IJLandroid/app/PendingIntent;)V': (v, s, [t, at, pi]) => setAlarm(t, at, 0, pi),
+    'setExact(IJLandroid/app/PendingIntent;)V': (v, s, [t, at, pi]) => setAlarm(t, at, 0, pi),
+    'setAndAllowWhileIdle(IJLandroid/app/PendingIntent;)V': (v, s, [t, at, pi]) => setAlarm(t, at, 0, pi),
+    'setExactAndAllowWhileIdle(IJLandroid/app/PendingIntent;)V': (v, s, [t, at, pi]) => setAlarm(t, at, 0, pi),
+    'setWindow(IJJLandroid/app/PendingIntent;)V': (v, s, [t, at, , pi]) => setAlarm(t, at, 0, pi),
+    'setRepeating(IJJLandroid/app/PendingIntent;)V': (v, s, [t, at, iv, pi]) => setAlarm(t, at, Math.max(60000, Number(iv)), pi),
+    'setInexactRepeating(IJJLandroid/app/PendingIntent;)V': (v, s, [t, at, iv, pi]) => setAlarm(t, at, Math.max(60000, Number(iv)), pi),
+    'cancel(Landroid/app/PendingIntent;)V': (v, s, [pi]) => { env.droid.background.cancel(alarmId(pi)) },
+  }, { statics: { RTC: 1, RTC_WAKEUP: 0, ELAPSED_REALTIME: 3, ELAPSED_REALTIME_WAKEUP: 2, INTERVAL_FIFTEEN_MINUTES: 900000n, INTERVAL_HALF_HOUR: 1800000n, INTERVAL_HOUR: 3600000n, INTERVAL_DAY: 86400000n } })
+  contextMethods['startService(Landroid/content/Intent;)Landroid/content/ComponentName;'] = (v, s, [i]) => { env.droid.background.run({ kind: 'service', cls: i.f.target, action: i.f.action, extras: jobOf(mkPi(i, 'service')).extras }); return null }
+  contextMethods['stopService(Landroid/content/Intent;)Z'] = () => 1
+  contextMethods['sendBroadcast(Landroid/content/Intent;)V'] = (v, s, [i]) => { env.droid.background.run({ kind: 'broadcast', cls: i.f.target, action: i.f.action, extras: jobOf(mkPi(i, 'broadcast')).extras }) }
+  contextMethods['registerReceiver(Landroid/content/BroadcastReceiver;Landroid/content/IntentFilter;)Landroid/content/Intent;'] = (v, s, [r, f]) => { (dynamicReceivers ||= []).push({ r, actions: f?.f?.actions || [] }); return null }
+  contextMethods['unregisterReceiver(Landroid/content/BroadcastReceiver;)V'] = (v, s, [r]) => { dynamicReceivers = (dynamicReceivers || []).filter((x) => x.r !== r) }
+  let dynamicReceivers: { r: JObject; actions: string[] }[] | undefined
+  const mkPi = (i: JObject, kind: string) => { const p = new JObject(vm.cls('Landroid/app/PendingIntent;')); p.f.intent = i; p.f.kind = kind; return p }
+  def('Landroid/content/IntentFilter;', OBJ, {
+    '<init>()V': (v, s) => { s.f.actions = [] },
+    '<init>(Ljava/lang/String;)V': (v, s, [a]) => { s.f.actions = [a] },
+    'addAction(Ljava/lang/String;)V': (v, s, [a]) => { (s.f.actions ||= []).push(a) },
+  })
+  def('Landroid/content/BroadcastReceiver;', OBJ, {
+    '<init>()V': noop,
+    'setResultCode(I)V': noop, 'abortBroadcast()V': noop,
+    'goAsync()Landroid/content/BroadcastReceiver$PendingResult;': () => new JObject(vm.cls('Landroid/content/BroadcastReceiver$PendingResult;')),
+  })
+  def('Landroid/content/BroadcastReceiver$PendingResult;', OBJ, { 'finish()V': noop })
+  def('Landroid/app/Service;', 'Landroid/content/ContextWrapper;', {
+    '<init>()V': noop,
+    'onCreate()V': noop, 'onDestroy()V': noop,
+    'onStartCommand(Landroid/content/Intent;II)I': (v, s, [i, f, id]) => { vm.callVirtual(s, 'onStart(Landroid/content/Intent;I)V', [i, id]); return 1 },
+    'onStart(Landroid/content/Intent;I)V': noop,
+    'onBind(Landroid/content/Intent;)Landroid/os/IBinder;': () => null,
+    'stopSelf()V': noop, 'stopSelf(I)V': noop, 'stopSelfResult(I)Z': () => 1,
+    'startForeground(ILandroid/app/Notification;)V': (v, s, [id, n]) => { if (n?.f?.n) n.f.n.ongoing = true; post('fg', id, n) },
+    'stopForeground(Z)V': () => {},
+  }, { statics: { START_STICKY: 1, START_NOT_STICKY: 2, START_REDELIVER_INTENT: 3 } })
+  def('Landroid/app/IntentService;', 'Landroid/app/Service;', {
+    '<init>(Ljava/lang/String;)V': noop,
+    'onStartCommand(Landroid/content/Intent;II)I': (v, s, [i]) => { vm.callVirtual(s, 'onHandleIntent(Landroid/content/Intent;)V', [i]); return 2 },
+    'setIntentRedelivery(Z)V': noop,
+  })
+  contextMethods['getSystemService(Ljava/lang/String;)Ljava/lang/Object;'] = ((orig) => (v: VM, s: any, a: any[]) => (a[0] === 'alarm' ? new JObject(vm.cls('Landroid/app/AlarmManager;')) : orig(v, s, a)))(contextMethods['getSystemService(Ljava/lang/String;)Ljava/lang/Object;'])
+  const services = new Map<string, JObject>()
+  let startId = 1
+  const intentFrom = (job: any) => {
+    const i = new JObject(vm.cls('Landroid/content/Intent;'))
+    i.f.extras = extrasFromJson(job.extras || {})
+    i.f.action = job.action
+    i.f.target = job.cls
+    return i
+  }
+  function runJob(job: any, receiverClasses: { cls: string; actions: string[] }[]) {
+    const ctxObj = activityObj || (activityObj = vm.newObject('Landroid/app/Application;'))
+    const intent = intentFrom(job)
+    if (job.kind === 'service') {
+      if (!job.cls) return
+      let svc = services.get(job.cls)
+      if (!svc) { svc = vm.newObject(job.cls); services.set(job.cls, svc); vm.callVirtual(svc, 'onCreate()V') }
+      vm.callVirtual(svc, 'onStartCommand(Landroid/content/Intent;II)I', [intent, 0, startId++])
+      return
+    }
+    const targets = job.cls ? [job.cls] : receiverClasses.filter((r) => r.actions.includes(job.action)).map((r) => r.cls)
+    for (const c of targets) { const r = vm.newObject(c); vm.callVirtual(r, 'onReceive(Landroid/content/Context;Landroid/content/Intent;)V', [ctxObj, intent]) }
+    for (const d of dynamicReceivers || []) if (!job.cls && d.actions.includes(job.action)) vm.callVirtual(d.r, 'onReceive(Landroid/content/Context;Landroid/content/Intent;)V', [ctxObj, intent])
+  }
 
   // ---------- media: MediaPlayer, SoundPool, VideoView, AudioManager ----------
   const rawUrl = (id: number) => (() => {
@@ -807,6 +889,8 @@ export function registerAndroid(vm: VM, env: Env) {
     },
     report,
     content: () => content,
+    // background host: run one job (broadcast, service) with the app context
+    background(job: any, receivers: { cls: string; actions: string[] }[]) { try { runJob(job, receivers) } catch (e) { console.error('background job', e instanceof JavaThrow ? jstr(vm, e.obj) : e) } },
   }
 }
 export { JArray }

@@ -34,7 +34,8 @@ export interface MenuItem { id: string; title: string; icon?: string; always?: b
 export function hostActivity(pkg: string, ctx: ActivityContext): Activity {
   const app = kernel.get(pkg)!
   const m = app.manifest
-  const decl = m.activities[ctx.name]
+  // '__bg' is the hidden background host (receivers, services, alarms): same page as the main activity
+  const decl = m.activities[ctx.name] || m.activities[m.main]
   const dark = m.theme !== 'holo-light'
   const theme = dark ? 'holo-dark' : 'holo-light'
 

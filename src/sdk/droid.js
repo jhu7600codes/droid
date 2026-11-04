@@ -113,6 +113,13 @@
       fullscreen: function (on) { return call('system.fullscreen', [on !== false]) },
       exit: function () { return call('app.finish', [0]) },
     },
+    // background work for converted apps (alarms, broadcast receivers, services)
+    background: {
+      alarm: function (a) { return call('bg.alarm.set', [a]) },
+      cancel: function (id) { return call('bg.alarm.cancel', [id]) },
+      run: function (job) { return call('bg.run', [job]) },
+      idle: function () { return call('bg.idle', []) },
+    },
     device: {
       info: function () { return call('device.info', []) },
     },

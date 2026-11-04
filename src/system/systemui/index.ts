@@ -47,6 +47,45 @@ function signalIcons() {
   return out.join('')
 }
 
+// kitkat ticker: a new notification takes over the status bar for a moment, its small icon
+// plus the ticker text, which wraps and scrolls up one line at a time, then the icons come back
+function ticker(bar: HTMLElement) {
+  const queue: { icon: string; text: string }[] = []
+  let busy = false
+  const next = () => {
+    const t = queue.shift()
+    if (!t) { busy = false; return }
+    busy = true
+    const box = h('div.sb-ticker')
+    const icon = h('img') as HTMLImageElement
+    icon.src = t.icon
+    const win = h('div.sb-ticker-win')
+    const txt = h('div.sb-ticker-text')
+    txt.textContent = t.text
+    win.append(txt)
+    box.append(icon, win)
+    bar.append(box)
+    bar.classList.add('ticking')
+    const lines = Math.max(1, Math.round(txt.scrollHeight / 25))
+    let i = 0
+    const step = () => {
+      if (++i < lines) { txt.style.transform = `translateY(${-25 * i}px)`; setTimeout(step, 1800); return }
+      setTimeout(() => {
+        box.classList.add('out')
+        bar.classList.remove('ticking')
+        setTimeout(() => { box.remove(); next() }, 250)
+      }, 1800)
+    }
+    setTimeout(step, 1800)
+  }
+  notifications.onPosted((n) => {
+    const text = n.ticker || [n.title, n.text].filter(Boolean).join(': ')
+    if (!text) return
+    queue.push({ icon: n.icon, text })
+    if (!busy) next()
+  })
+}
+
 function statusBar() {
   const bar = h('div.sb')
   const left = h('div.sb-left')
@@ -67,6 +106,7 @@ function statusBar() {
   // dark bar for apps, see-through over the launcher and lockscreen (kitkat translucent bars)
   wm.on('change', () => layers.statusbar.classList.toggle('see-through', !!wm.top()?.el.classList.contains('translucent')))
   layers.statusbar.append(bar)
+  ticker(bar)
   return render
 }
 

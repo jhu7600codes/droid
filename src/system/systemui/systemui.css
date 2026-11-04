@@ -10,6 +10,15 @@
 .sb-stack { position: relative; display: block; height: 25px; }
 .sb-stack img:first-child { position: absolute; left: 0; top: 0; }
 .sb-battery { width: 9px; height: 15px; margin: 0 2px; }
+.sb { position: relative; }
+.sb > .sb-left, .sb > .sb-right { transition: opacity .2s, transform .25s; }
+.sb.ticking > .sb-left, .sb.ticking > .sb-right { opacity: 0; transform: translateY(-25px); }
+.sb-ticker { position: absolute; inset: 0 6px; display: flex; align-items: center; gap: 6px; animation: sb-tick-in .25s ease-out; }
+.sb-ticker.out { transition: opacity .2s, transform .25s; opacity: 0; transform: translateY(-25px); }
+.sb-ticker img { height: 18px; }
+.sb-ticker-win { flex: 1; height: 25px; overflow: hidden; }
+.sb-ticker-text { color: #fff; font-size: 14px; line-height: 25px; transition: transform .3s ease-out; }
+@keyframes sb-tick-in { from { transform: translateY(25px); opacity: 0; } }
 .sb-clock { font-size: 16px; color: #fff; padding-left: 4px; }
 
 #screen > #navbar { top: auto; height: var(--nb); background: #000; transition: background .3s, transform .25s; }

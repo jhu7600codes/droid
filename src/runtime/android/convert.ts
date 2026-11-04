@@ -67,7 +67,16 @@ export async function convertApk(apk: ArrayBuffer, runtimeJs: string): Promise<C
   out.set('manifest.json', enc.encode(JSON.stringify(manifest, null, 1)))
   out.set('index.html', enc.encode(`<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%}#app{height:100%;overflow:auto}</style></head><body><div id="app"></div><script src="runtime/android-runtime.js"></script></body></html>`))
   out.set('runtime/android-runtime.js', enc.encode(runtimeJs))
-  out.set('apk-map.json', enc.encode(JSON.stringify({ pkg, activities: map, libs })))
+  // broadcast receivers (with their actions) and services: run in the background host
+  const cls = (n: string) => 'L' + full(n).replace(/\./g, '/') + ';'
+  const receivers = (app?.children || []).filter((c) => c.tag === 'receiver').map((r) => ({
+    cls: cls(attrString(r, 'name') || ''),
+    actions: r.children.filter((f) => f.tag === 'intent-filter').flatMap((f) => f.children.filter((x) => x.tag === 'action').map((x) => attrString(x, 'name') || '')),
+  }))
+  const services = (app?.children || []).filter((c) => c.tag === 'service').map((x) => cls(attrString(x, 'name') || ''))
+  out.set('apk-map.json', enc.encode(JSON.stringify({ pkg, activities: map, libs, receivers, services })))
+  ;(manifest as any)['android-receivers'] = [...new Set(receivers.flatMap((r) => r.actions))]
+  out.set('manifest.json', enc.encode(JSON.stringify(manifest, null, 1)))
   const kept = [...files.keys()].filter((p) => !p.startsWith('META-INF/') && !(p.startsWith('lib/') && !p.startsWith('lib/armeabi-v7a/')))
   out.set('apk-files.json', enc.encode(JSON.stringify(kept)))
   for (const p of kept) out.set('apk/' + p.toLowerCase().replace(/[^a-z0-9/._-]/g, '_'), files.get(p)!)
