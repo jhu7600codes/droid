@@ -13,7 +13,7 @@ import { pipeline } from 'node:stream/promises'
 import { Agent, fetch } from 'undici'
 import { WebSocketServer, WebSocket } from 'ws'
 import { config, validToken, newToken, allowRequest, countBytes, checkUrl, safeLookup } from './guard.mjs'
-import { toProxy, fromProxy, rewriteHtml, rewriteCss, shimFor, downloadName, downloadPage } from './deno/rewrite.mjs'
+import { toProxy, fromProxy, rewriteHtml, rewriteCss, shimFor, downloadName, downloadPage, SW_SOURCE } from './deno/rewrite.mjs'
 
 // every outgoing connection goes through safeLookup (blocks private addresses after dns too).
 // tls to the origin is always verified (undici default, never turned off)
@@ -216,7 +216,8 @@ const server = http.createServer(async (req, res) => {
     const u = new URL(req.url, 'http://proxy')
     cors(req, res)
     if (req.method === 'OPTIONS') { res.writeHead(204); return res.end() }
-    if (u.pathname === '/health') return send(res, 200, { ok: true, droid: 'proxy 0.1' })
+    if (u.pathname === '/health') return send(res, 200, { ok: true, droid: 'proxy 0.2' })
+    if (u.pathname === '/__droid_sw.js') { res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'service-worker-allowed': '/', 'cache-control': 'no-cache' }); return res.end(SW_SOURCE) }
     if (u.pathname === '/register' && req.method === 'POST') {
       if (config.registration !== 'open') return send(res, 403, { error: 'registration is closed on this proxy' })
       if (!allowRequest('reg|' + clientIp(req), 5)) return send(res, 429, { error: 'rate limited' })
