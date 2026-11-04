@@ -1,4 +1,11 @@
-# hosting plan (proposal, nothing is deployed yet)
+# hosting
+
+live now:
+- site: github pages (jhu7600codes.github.io/droid), deployed by .github/workflows/pages.yml
+- proxy: deno deploy playground, https://sweet-moose-8098.vedeo.deno.net (imports proxy/deno/main.ts from main)
+- danen backend: supabase project kicqdpzodcwiuzrdriie ("teamtag", eu-north-1), function `danen`
+
+## original plan
 
 github pages hosts everything static: the shell, aosp assets, system apps, sample dpks, the store catalog and dpk
 files, docs. two things can't live there: the danen backend (accounts, sync, push) and the proxy.
