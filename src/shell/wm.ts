@@ -4,6 +4,7 @@ import { kernel, type AppEntry } from './kernel'
 import type { Activity, ActivityContext, Intent, Result, LifecycleEvent } from './types'
 import { RESULT_CANCELED } from './types'
 import { dialog } from './ui'
+import { settings } from './settings'
 import { isDesktop, desktopLayout, leaveDesktop, isMinimized, initDesktop, restore, minimize } from './desktop'
 
 export interface ActivityRecord {
@@ -86,6 +87,8 @@ function layout() {
     }
   }
   document.documentElement.dataset.front = top()?.app.manifest.id || ''
+  // developer option "don't keep activities": background tasks go away at once
+  if (settings.get('dev.nokeep') && !isDesktop()) for (const t of [...tasks]) if (t !== front() && !t.home) setTimeout(() => tasks.includes(t) && t !== front() && wm.removeTask(t), 400)
   emit('change')
 }
 
