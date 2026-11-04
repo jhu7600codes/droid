@@ -3,6 +3,7 @@
 // half, signed, double, multiple), branches and interworking, movw / movt, clz, extend, bitfield, rev.
 // jumps to addresses in the trap area call js host functions (libc, liblog, jni).
 
+import { armDsp } from './dsp.ts'
 import { execThumb } from './thumb.ts'
 import { FP, execVfp } from './vfp.ts'
 
@@ -111,6 +112,7 @@ export const SIGRETURN_TRAP = 0xfffffff8
 export class CPU {
   r: Uint32Array = new Uint32Array(16)
   N = false; Z = false; C = false; V = false
+  GE = 0; Qf = false // armv6 simd flags (sel) and the sticky saturation flag
   thumb = false
   fp = new FP()
   it = 0 // thumb IT state: (firstcond << 4) | mask, 0 when outside an IT block
@@ -136,12 +138,17 @@ export class CPU {
 
   // calls arm code at addr with up to 4 register args (more go on the stack), returns r0 (and r1).
   // runs to completion on the current context (registers are restored after)
+  onSlow: ((pc: number, lr: number) => void) | null = null
+  slowAt = 0
   call(addr: number, args: number[] = []): { r0: number; r1: number } {
     const saved = this.r.slice()
     const savedFlags = [this.N, this.Z, this.C, this.V, this.thumb] as const
     const savedIt = this.it
     this.setupCall(addr, args, RETURN_TRAP)
-    this.run(Infinity)
+    // runs to the end; a call that keeps going for seconds is reported (where it is), so hangs show up
+    const outer = this.slowAt
+    this.slowAt = performance.now() + 3000
+    try { this.run(Infinity) } finally { this.slowAt = outer }
     const out = { r0: this.r[0], r1: this.r[1] }
     this.r.set(saved)
     ;[this.N, this.Z, this.C, this.V, this.thumb] = savedFlags
@@ -202,7 +209,10 @@ export class CPU {
         this.r[15] = lr & ~1
         continue
       }
-      if ((++this.steps & 4095) === 0 && deadline !== Infinity && performance.now() > deadline) return STOP.YIELD
+      if ((++this.steps & 4095) === 0) {
+        if (deadline !== Infinity) { if (performance.now() > deadline) return STOP.YIELD }
+        else if (this.slowAt && performance.now() > this.slowAt) { this.slowAt += 3000; this.onSlow?.(pc | (this.thumb ? 1 : 0), this.r[14]) }
+      }
       if (this.thumb) { execThumb(this, pc); continue }
       const insn = this.mem.r32(pc)
       this.r[15] = pc + 4
@@ -338,6 +348,7 @@ export class CPU {
         return
       }
       if ((insn & 0x0fff0ff0) === 0x016f0f10) { this.r[rd] = Math.clz32(this.r[rm]); return }
+      if (((insn & 0x0f900090) === 0x01000080 || (insn & 0x0f9000f0) === 0x01000050) && armDsp(this, insn)) return
       if ((insn & 0x0fb00ff0) === 0x01000090) { // swp (old atomics)
         const a = this.r[rn], old = (insn >>> 22) & 1 ? m.r8(a) : m.r32(a)
         if ((insn >>> 22) & 1) m.w8(a, this.r[rm]); else m.w32(a, this.r[rm])
@@ -359,10 +370,11 @@ export class CPU {
         }
         return
       }
-      if ((insn & 0x0fbf0fff) === 0x010f0000) { this.r[rd] = ((this.N ? 1 : 0) << 31) | ((this.Z ? 1 : 0) << 30) | ((this.C ? 1 : 0) << 29) | ((this.V ? 1 : 0) << 28) | 0x10; return } // mrs
+      if ((insn & 0x0fbf0fff) === 0x010f0000) { this.r[rd] = (((this.N ? 1 : 0) << 31) | ((this.Z ? 1 : 0) << 30) | ((this.C ? 1 : 0) << 29) | ((this.V ? 1 : 0) << 28) | ((this.Qf ? 1 : 0) << 27) | (this.GE << 16) | 0x10) >>> 0; return } // mrs
       if ((insn & 0x0fb0fff0) === 0x0120f000 || (insn & 0x0fb0f000) === 0x0320f000) { // msr
         const v = (insn >>> 25) & 1 ? this.rotImm(insn) : this.r[rm]
-        if ((insn >>> 19) & 1) { this.N = (v >>> 31) === 1; this.Z = ((v >>> 30) & 1) === 1; this.C = ((v >>> 29) & 1) === 1; this.V = ((v >>> 28) & 1) === 1 }
+        if ((insn >>> 19) & 1) { this.N = (v >>> 31) === 1; this.Z = ((v >>> 30) & 1) === 1; this.C = ((v >>> 29) & 1) === 1; this.V = ((v >>> 28) & 1) === 1; this.Qf = ((v >>> 27) & 1) === 1 }
+        if ((insn >>> 18) & 1) this.GE = (v >>> 16) & 0xf
         return
       }
       if ((insn & 0x0ff000f0) === 0x07000010) return // reserved
@@ -494,6 +506,7 @@ export class CPU {
   }
 
   private media(insn: number) {
+    if (armDsp(this, insn)) return
     const rd = (insn >>> 12) & 0xf, rm = insn & 0xf, rn = (insn >>> 16) & 0xf
     // uxtb uxth sxtb sxth (with rotation), and the add forms
     if ((insn & 0x0f8003f0) === 0x06800070) {

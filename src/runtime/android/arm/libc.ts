@@ -3,7 +3,7 @@
 // system info, dynamic loading, zlib, sha1, c++ runtime helpers, sockets (none), syscall.
 import type { CPU } from './cpu.ts'
 import type { Native } from './native.ts'
-import { inflateRawSync } from '../inflate.ts'
+import { inflateRawSync, Inflater } from '../inflate.ts'
 
 const f64 = new Float64Array(1), u64 = new BigUint64Array(f64.buffer), f32a = new Float32Array(1), u32a = new Uint32Array(f32a.buffer)
 const dbl = (lo: number, hi: number) => { u64[0] = (BigInt(hi >>> 0) << 32n) | BigInt(lo >>> 0); return f64[0] }
@@ -599,9 +599,9 @@ export function installLibc(nat: Native) {
   def('cacheflush', () => 0)
   def('__clear_cache', () => 0)
 
-  // ---------- zlib: inflate on whole buffers (input is kept until a full stream is there), deflate as stored blocks ----------
+  // ---------- zlib: streaming inflate (inflate.ts), deflate as stored blocks ----------
   // z_stream: next_in 0, avail_in 4, total_in 8, next_out 12, avail_out 16, total_out 20, msg 24, state 28, ... adler 48
-  interface Z { mode: 'raw' | 'zlib' | 'gzip' | 'auto'; input: number[]; out: Uint8Array | null; outPos: number; done: boolean; deflate?: boolean; level?: number }
+  interface Z { mode: 'raw' | 'zlib' | 'gzip' | 'auto'; input: number[]; out: Uint8Array | null; outPos: number; done: boolean; deflate?: boolean; level?: number; inf?: Inflater; head?: number[] }
   const zs = new Map<number, Z>()
   const Z_OK = 0, Z_STREAM_END = 1, Z_BUF_ERROR = -5, Z_DATA_ERROR = -3, Z_FINISH = 4
   const zInit = (s: number, bits: number, deflate = false) => {
@@ -612,38 +612,69 @@ export function installLibc(nat: Native) {
   }
   def('inflateInit_', () => zInit(R(0), 15))
   def('inflateInit2_', () => zInit(R(0), R(1) | 0))
-  def('inflateReset', () => { const z = zs.get(R(0)); if (z) { z.input = []; z.out = null; z.outPos = 0; z.done = false } m.w32(R(0) + 8, 0); m.w32(R(0) + 20, 0); return Z_OK })
+  def('inflateReset', () => { const z = zs.get(R(0)); if (z) { z.inf = undefined; z.head = undefined; z.done = false } m.w32(R(0) + 8, 0); m.w32(R(0) + 20, 0); return Z_OK })
+  def('inflateReset2', () => { const z = zs.get(R(0)); if (z) zInit(R(0), R(1) | 0); return Z_OK })
   def('inflateEnd', () => { zs.delete(R(0)); return Z_OK })
-  const stripHeader = (b: Uint8Array, mode: Z['mode']) => {
-    if (mode === 'raw') return b
+  // how long the zlib / gzip header is, once enough of it is there (-1: not yet)
+  const headerLen = (b: number[], mode: Z['mode']) => {
+    if (mode === 'raw') return 0
+    if (b.length < 2) return -1
     if (mode === 'gzip' || (mode === 'auto' && b[0] === 0x1f && b[1] === 0x8b)) {
+      if (b.length < 10) return -1
       let p = 10
       const flg = b[3]
-      if (flg & 4) p += 2 + (b[10] | (b[11] << 8))
-      if (flg & 8) { while (b[p]) p++; p++ }
-      if (flg & 16) { while (b[p]) p++; p++ }
+      if (flg & 4) { if (b.length < 12) return -1; p += 2 + (b[10] | (b[11] << 8)) }
+      if (flg & 8) { while (p < b.length && b[p]) p++; p++ }
+      if (flg & 16) { while (p < b.length && b[p]) p++; p++ }
       if (flg & 2) p += 2
-      return b.subarray(p)
+      return p <= b.length ? p : -1
     }
-    return b.subarray(2)
+    return 2
   }
   def('inflate', () => {
-    const s = R(0), flush = R(1)
+    const s = R(0)
     const z = zs.get(s)
     if (!z) return -2
-    const nin = m.r32(s), ain = m.r32(s + 4)
-    if (!z.out) {
-      for (let i = 0; i < ain; i++) z.input.push(m.u8[nin + i])
-      m.w32(s, nin + ain); m.w32(s + 4, 0); m.w32(s + 8, m.r32(s + 8) + ain)
-      try { z.out = inflateRawSync(stripHeader(Uint8Array.from(z.input), z.mode)) }
-      catch { if (flush === Z_FINISH) return Z_DATA_ERROR; return ain ? Z_OK : Z_BUF_ERROR }
-    }
+    let nin = m.r32(s), ain = m.r32(s + 4)
     const nout = m.r32(s + 12), aout = m.r32(s + 16)
-    const k = Math.min(aout, z.out.length - z.outPos)
-    m.u8.set(z.out.subarray(z.outPos, z.outPos + k), nout)
-    z.outPos += k
-    m.w32(s + 12, nout + k); m.w32(s + 16, aout - k); m.w32(s + 20, m.r32(s + 20) + k)
-    return z.outPos >= z.out.length ? Z_STREAM_END : k ? Z_OK : Z_BUF_ERROR
+    if (!z.inf) {
+      // the header first (it can come in pieces too)
+      z.head ??= []
+      while (ain > 0 && headerLen(z.head, z.mode) < 0) { z.head.push(m.u8[nin++]); ain-- }
+      const h = headerLen(z.head, z.mode)
+      if (h < 0) { m.w32(s, nin); m.w32(s + 4, 0); m.w32(s + 8, m.r32(s + 8) + m.r32(s + 4)); return Z_OK }
+      z.inf = new Inflater()
+      if (z.head.length > h) z.inf.push(Uint8Array.from(z.head.slice(h)))
+      z.head = undefined
+    }
+    const inf = z.inf
+    const before = ain
+    if (ain > 0 && !inf.done) { inf.push(m.u8.subarray(nin, nin + ain)); nin += ain; ain = 0 }
+    let wrote = 0
+    try {
+      for (;;) {
+        const t = inf.take(aout - wrote)
+        if (t.length) { m.u8.set(t, nout + wrote); wrote += t.length }
+        if (wrote >= aout) break
+        if (inf.done || !inf.run(aout - wrote)) { const t2 = inf.take(aout - wrote); if (t2.length) { m.u8.set(t2, nout + wrote); wrote += t2.length; continue } break }
+      }
+      // with nothing left to hand out, still decode up to the next byte: the stream may end there
+      if (!inf.done && inf.n === inf.read) inf.run(1)
+    } catch { m.w32(s + 24, 0); return Z_DATA_ERROR }
+    // like zlib, input is only used as far as the output needed it: the rest goes back to the caller
+    // (libpng reads the next chunk only once the input is used up). after the end of the stream, the
+    // bytes past it go back too, minus the adler / crc trailer
+    let given = before - ain
+    const finished = inf.done && inf.n === inf.read
+    if (inf.done && before) {
+      const trailer = z.mode === 'raw' ? 0 : z.mode === 'zlib' ? 4 : 8
+      const back = Math.min(given, Math.max(0, inf.unused - trailer))
+      nin -= back; given -= back; ain += back
+    } else if (given && inf.n > inf.read) { const back = inf.unpush(given); nin -= back; given -= back; ain += back }
+    m.w32(s, nin); m.w32(s + 4, ain); m.w32(s + 8, m.r32(s + 8) + given)
+    m.w32(s + 12, nout + wrote); m.w32(s + 16, aout - wrote); m.w32(s + 20, m.r32(s + 20) + wrote)
+    const ret_ = finished ? Z_STREAM_END : wrote || given ? Z_OK : Z_BUF_ERROR
+    return ret_
   })
   def('deflateInit_', () => zInit(R(0), 15, true))
   def('deflateInit2_', () => zInit(R(0), S(0) | 0, true))

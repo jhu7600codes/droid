@@ -3,6 +3,7 @@
 // neon: vld1 / vst1 (multiple registers), vmov / vmvn immediate, vdup, vorr / vand / veor / vbic,
 // integer vadd / vsub. registers: s0..s31 alias d0..d15, d16..d31, q0..q15 = d pairs.
 import type { CPU } from './cpu.ts'
+import { execNeon } from './neon.ts'
 
 export class FP {
   buf = new ArrayBuffer(256)
@@ -10,6 +11,13 @@ export class FP {
   d = new Float64Array(this.buf)
   u = new Uint32Array(this.buf)
   b = new Uint8Array(this.buf)
+  // lane views for neon
+  i8 = new Int8Array(this.buf)
+  u16 = new Uint16Array(this.buf)
+  i16 = new Int16Array(this.buf)
+  i32 = new Int32Array(this.buf)
+  i64 = new BigInt64Array(this.buf)
+  u64 = new BigUint64Array(this.buf)
   fpscr = 0
 }
 
@@ -32,7 +40,7 @@ export function execVfp(c: CPU, insn: number, pc: number, thumb: boolean): boole
   const cp = (insn >>> 8) & 0xf
 
   // ---- neon (arm encodings 1111 001x data, 1111 0100 load/store) ----
-  if (insn >>> 28 === 0xf) return neon(c, insn, pc)
+  if (insn >>> 28 === 0xf) return execNeon(c, insn)
 
   if (cp !== 0xa && cp !== 0xb) return false
 
@@ -75,9 +83,16 @@ export function execVfp(c: CPU, insn: number, pc: number, thumb: boolean): boole
       if ((insn >>> 20) & 1) c.r[Rt] = f.u[sn]; else f.u[sn] = c.r[Rt]
       return true
     }
-    if ((insn & 0x0f900f1f) === 0x0e000b10 || (insn & 0x0f900f1f) === 0x0e100b10) { // vmov core <-> scalar (32-bit lane)
-      const dn = Vn | (N << 4), lane = (insn >>> 21) & 1
-      if ((insn >>> 20) & 1) c.r[Rt] = f.u[dn * 2 + lane]; else f.u[dn * 2 + lane] = c.r[Rt]
+    if ((insn & 0x0f000f1f) === 0x0e000b10 && !(((insn >>> 20) & 1) === 0 && (insn >>> 23) & 1)) { // vmov core <-> scalar (8, 16, 32-bit lanes)
+      const dn = Vn | (N << 4), opc1 = (insn >>> 21) & 3, opc2 = (insn >>> 5) & 3, L = (insn >>> 20) & 1, Us = (insn >>> 23) & 1
+      let es: number, idx: number
+      if (opc1 & 2) { es = 1; idx = ((opc1 & 1) << 2) | opc2 } else if (opc2 & 1) { es = 2; idx = ((opc1 & 1) << 1) | (opc2 >>> 1) } else if (!(opc2 & 2)) { es = 4; idx = opc1 & 1 } else return false
+      const off = dn * 8 + idx * es
+      if (L) {
+        const v = es === 1 ? f.b[off] : es === 2 ? f.b[off] | (f.b[off + 1] << 8) : f.u[off >>> 2]
+        c.r[Rt] = (es === 4 || Us ? v : es === 1 ? (v << 24) >> 24 : (v << 16) >> 16) >>> 0
+      } else if (es === 4) f.u[off >>> 2] = c.r[Rt]
+      else { f.b[off] = c.r[Rt] & 0xff; if (es === 2) f.b[off + 1] = (c.r[Rt] >>> 8) & 0xff }
       return true
     }
     if ((insn & 0x0f900f5f) === 0x0e800b10) { // vdup from core
@@ -98,8 +113,9 @@ export function execVfp(c: CPU, insn: number, pc: number, thumb: boolean): boole
   const a = get(sn), b = get(sm)
   const round = (v: number) => (dbl ? v : Math.fround(v))
   switch (opc1) {
-    case 0x0: set(sd, round(get(sd) + (opc3 ? -(a * b) : a * b))); return true // vmla / vmls
-    case 0x1: set(sd, round(-get(sd) + (opc3 ? a * b : -(a * b)))); return true // vnmls / vnmla
+    // vmla and friends are not fused: the product is rounded first
+    case 0x0: { const p = round(a * b); set(sd, round(get(sd) + (opc3 ? -p : p))); return true } // vmla / vmls
+    case 0x1: { const p = round(a * b); set(sd, round(-get(sd) + (opc3 ? p : -p))); return true } // vnmls / vnmla
     case 0x2: set(sd, round(opc3 ? -(a * b) : a * b)); return true // vmul / vnmul
     case 0x3: set(sd, round(opc3 ? a - b : a + b)); return true // vadd / vsub
     case 0x8: set(sd, round(a / b)); return true // vdiv
@@ -143,115 +159,6 @@ export function execVfp(c: CPU, insn: number, pc: number, thumb: boolean): boole
       const dst = (Vd << 1) | D
       const t = isNaN(v) ? 0 : Math.trunc(v)
       f.u[dst] = opc2 === 0xd ? (Math.max(-2147483648, Math.min(2147483647, t)) | 0) >>> 0 : Math.max(0, Math.min(4294967295, t)) >>> 0
-      return true
-    }
-  }
-  return false
-}
-
-// neon subset (arm encoding)
-function neon(c: CPU, insn: number, pc: number): boolean {
-  const f = c.fp, m = c.mem
-  const D = (insn >>> 22) & 1, Vd = ((insn >>> 12) & 0xf) | (D << 4)
-  if (((insn & 0xff100000) >>> 0) === 0xf4000000 || ((insn & 0xff100000) >>> 0) === 0xf4100000) { // vld1 / vst1 / vld2-4 multiple
-    if ((insn >>> 23) & 1) { // vld1 / vst1 single lane, vld1 to all lanes
-      const L1 = (insn >>> 21) & 1, Rn1 = (insn >>> 16) & 0xf, Rm1 = insn & 0xf
-      const nsel = (insn >>> 8) & 3
-      if (nsel !== 0 && ((insn >>> 10) & 3) !== 3) return false // vld2..4 lanes
-      let bytes: number
-      if (((insn >>> 10) & 3) === 3) { // all lanes
-        const size = (insn >>> 6) & 3, T = (insn >>> 5) & 1
-        bytes = 1 << size
-        const a = c.r[Rn1]
-        const v = bytes === 4 ? m.r32(a) : bytes === 2 ? m.r16(a) * 0x10001 : m.r8(a) * 0x01010101
-        for (let r = 0; r <= T; r++) { f.u[(Vd + r) * 2] = v >>> 0; f.u[(Vd + r) * 2 + 1] = v >>> 0 }
-      } else {
-        const size = (insn >>> 10) & 3
-        bytes = 1 << size
-        const index = size === 0 ? (insn >>> 5) & 7 : size === 1 ? (insn >>> 6) & 3 : (insn >>> 7) & 1
-        const off = Vd * 8 + index * bytes, a = c.r[Rn1]
-        for (let k = 0; k < bytes; k++) { if (L1) f.b[off + k] = m.r8(a + k); else m.w8(a + k, f.b[off + k]) }
-      }
-      if (Rm1 === 13) c.r[Rn1] = (c.r[Rn1] + bytes) >>> 0
-      else if (Rm1 !== 15) c.r[Rn1] = (c.r[Rn1] + c.r[Rm1]) >>> 0
-      return true
-    }
-    const L = (insn >>> 21) & 1, Rn = (insn >>> 16) & 0xf, Rm = insn & 0xf, type = (insn >>> 8) & 0xf
-    const regs = type === 7 ? 1 : type === 10 ? 2 : type === 6 ? 3 : type === 2 ? 4 : 0
-    if (!regs) return false // interleaved vld2..4 not yet
-    let a = c.r[Rn]
-    for (let r = 0; r < regs; r++) for (let w = 0; w < 2; w++) {
-      const idx = (Vd + r) * 2 + w
-      if (L) f.u[idx] = m.r32(a); else m.w32(a, f.u[idx])
-      a += 4
-    }
-    if (Rm === 13) c.r[Rn] = (c.r[Rn] + regs * 8) >>> 0
-    else if (Rm !== 15) c.r[Rn] = (c.r[Rn] + c.r[Rm]) >>> 0
-    void pc
-    return true
-  }
-  if (((insn & 0xfeb80090) >>> 0) === 0xf2800010) { // vmov / vmvn / vorr / vbic immediate
-    const Q = (insn >>> 6) & 1, op = (insn >>> 5) & 1, cmode = (insn >>> 8) & 0xf
-    const imm8 = (((insn >>> 24) & 1) << 7) | (((insn >>> 16) & 7) << 4) | (insn & 0xf)
-    let lo: number, hi: number
-    if (cmode < 8) { const sh = (cmode >>> 1) * 8; lo = hi = (imm8 << sh) >>> 0 }
-    else if (cmode < 12) { const sh = ((cmode >>> 1) & 1) * 8; lo = hi = (((imm8 << sh) & 0xffff) * 0x10001) >>> 0 }
-    else if (cmode === 12) lo = hi = ((imm8 << 8) | 0xff) >>> 0
-    else if (cmode === 13) lo = hi = ((imm8 << 16) | 0xffff) >>> 0
-    else if (cmode === 14 && !op) lo = hi = (imm8 * 0x01010101) >>> 0
-    else if (cmode === 14) { let x = 0n; for (let i = 0; i < 8; i++) if ((imm8 >>> i) & 1) x |= 0xffn << BigInt(i * 8); lo = Number(x & 0xffffffffn); hi = Number(x >> 32n) }
-    else return false
-    const inv = op && cmode !== 14
-    const isOrr = (cmode & 1) && cmode < 12
-    for (let r = 0; r <= Q; r++) {
-      const i = (Vd + r) * 2
-      if (isOrr) { if (op) { f.u[i] &= ~lo; f.u[i + 1] &= ~hi } else { f.u[i] |= lo; f.u[i + 1] |= hi } }
-      else { f.u[i] = inv ? ~lo >>> 0 : lo; f.u[i + 1] = inv ? ~hi >>> 0 : hi }
-    }
-    return true
-  }
-  // vmovl (widen each lane, signed or unsigned)
-  if (((insn & 0xfe870fd0) >>> 0) === 0xf2800a10 && ((insn >>> 19) & 7)) {
-    const U = (insn >>> 24) & 1, imm3 = (insn >>> 19) & 7, M = (insn >>> 5) & 1, Vm = (insn & 0xf) | (M << 4)
-    const from = imm3 === 1 ? 1 : imm3 === 2 ? 2 : 4
-    const src = new DataView(f.buf, Vm * 8, 8), out = new DataView(new ArrayBuffer(16))
-    for (let i = 0; i < 8 / from; i++) {
-      const v = from === 1 ? (U ? src.getUint8(i) : src.getInt8(i)) : from === 2 ? (U ? src.getUint16(i * 2, true) : src.getInt16(i * 2, true)) : (U ? src.getUint32(i * 4, true) : src.getInt32(i * 4, true))
-      if (from === 4) out.setBigInt64(i * 8, BigInt(v), true); else if (from === 2) out.setInt32(i * 4, v, true); else out.setInt16(i * 2, v, true)
-    }
-    f.b.set(new Uint8Array(out.buffer), Vd * 8)
-    return true
-  }
-  // three registers, same length: vand vbic vorr vorn veor (bitwise) and integer vadd / vsub
-  if (((insn & 0xfe800010) >>> 0) === 0xf2000010 || ((insn & 0xfe800010) >>> 0) === 0xf2000000) {
-    const U = (insn >>> 24) & 1, A = (insn >>> 8) & 0xf, B = (insn >>> 4) & 1, Q = (insn >>> 6) & 1, size = (insn >>> 20) & 3
-    const N = (insn >>> 7) & 1, M = (insn >>> 5) & 1
-    const Vn = ((insn >>> 16) & 0xf) | (N << 4), Vm = (insn & 0xf) | (M << 4)
-    const words = Q ? 4 : 2
-    if (A === 1 && B === 1) {
-      for (let i = 0; i < words; i++) {
-        const x = f.u[Vn * 2 + i], y = f.u[Vm * 2 + i], dv = f.u[Vd * 2 + i]
-        let r: number
-        if (!U) r = [x & y, x & ~y, x | y, x | ~y][size]
-        else r = [x ^ y, (dv & x) | (~dv & y), (x & dv) | (y & ~dv), (x & ~dv) | (y & dv)][size] // veor vbsl vbit vbif
-        f.u[Vd * 2 + i] = r >>> 0
-      }
-      return true
-    }
-    if (A === 8 && B === 0) { // vadd / vsub integer
-      const bytes = words * 4, lane = 1 << size
-      const tmp = new Uint8Array(bytes)
-      const av = f.b.subarray(Vn * 8, Vn * 8 + bytes), bv = f.b.subarray(Vm * 8, Vm * 8 + bytes)
-      const dvA = new DataView(av.buffer, av.byteOffset), dvB = new DataView(bv.buffer, bv.byteOffset), out = new DataView(tmp.buffer)
-      for (let o = 0; o < bytes; o += lane) {
-        if (lane === 8) out.setBigUint64(o, U ? dvA.getBigUint64(o, true) - dvB.getBigUint64(o, true) : dvA.getBigUint64(o, true) + dvB.getBigUint64(o, true), true)
-        else {
-          const g = lane === 1 ? 'Uint8' : lane === 2 ? 'Uint16' : 'Uint32'
-          const x = (dvA as any)['get' + g](o, true), y = (dvB as any)['get' + g](o, true)
-          ;(out as any)['set' + g](o, U ? x - y : x + y, true)
-        }
-      }
-      f.b.set(tmp, Vd * 8)
       return true
     }
   }

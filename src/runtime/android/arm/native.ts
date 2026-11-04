@@ -28,6 +28,7 @@ export class Native {
   threads: Threads
   gles = GL
   heapStart = 0
+  fault: { pc: number; lr: number } | null = null // where the last native error happened
   // stdio hooks (posix.ts) and the printf formatter (libc.ts)
   writeFile: (fp: number, s: string) => number = () => -1
   readFile: (fp: number) => { get: () => number; unget: (ch: number) => void } | null = () => null
@@ -55,6 +56,19 @@ export class Native {
     this.errnoSetup()
     this.jni()
     vm.nativeAsync = this
+    // a native call that runs for seconds without returning says where it is (finding hangs)
+    this.cpu.onSlow = (pc, lr) => console.warn(`native: still running after a long time at ${this.where(pc)} (lr ${this.where(lr)}) on ${this.threads.current?.name ?? 'main'}`)
+  }
+  // lib+offset and the nearest exported symbol below it
+  where(a: number) {
+    a = (a & ~1) >>> 0
+    for (const l of this.libs) if (l.segments.some((s) => a >= s.start && a < s.end)) {
+      let best = '', bd = Infinity
+      for (const [n, v] of l.exports) { const d = a - ((v & ~1) >>> 0); if (d >= 0 && d < bd) { bd = d; best = n } }
+      return `${l.name}+0x${(a - l.base).toString(16)}${best ? ` (${best}+0x${bd.toString(16)})` : ''}`
+    }
+    for (const [n, v] of this.host) if (v === a) return 'host ' + n
+    return '0x' + a.toString(16)
   }
   // errno: one slot per thread
   private errnoSlots = new Map<any, number>()
@@ -178,7 +192,7 @@ export class Native {
       c.save(a.ctx); c.load(outside)
       if (r === STOP.YIELD) return { done: false, block: null }
       throw new Error('arm: a java thread\'s native call ended oddly (' + r + ')')
-    } catch (e) { if (c.r !== outside.r) { c.save(a.ctx); c.load(outside) } throw e }
+    } catch (e) { this.fault = { pc: c.r[15] | (c.thumb ? 1 : 0), lr: c.r[14] }; if (c.r !== outside.r) { c.save(a.ctx); c.load(outside) } throw e }
   }
   fromNative(t: string, r0: number, r1: number) {
     if (t === 'V') return undefined

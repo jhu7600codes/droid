@@ -1,6 +1,7 @@
 // thumb and thumb-2 (armv7-a) integer instructions: all 16-bit encodings, IT blocks, and the 32-bit
 // load / store, data processing (immediate, plain immediate, shifted register, register), multiply,
 // divide, branch and misc groups. most real ndk libraries are built as thumb-2.
+import { thumbMul, thumbParallel } from './dsp.ts'
 import type { CPU } from './cpu.ts'
 import { execVfp } from './vfp.ts'
 
@@ -342,7 +343,7 @@ function exec32(c: CPU, pc: number, h1: number, h2: number) {
   if ((op2 & 0x78) === 0x30) { // multiply, mla, mls
     const rm = h2 & 0xf, ra = rt, k = (h2 >>> 4) & 3
     const p = Math.imul(c.r[rn], c.r[rm])
-    if (((h1 >>> 4) & 7) !== 0) throw new Error('arm: thumb-2 dsp multiply not supported')
+    if (((h1 >>> 4) & 7) !== 0) { if (thumbMul(c, h1, h2)) return; throw new Error(`arm: thumb-2 multiply 0x${h1.toString(16)} 0x${h2.toString(16)}`) }
     c.r[rd] = k === 1 ? (c.r[ra] - p) >>> 0 : ra === 15 ? p >>> 0 : (c.r[ra] + p) >>> 0
     return
   }
@@ -405,6 +406,7 @@ function dpReg(c: CPU, h1: number, h2: number) {
     else c.r[rd] = ((((v & 0xff) << 24) >> 16) | ((v >>> 8) & 0xff)) >>> 0
     return
   }
+  if ((op1 & 8) && thumbParallel(c, h1, h2)) return
   throw new Error(`arm: thumb-2 register op 0x${h1.toString(16)} 0x${h2.toString(16)}`)
 }
 
