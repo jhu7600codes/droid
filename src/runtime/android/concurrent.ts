@@ -398,9 +398,5 @@ export function registerConcurrent(vm: VM) {
   def('Ljava/util/concurrent/Callable;', OBJ, {})
   def('Ljava/util/concurrent/ThreadFactory;', OBJ, {})
 
-  // concurrent maps and lists: the plain ones (one thread runs at a time anyway)
-  for (const [n, base] of [['ConcurrentHashMap', 'Ljava/util/HashMap;'], ['CopyOnWriteArrayList', 'Ljava/util/ArrayList;'], ['ConcurrentLinkedDeque', 'Ljava/util/ArrayList;']]) {
-    if (vm.shims.has(base)) vm.shims.set(`Ljava/util/concurrent/${n};`, { super: base, methods: {} })
-  }
   void box; void unbox
 }
