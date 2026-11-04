@@ -3,6 +3,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev || npm i --omit=dev
 COPY *.mjs ./
+COPY deno/rewrite.mjs ./deno/
 ENV PORT=8787 DATA_DIR=/data
 VOLUME /data
 EXPOSE 8787

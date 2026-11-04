@@ -2,7 +2,7 @@
 //   GET /health, POST /register, POST /session, ANY /fetch?url=, GET /p/<sid>/..., WS /ws?url=
 // tokens and sessions live in deno kv (hashed), limits per token, ssrf checks on every hop.
 // deploy: link the repo on dash.deno.com with entrypoint proxy/deno/main.ts (no build step).
-import { toProxy, fromProxy, rewriteHtml, rewriteCss, shimFor } from '../rewrite.mjs'
+import { toProxy, fromProxy, rewriteHtml, rewriteCss, shimFor } from './rewrite.mjs'
 
 const env = (k: string, d = '') => Deno.env.get(k) ?? d
 const cfg = {

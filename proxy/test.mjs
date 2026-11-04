@@ -1,6 +1,6 @@
 // proxy self test: auth, ssrf blocks, rewriting. run: npm test (in proxy/)
 import assert from 'node:assert/strict'
-import { rewriteHtml, rewriteCss, toProxy, fromProxy } from './rewrite.mjs'
+import { rewriteHtml, rewriteCss, toProxy, fromProxy } from './deno/rewrite.mjs'
 import { checkUrl, isBlockedIp } from './guard.mjs'
 
 process.env.PORT = '0'

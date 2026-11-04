@@ -13,7 +13,7 @@ import { pipeline } from 'node:stream/promises'
 import { Agent, fetch } from 'undici'
 import { WebSocketServer, WebSocket } from 'ws'
 import { config, validToken, newToken, allowRequest, countBytes, checkUrl, safeLookup } from './guard.mjs'
-import { toProxy, fromProxy, rewriteHtml, rewriteCss, shimFor } from './rewrite.mjs'
+import { toProxy, fromProxy, rewriteHtml, rewriteCss, shimFor } from './deno/rewrite.mjs'
 
 // every outgoing connection goes through safeLookup (blocks private addresses after dns too).
 // tls to the origin is always verified (undici default, never turned off)
