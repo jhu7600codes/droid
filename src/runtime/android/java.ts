@@ -188,9 +188,49 @@ export function registerJava(vm: VM) {
     'toString(II)Ljava/lang/String;': (v: VM, s: any, [x, r]: any[]) => x.toString(r),
     'compare(II)I': (v: VM, s: any, [a, b]: any[]) => (a < b ? -1 : a > b ? 1 : 0),
     'bitCount(I)I': (v: VM, s: any, [x]: any[]) => { let n = 0; for (let y = x >>> 0; y; y >>>= 1) n += y & 1; return n },
+    // decode: 0x / # hex, leading 0 octal, else decimal
+    'decode(Ljava/lang/String;)Ljava/lang/Integer;': (v: VM, s: any, [x]: any[]) => box(vm, 'Ljava/lang/Integer;', decodeInt(x)),
+    'valueOf(Ljava/lang/String;)Ljava/lang/Integer;': (v: VM, s: any, [x]: any[]) => box(vm, 'Ljava/lang/Integer;', parseInt(x)),
+    'valueOf(Ljava/lang/String;I)Ljava/lang/Integer;': (v: VM, s: any, [x, r]: any[]) => box(vm, 'Ljava/lang/Integer;', parseInt(x, r)),
+    'toOctalString(I)Ljava/lang/String;': (v: VM, s: any, [x]: any[]) => (x >>> 0).toString(8),
+    'highestOneBit(I)I': (v: VM, s: any, [x]: any[]) => (x ? (1 << (31 - Math.clz32(x))) | 0 : 0),
+    'lowestOneBit(I)I': (v: VM, s: any, [x]: any[]) => x & -x,
+    'numberOfLeadingZeros(I)I': (v: VM, s: any, [x]: any[]) => Math.clz32(x),
+    'numberOfTrailingZeros(I)I': (v: VM, s: any, [x]: any[]) => (x ? 31 - Math.clz32(x & -x) : 32),
+    'reverseBytes(I)I': (v: VM, s: any, [x]: any[]) => ((x << 24) | ((x & 0xff00) << 8) | ((x >>> 8) & 0xff00) | (x >>> 24)) | 0,
+    'rotateLeft(II)I': (v: VM, s: any, [x, d]: any[]) => ((x << d) | (x >>> (32 - d))) | 0,
+    'rotateRight(II)I': (v: VM, s: any, [x, d]: any[]) => ((x >>> d) | (x << (32 - d))) | 0,
+    'signum(I)I': (v: VM, s: any, [x]: any[]) => Math.sign(x),
+    'getInteger(Ljava/lang/String;)Ljava/lang/Integer;': () => null,
   })
+  const decodeInt = (x: string) => {
+    if (x == null) throw vm.error('Ljava/lang/NullPointerException;', 'decode')
+    const m = x.trim().match(/^([+-]?)(0x|0X|#|0(?=[0-7]))?([0-9a-fA-F]+)$/)
+    if (!m) throw vm.error('Ljava/lang/NumberFormatException;', `Invalid int: "${x}"`)
+    const r = m[2] ? (m[2] === '0' ? 8 : 16) : 10
+    return (Number.parseInt(m[3], r) * (m[1] === '-' ? -1 : 1)) | 0
+  }
   vm.shims.get('Ljava/lang/Integer;')!.statics = { MAX_VALUE: 2147483647, MIN_VALUE: -2147483648 }
-  Object.assign(vm.shims.get('Ljava/lang/Long;')!.methods!, { 'parseLong(Ljava/lang/String;)J': (v: VM, s: any, [x]: any[]) => BigInt(x), 'toHexString(J)Ljava/lang/String;': (v: VM, s: any, [x]: any[]) => BigInt.asUintN(64, x).toString(16) })
+  const parseLong = (x: string, r = 10) => {
+    if (x == null || !/^[+-]?[0-9a-zA-Z]+$/.test(x)) throw vm.error('Ljava/lang/NumberFormatException;', `Invalid long: "${x}"`)
+    const neg = x[0] === '-', d = x.replace(/^[+-]/, '')
+    let n = 0n
+    for (const c of d.toLowerCase()) { const k = parseInt(c, 36); if (isNaN(k) || k >= r) throw vm.error('Ljava/lang/NumberFormatException;', `Invalid long: "${x}"`); n = n * BigInt(r) + BigInt(k) }
+    return BigInt.asIntN(64, neg ? -n : n)
+  }
+  Object.assign(vm.shims.get('Ljava/lang/Long;')!.methods!, {
+    'parseLong(Ljava/lang/String;)J': (v: VM, s: any, [x]: any[]) => parseLong(x),
+    'parseLong(Ljava/lang/String;I)J': (v: VM, s: any, [x, r]: any[]) => parseLong(x, r),
+    'valueOf(Ljava/lang/String;)Ljava/lang/Long;': (v: VM, s: any, [x]: any[]) => box(vm, 'Ljava/lang/Long;', parseLong(x)),
+    'decode(Ljava/lang/String;)Ljava/lang/Long;': (v: VM, s: any, [x]: any[]) => { const m = String(x).trim().match(/^([+-]?)(0x|0X|#)?(.+)$/)!; const n = parseLong(m[3], m[2] ? 16 : 10); return box(vm, 'Ljava/lang/Long;', m[1] === '-' ? -n : n) },
+    'toHexString(J)Ljava/lang/String;': (v: VM, s: any, [x]: any[]) => BigInt.asUintN(64, x).toString(16),
+    'toBinaryString(J)Ljava/lang/String;': (v: VM, s: any, [x]: any[]) => BigInt.asUintN(64, x).toString(2),
+    'toString(JI)Ljava/lang/String;': (v: VM, s: any, [x, r]: any[]) => x.toString(r),
+    'compare(JJ)I': (v: VM, s: any, [a, b]: any[]) => (a < b ? -1 : a > b ? 1 : 0),
+    'signum(J)I': (v: VM, s: any, [x]: any[]) => (x > 0n ? 1 : x < 0n ? -1 : 0),
+    'numberOfLeadingZeros(J)I': (v: VM, s: any, [x]: any[]) => { const u = BigInt.asUintN(64, x); return u === 0n ? 64 : 64 - u.toString(2).length },
+  })
+  vm.shims.get('Ljava/lang/Long;')!.statics = { MAX_VALUE: 9223372036854775807n, MIN_VALUE: -9223372036854775808n }
   Object.assign(vm.shims.get('Ljava/lang/Double;')!.methods!, { 'parseDouble(Ljava/lang/String;)D': (v: VM, s: any, [x]: any[]) => { const n = Number(x); if (isNaN(n) && x?.trim() !== 'NaN') throw vm.error('Ljava/lang/NumberFormatException;', x); return n }, 'isNaN(D)Z': (v: VM, s: any, [x]: any[]) => (isNaN(x) ? 1 : 0) })
   Object.assign(vm.shims.get('Ljava/lang/Float;')!.methods!, { 'parseFloat(Ljava/lang/String;)F': (v: VM, s: any, [x]: any[]) => Math.fround(Number(x)) })
   Object.assign(vm.shims.get('Ljava/lang/Boolean;')!.methods!, { 'parseBoolean(Ljava/lang/String;)Z': (v: VM, s: any, [x]: any[]) => (x?.toLowerCase() === 'true' ? 1 : 0) })

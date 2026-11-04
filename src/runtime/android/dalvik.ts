@@ -137,6 +137,8 @@ export class VM {
     if (typeof v === 'string') return ['Ljava/lang/String;', 'Ljava/lang/CharSequence;', 'Ljava/lang/Comparable;', 'Ljava/io/Serializable;'].includes(c.name)
     return this.isSubclass(this.classOf(v), c)
   }
+  // is there such a class (app dex or framework shim), without making a stub for it
+  hasClass(name: string) { return !!(this.classes.get(name) && !this.missing.has(name)) || !!this.findDexClass(name) || this.shims.has(name) || name.startsWith('[') }
   classObject(c: JClass) {
     if (!c.classObject) { c.classObject = new JObject(this.cls('Ljava/lang/Class;')); c.classObject.f.of = c }
     return c.classObject
@@ -190,9 +192,12 @@ export class VM {
     if (m) this.invoke(m, o, args)
     return o
   }
+  // the java methods running right now (innermost last), for error reports
+  callStack: string[] = []
   error(cls: string, message: string) {
     const o = new JObject(this.cls(cls))
     o.f.message = message
+    o.f.jstack = this.callStack.slice(-12).reverse()
     return new JavaThrow(o)
   }
   newArray(type: string, n: number): JArray {
@@ -210,7 +215,10 @@ export class VM {
       this.missing.add(`${m.cls.name}->${m.key}`)
       throw this.error('Ljava/lang/AbstractMethodError;', `${m.cls.name}->${m.key}`)
     }
-    return this.run(m, self, args)
+    this.callStack.push(`${m.cls.name.slice(1, -1).replace(/\//g, '.')}.${m.name}`)
+    try { return this.run(m, self, args) }
+    catch (e: any) { if (e && typeof e === 'object' && !e.jstack) e.jstack = this.callStack.slice(-12).reverse(); throw e }
+    finally { this.callStack.pop() }
   }
 
   // ---------- the interpreter ----------

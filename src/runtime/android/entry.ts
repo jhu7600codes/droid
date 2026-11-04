@@ -5,6 +5,8 @@ import { parseArsc } from './arsc.ts'
 import { VM } from './dalvik.ts'
 import { registerJava, jstr } from './java.ts'
 import { registerAndroid } from './android.ts'
+import { Vfs, registerJavaIo } from './javaio.ts'
+import { registerReflect } from './reflect.ts'
 import { Native } from './arm/native.ts'
 
 declare const droid: any
@@ -29,7 +31,11 @@ droid.on('create', async (saved: any) => {
     const dev = await droid.device.info()
     const vm = new VM()
     registerJava(vm)
+    const vfs = new Vfs()
+    registerJavaIo(vm, vfs)
+    registerReflect(vm)
     const env = {
+      vfs,
       pkg: map.pkg, files, res: parseArsc(files.get('resources.arsc')!), root, droid, prefs,
       density: dev.density, landscape: dev.orientation === 'landscape', lang: (dev.locale || 'en').slice(0, 2),
       intent: info.intent || {}, self: info.activity,
@@ -42,13 +48,21 @@ droid.on('create', async (saved: any) => {
     vm.shims.get('Ljava/lang/System;')!.methods!['loadLibrary(Ljava/lang/String;)V'] = (v, s, [name]) => { throw new Error('loadLibrary before runtime start: ' + name) }
     const sys = vm.cls('Ljava/lang/System;')
     sys.methods.get('loadLibrary(Ljava/lang/String;)V')!.native = () => {}
+    const parts = (map as any).original | 0
+    if (parts) {
+      const chunks = await Promise.all(Array.from({ length: parts }, (_, i) => bytes(`original/apk.${i}`)))
+      const all = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0))
+      let o = 0
+      for (const c of chunks) { all.set(c, o); o += c.length }
+      vfs.write(`/data/app/${map.pkg}-1.apk`, all)
+    }
     const libBytes = new Map<string, Uint8Array>()
     for (const l of map.libs) libBytes.set(l.split('/').pop()!, await bytes('apk/' + norm(l)))
     sys.methods.get('loadLibrary(Ljava/lang/String;)V')!.native = (v, s, [name]) => {
       const file = `lib${name}.so`
       const b = libBytes.get(file)
       if (!b) throw vm.error('Ljava/lang/UnsatisfiedLinkError;', `dlopen failed: library "${file}" not found (only armeabi-v7a libraries run in Droid)`)
-      native ||= new Native(vm)
+      native ||= new Native(vm, vfs)
       native.load(file, b)
     }
     vm.natives = (m, self, args) => {
@@ -74,7 +88,8 @@ droid.on('create', async (saved: any) => {
   } catch (e: any) {
     root.innerHTML = ''
     const msg = e?.obj ? 'java exception' : String(e?.message || e)
-    console.error('android runtime failed', e)
+    const where = e?.jstack || e?.obj?.f?.jstack || []
+    console.error('android runtime failed: ' + String(e?.message || e) + (where.length ? ' | at ' + where.join(' < ') : ' | (no java stack)'))
     droid.dialog({ title: 'Unfortunately, the app has stopped.', message: msg + (e?.obj ? ': ' + jstr(new VM(), e.obj.f.message ?? '') : '') })
   }
 })
