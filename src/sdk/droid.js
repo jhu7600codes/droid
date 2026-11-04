@@ -111,6 +111,8 @@
       orientation: function (o) { return call('system.orientation', [o]) },
       keepawake: function (on) { return call('system.keepawake', [!!on]) },
       fullscreen: function (on) { return call('system.fullscreen', [on !== false]) },
+      // just this app's window without the status bar (android's FLAG_FULLSCREEN; no permission)
+      statusbar: function (visible) { return call('ui.statusbar', [visible !== false]) },
       exit: function () { return call('app.finish', [0]) },
     },
     // background work for converted apps (alarms, broadcast receivers, services)

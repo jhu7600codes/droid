@@ -158,6 +158,7 @@ export function makeBridge(pkg: string, ctx: ActivityContext, host: Host) {
       if (on && !wake) wake = await (navigator as any).wakeLock?.request('screen').catch(() => null)
       if (!on && wake) { wake.release(); wake = null }
     },
+    'ui.statusbar': (visible: boolean) => { host.iframe.closest('.window')?.classList.toggle('no-statusbar', !visible); wm.bars() },
     'system.fullscreen': async (on: boolean) => { await ensure(pkg, 'fullscreen'); screenEl.classList.toggle('immersive', on) },
     'device.info': deviceInfo,
 

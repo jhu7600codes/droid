@@ -87,6 +87,7 @@ function layout() {
     }
   }
   document.documentElement.dataset.front = top()?.app.manifest.id || ''
+  wm.bars()
   // developer option "don't keep activities": background tasks go away at once
   if (settings.get('dev.nokeep') && !isDesktop()) for (const t of [...tasks]) if (t !== front() && !t.home) setTimeout(() => tasks.includes(t) && t !== front() && wm.removeTask(t), 400)
   emit('change')
@@ -151,6 +152,8 @@ async function choose(matches: { app: AppEntry; activity: string }[]) {
 }
 
 export const wm = {
+  // the front window may hide the status bar (fullscreen android apps)
+  bars() { document.documentElement.dataset.frontNoStatus = top()?.el.classList.contains('no-statusbar') ? '1' : '' },
   init(el: HTMLElement) {
     layer = el
     initDesktop({

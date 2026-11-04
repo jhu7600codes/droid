@@ -92,7 +92,7 @@ export function registerMore(vm: VM, env: Env, h: MoreHelpers) {
     'onKeyDown(ILandroid/view/KeyEvent;)Z': () => 0, 'onKeyUp(ILandroid/view/KeyEvent;)Z': () => 0, 'onKeyPreIme(ILandroid/view/KeyEvent;)Z': () => 0,
     'onWindowFocusChanged(Z)V': noop, 'onAttachedToWindow()V': noop, 'onDetachedFromWindow()V': noop,
     'onSizeChanged(IIII)V': noop, 'onLayout(ZIIII)V': noop, 'onMeasure(II)V': noop,
-    'setSystemUiVisibility(I)V': (v, s, [f]) => { if (f & 0x6) env.droid.system.fullscreen(true).catch(() => {}) },
+    'setSystemUiVisibility(I)V': (v, s, [f]) => { env.droid.system.statusbar?.(!(f & 0x4)) }, // SYSTEM_UI_FLAG_FULLSCREEN
     'getSystemUiVisibility()I': () => 0,
     'getWindowVisibleDisplayFrame(Landroid/graphics/Rect;)V': (v, s, [r]) => { Object.assign(r.f, { left: 0, top: 0, right: Math.round(innerWidth * dp), bottom: Math.round(innerHeight * dp) }) },
     'setFocusable(Z)V': noop, 'setFocusableInTouchMode(Z)V': noop, 'setKeepScreenOn(Z)V': (v, s, [on]) => { env.droid.system.keepawake(!!on).catch?.(() => {}) },
