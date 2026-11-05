@@ -8,6 +8,15 @@
 //   GET  /vapid                                            -> {key} public web push key
 //   POST /push/send        (session) {pkg?, title, body}   -> {sent}  push to your own devices
 //   POST /push/admin       (x-danen-push-secret) {username, pkg?, title, body} -> {sent}  server-side sends
+//   GET  /store/apps                                       -> {apps}  community listings (live ones)
+//   GET  /store/mine       (session)                       -> {apps}  yours, hidden ones too
+//   POST /store/upload     (session) {id, versioncode, size, icon} -> {dpk, icon} signed upload urls
+//   POST /store/publish    (session) {id, name, description, category, version, versioncode, size, sha256, permissions, converted, icon}
+//   POST /store/unpublish  (session) {id}
+//   POST /store/report     (session) {id, reason}          -> {}  5 reports hide a listing
+// store files go straight from the browser to the public "droid-store" bucket with the signed urls;
+// a package id belongs to whoever published it first (not the main store's ids, not droid.*), and
+// updates need a higher versioncode. uploads nobody published are swept after an hour.
 // the vapid key pair is generated on first use and kept in the config table (service role only).
 // session = "authorization: Danen <token>". passwords: pbkdf2-sha256, 210k rounds, per-user salt.
 import { createClient } from 'npm:@supabase/supabase-js@2'
@@ -100,6 +109,54 @@ async function pushTo(userId: string, pkg: string | null, msg: { title: string; 
   }
   return sent
 }
+// ---------- store ----------
+const BUCKET = 'droid-store'
+const MAX_DPK = 50 * 1024 * 1024
+const CATS = ['tools', 'games', 'productivity', 'media', 'education', 'social', 'demo']
+const ID_RE = /^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/
+const publicUrl = (path: string) => `${Deno.env.get('SUPABASE_URL')}/storage/v1/object/public/${BUCKET}/${path}`
+const listing = (r: any) => ({
+  id: r.id, name: r.name, description: r.description, category: r.category, version: r.version, versioncode: r.versioncode,
+  size: Number(r.size), sha256: r.sha256, permissions: r.permissions || [], author: r.nickname || 'someone', converted: r.converted,
+  dpk: publicUrl(r.dpk_path), icon: r.icon_path ? publicUrl(r.icon_path) : '', screenshots: [], updated: r.updated_at, status: r.status, community: true,
+})
+const SELECT = 'id, owner, name, description, category, version, versioncode, size, sha256, permissions, dpk_path, icon_path, converted, status, updated_at'
+// listings with their publishers' nicknames
+async function withAuthors(rows: any[] | null) {
+  const owners = [...new Set((rows || []).map((r) => r.owner))]
+  const { data } = owners.length ? await db.from('users').select('id, nickname').in('id', owners) : { data: [] }
+  const nick = new Map((data || []).map((u: any) => [u.id, u.nickname]))
+  return (rows || []).map((r) => listing({ ...r, nickname: nick.get(r.owner) }))
+}
+async function storeFiles(id: string) {
+  const { data } = await db.storage.from(BUCKET).list(id, { limit: 1000 })
+  return (data || []).map((f: any) => ({ path: `${id}/${f.name}`, size: Number(f.metadata?.size ?? 0), created: Date.parse(f.created_at || '') || 0 }))
+}
+// package ids that are not up for grabs: the official catalog's (github pages) and droid's own
+const CATALOG = Deno.env.get('DANEN_CATALOG') || 'https://jhu7600codes.github.io/droid/store/catalog.json'
+let official: { at: number; ids: Set<string> } = { at: 0, ids: new Set() }
+async function reserved(id: string) {
+  if (id.startsWith('droid.')) return true
+  if (Date.now() - official.at > 600000) {
+    try { const c = await (await fetch(CATALOG)).json(); official = { at: Date.now(), ids: new Set((c.apps || []).map((a: any) => String(a.id))) } } catch { official.at = Date.now() - 540000 }
+  }
+  return official.ids.has(id)
+}
+// files no listing points to (abandoned uploads, leftovers), once they are an hour old
+let lastSweep = 0
+async function sweep() {
+  if (Date.now() - lastSweep < 600000) return
+  lastSweep = Date.now()
+  const { data: dirs } = await db.storage.from(BUCKET).list('', { limit: 1000 })
+  const ids = (dirs || []).map((d: any) => d.name)
+  if (!ids.length) return
+  const { data: rows } = await db.from('store_apps').select('dpk_path, icon_path').in('id', ids)
+  const keep = new Set((rows || []).flatMap((r: any) => [r.dpk_path, r.icon_path]).filter(Boolean))
+  const stale: string[] = []
+  for (const id of ids) for (const f of await storeFiles(id)) if (!keep.has(f.path) && Date.now() - f.created > 3600000) stale.push(f.path)
+  if (stale.length) await db.storage.from(BUCKET).remove(stale)
+}
+
 const clean = (m: any) => ({ title: String(m?.title || 'droid').slice(0, 120), body: String(m?.body || '').slice(0, 500), data: m?.data ?? null })
 
 Deno.serve(async (req) => {
@@ -138,10 +195,93 @@ Deno.serve(async (req) => {
       return json(req, { session: await newSession(data.id), nickname: data.nickname })
     }
 
+    if (path === '/store/apps' && req.method === 'GET') {
+      const { data, error } = await db.from('store_apps').select(SELECT).eq('status', 'live').order('updated_at', { ascending: false }).limit(1000)
+      if (error) return json(req, { error: 'store unavailable' }, 500)
+      return json(req, { apps: await withAuthors(data) })
+    }
+
     const user = await userOf(req)
     if (!user) return json(req, { error: 'sign in again' }, 401)
 
+    if (path === '/store/mine' && req.method === 'GET') {
+      const { data } = await db.from('store_apps').select(SELECT).eq('owner', user).order('updated_at', { ascending: false })
+      return json(req, { apps: await withAuthors(data) })
+    }
+    if (path === '/store/upload' && req.method === 'POST') {
+      if (limited('u' + user, 10)) return json(req, { error: 'slow down' }, 429)
+      const b = await req.json()
+      const id = String(b.id || ''), vc = Number(b.versioncode) | 0, size = Number(b.size)
+      if (!ID_RE.test(id) || id.length > 100) return json(req, { error: 'bad package id' }, 400)
+      if (!(vc > 0)) return json(req, { error: 'bad versioncode' }, 400)
+      if (!(size > 0) || size > MAX_DPK) return json(req, { error: 'the package must be under 50 MB' }, 413)
+      if (await reserved(id)) return json(req, { error: 'that package id belongs to an app in the main store' }, 403)
+      sweep().catch(() => {})
+      const { data: cur } = await db.from('store_apps').select('owner, versioncode').eq('id', id).maybeSingle()
+      if (cur && cur.owner !== user) return json(req, { error: 'someone else published that package id' }, 403)
+      if (cur && vc <= cur.versioncode) return json(req, { error: `the store has versioncode ${cur.versioncode}: raise it to publish an update` }, 409)
+      const dpk = await db.storage.from(BUCKET).createSignedUploadUrl(`${id}/${vc}.dpk`, { upsert: true })
+      if (dpk.error) return json(req, { error: 'could not start the upload' }, 500)
+      let icon = null
+      if (b.icon) {
+        const ext = String(b.icon).includes('svg') ? 'svg' : String(b.icon).includes('jpeg') ? 'jpg' : String(b.icon).includes('webp') ? 'webp' : 'png'
+        const r = await db.storage.from(BUCKET).createSignedUploadUrl(`${id}/icon-${vc}.${ext}`, { upsert: true })
+        if (!r.error) icon = { url: r.data.signedUrl, path: r.data.path }
+      }
+      return json(req, { dpk: { url: dpk.data.signedUrl, path: dpk.data.path }, icon })
+    }
+    if (path === '/store/publish' && req.method === 'POST') {
+      const b = await req.json()
+      const id = String(b.id || ''), vc = Number(b.versioncode) | 0
+      if (!ID_RE.test(id)) return json(req, { error: 'bad package id' }, 400)
+      if (await reserved(id)) return json(req, { error: 'that package id belongs to an app in the main store' }, 403)
+      const { data: cur } = await db.from('store_apps').select('owner, versioncode').eq('id', id).maybeSingle()
+      if (cur && cur.owner !== user) return json(req, { error: 'someone else published that package id' }, 403)
+      if (cur && vc <= cur.versioncode) return json(req, { error: 'raise the versioncode to publish an update' }, 409)
+      const files = await storeFiles(id)
+      const dpk = files.find((f) => f.path === `${id}/${vc}.dpk`)
+      if (!dpk) return json(req, { error: 'the package did not arrive' }, 400)
+      if (dpk.size && dpk.size !== Number(b.size)) return json(req, { error: 'the package arrived with a different size' }, 400)
+      if (!/^[0-9a-f]{64}$/.test(String(b.sha256))) return json(req, { error: 'bad hash' }, 400)
+      const icon = files.find((f) => f.path.startsWith(`${id}/icon-${vc}.`))
+      const row = {
+        id, owner: user, name: String(b.name || id).slice(0, 50), description: String(b.description || '').slice(0, 4000),
+        category: CATS.includes(b.category) ? b.category : 'tools', version: String(b.version || vc).slice(0, 40), versioncode: vc,
+        size: Number(b.size), sha256: String(b.sha256), permissions: Array.isArray(b.permissions) ? b.permissions.slice(0, 50).map((x: unknown) => String(x).slice(0, 60)) : [],
+        dpk_path: dpk.path, icon_path: icon?.path ?? null, converted: !!b.converted, updated_at: new Date().toISOString(),
+      }
+      const { error } = await db.from('store_apps').upsert(row)
+      if (error) return json(req, { error: 'could not save the listing' }, 400)
+      // older versions' files go away
+      const old = files.filter((f) => f.path !== dpk.path && f.path !== icon?.path).map((f) => f.path)
+      if (old.length) await db.storage.from(BUCKET).remove(old)
+      return json(req, {})
+    }
+    if (path === '/store/unpublish' && req.method === 'POST') {
+      const id = String((await req.json()).id || '')
+      const { data: cur } = await db.from('store_apps').select('owner').eq('id', id).maybeSingle()
+      if (!cur || cur.owner !== user) return json(req, { error: 'not yours' }, 403)
+      const files = await storeFiles(id)
+      if (files.length) await db.storage.from(BUCKET).remove(files.map((f) => f.path))
+      await db.from('store_apps').delete().eq('id', id)
+      return json(req, {})
+    }
+    if (path === '/store/report' && req.method === 'POST') {
+      if (limited('r' + user, 10)) return json(req, { error: 'slow down' }, 429)
+      const b = await req.json()
+      const id = String(b.id || '')
+      const { error } = await db.from('store_reports').insert({ app_id: id, user_id: user, reason: String(b.reason || '').slice(0, 500) })
+      if (!error) {
+        const { count } = await db.from('store_reports').select('*', { count: 'exact', head: true }).eq('app_id', id)
+        await db.from('store_apps').update({ reports: count ?? 0, ...(count && count >= 5 ? { status: 'hidden' } : {}) }).eq('id', id)
+      }
+      return json(req, {})
+    }
+
     if (path === '/account/delete' && req.method === 'POST') {
+      // the store files of the account's apps go too (the rows cascade, the files would not)
+      const { data: apps } = await db.from('store_apps').select('id').eq('owner', user)
+      for (const a of apps || []) { const f = await storeFiles(a.id); if (f.length) await db.storage.from(BUCKET).remove(f.map((x) => x.path)) }
       await db.from('users').delete().eq('id', user)
       return json(req, {})
     }

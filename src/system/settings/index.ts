@@ -13,7 +13,7 @@ import { state as netState } from '../../shell/net'
 import { listPackages, getPackage, setGrant, uninstall } from '../../runtime/packages'
 import { permName } from '../../runtime/manifest'
 import { permissionText } from '../../runtime/bridge'
-import { openDpk } from '../../runtime'
+import { pickPackage } from '../../runtime'
 import { ensureProxyToken } from '../../runtime/netclient'
 import * as store from '../../runtime/db'
 import { applyUpdate, checkUpdate, BUILD } from '../../shell/sw-client'
@@ -152,7 +152,7 @@ function settingsApp(ctx: ActivityContext): Activity {
 
   const apps: Build = (el, pop) => {
     const p = page(el, { title: 'Apps', icon: ic(S, 'ic_settings_applications'), up: pop })
-    p.menu([{ title: 'Install from file…', onclick: () => pickDpk() }, { title: 'Default apps', onclick: () => open(roles) }])
+    p.menu([{ title: 'Install from file…', onclick: () => pickPackage() }, { title: 'Default apps', onclick: () => open(roles) }])
     const r = prefs(p.content, () => {
       const all = [...kernel.apps.values()].filter((a) => a.icon || !a.system).sort((a, b) => a.manifest.name.localeCompare(b.manifest.name))
       return [
@@ -164,13 +164,6 @@ function settingsApp(ctx: ActivityContext): Activity {
     })
     const off = kernel.onAppsChanged(r.render)
     return () => { r.dispose(); off() }
-  }
-  const pickDpk = () => {
-    const i = h('input', { type: 'file', accept: '.dpk,.apk,application/x-dpk,application/vnd.android.package-archive', style: { display: 'none' } }) as HTMLInputElement
-    i.addEventListener('change', () => { if (i.files?.[0]) openDpk(i.files[0]) })
-    document.body.append(i)
-    i.click()
-    setTimeout(() => i.remove(), 60000)
   }
 
   const appInfo: Build = (el, pop, id: string) => {

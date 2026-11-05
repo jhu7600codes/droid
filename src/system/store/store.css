@@ -30,3 +30,16 @@
 .svc-err { color: #ff4444; font-size: 14px; min-height: 18px; }
 .svc-switch { color: #33b5e5; align-self: center; }
 .svc-fine { font-size: 12px; color: #888; text-align: center; line-height: 1.4; }
+
+/* community side */
+.st-community { display: flex; align-items: center; gap: 12px; }
+.st-community > div { flex: 1; }
+.st-note { margin: 0 16px 8px; padding: 8px 12px; border-left: 3px solid #ffbb33; background: rgba(255, 187, 51, .08); color: #ddd; font-size: 14px; }
+.st-center { display: flex; justify-content: center; padding: 8px 16px 16px; }
+.st-form { padding: 0 16px 16px; }
+.st-form .st-head { padding-left: 0; padding-right: 0; }
+.st-form .h-edit { display: block; width: 100%; box-sizing: border-box; }
+.st-textarea { resize: vertical; min-height: 80px; font: inherit; }
+select.h-edit { background: transparent; color: inherit; }
+select.h-edit option { background: #222; }
+.st-li-icon { width: 40px; height: 40px; margin-right: 12px; flex: none; }

@@ -54,39 +54,92 @@ export function registerMore(vm: VM, env: Env, h: MoreHelpers) {
     '<init>(Landroid/content/Context;Landroid/util/AttributeSet;)V': (v, s) => ensureEl(s),
     '<init>(Landroid/content/Context;Landroid/util/AttributeSet;I)V': (v, s) => ensureEl(s),
   }
-  // touch: dom pointer events become MotionEvents for the view's dispatchTouchEvent / onTouchEvent
-  const pointers = new Map<number, { x: number; y: number; id: number }>()
+  // touch, the android way: one listener on the activity's root turns pointer events into MotionEvents
+  // for Activity.dispatchTouchEvent, which hands them to the content view; a ViewGroup passes them
+  // down the path to the touched view (keeping the view that took the down for the rest of the
+  // gesture, onInterceptTouchEvent can take them over), and what nobody wants comes back up through
+  // onTouchListener / onTouchEvent. coordinates are in each receiving view's own pixels
+  const pointers = new Map<number, { rx: number; ry: number; id: number }>()
   let downTime = 0
-  const motion = (action: number, idx: number, t: number) => {
-    const ps = [...pointers.values()]
-    return obj('Landroid/view/MotionEvent;', { action: action | (idx << 8), ps, time: BigInt(Math.round(t)), down: BigInt(Math.round(downTime)) })
+  let touchPath: JObject[] = []
+  const rootRect = () => env.root.getBoundingClientRect()
+  const scaleOf = () => { const r = rootRect(); return env.root.offsetWidth ? r.width / env.root.offsetWidth : 1 }
+  // a copy of the event in view coordinates
+  const localize = (me: JObject, view: JObject | null) => {
+    const r = view ? el(view)?.getBoundingClientRect() : null, rr = rootRect(), k = scaleOf()
+    const ox = r ? ((r.left - rr.left) / k) * dp : 0, oy = r ? ((r.top - rr.top) / k) * dp : 0
+    return obj('Landroid/view/MotionEvent;', { ...me.f, ps: (me.f.ps || []).map((p: any) => ({ ...p, rx: p.rx ?? p.x, ry: p.ry ?? p.y, x: (p.rx ?? p.x) - ox, y: (p.ry ?? p.y) - oy })) })
   }
-  const bindTouch = (s: JObject) => {
-    if (s.f.touchBound) return
-    s.f.touchBound = true
-    const e = el(s)
-    e.style.touchAction = 'none'
-    const send = (ev: PointerEvent, kind: 'down' | 'move' | 'up') => {
-      const r = e.getBoundingClientRect(), k = e.offsetWidth ? r.width / e.offsetWidth : 1
-      const x = ((ev.clientX - r.left) / k) * dp, y = ((ev.clientY - r.top) / k) * dp
-      let action = 2
-      if (kind === 'down') { if (!pointers.size) downTime = performance.now(); pointers.set(ev.pointerId, { x, y, id: pointers.size }); action = pointers.size === 1 ? 0 : 5 }
-      else if (kind === 'move') { const p = pointers.get(ev.pointerId); if (!p) return; p.x = x; p.y = y }
-      else { const p = pointers.get(ev.pointerId); if (!p) return; p.x = x; p.y = y; action = pointers.size === 1 ? 1 : 6 }
-      const idx = [...pointers.keys()].indexOf(ev.pointerId)
-      const me = motion(action, Math.max(0, idx), ev.timeStamp)
-      if (kind === 'up') pointers.delete(ev.pointerId)
-      try { vm.callVirtual(s, 'dispatchTouchEvent(Landroid/view/MotionEvent;)Z', [me]) } catch (er) { h.report(er) }
+  const dispatchTo = (view: JObject, me: JObject) => !!vm.callVirtual(view, 'dispatchTouchEvent(Landroid/view/MotionEvent;)Z', [localize(me, view)])
+  // what View.dispatchTouchEvent does: the touch listener first, then onTouchEvent
+  const viewDispatch = (s: JObject, me: JObject) => {
+    if (s.f.onTouch && vm.callVirtual(s.f.onTouch, 'onTouch(Landroid/view/View;Landroid/view/MotionEvent;)Z', [s, me])) return 1
+    return vm.callVirtual(s, 'onTouchEvent(Landroid/view/MotionEvent;)Z', [me]) ? 1 : 0
+  }
+  const groupDispatch = (s: JObject, me: JObject) => {
+    const action = me.f.action & 0xff
+    if (action === 0) s.f.touchTarget = null
+    const intercepted = !!vm.callVirtual(s, 'onInterceptTouchEvent(Landroid/view/MotionEvent;)Z', [me])
+    if (intercepted && s.f.touchTarget) { // taken over: the child gets a cancel
+      dispatchTo(s.f.touchTarget, obj('Landroid/view/MotionEvent;', { ...me.f, action: 3 }))
+      s.f.touchTarget = null
     }
-    e.addEventListener('pointerdown', (ev) => { e.setPointerCapture?.(ev.pointerId); send(ev, 'down') })
-    e.addEventListener('pointermove', (ev) => send(ev, 'move'))
-    e.addEventListener('pointerup', (ev) => send(ev, 'up'))
-    e.addEventListener('pointercancel', (ev) => send(ev, 'up'))
+    if (!intercepted) {
+      if (s.f.touchTarget) { const r = dispatchTo(s.f.touchTarget, me); if (action === 1 || action === 3) s.f.touchTarget = null; return r ? 1 : 0 }
+      if (action === 0 || action === 5) {
+        const child = touchPath[touchPath.indexOf(s) + 1]
+        if (child && dispatchTo(child, me)) { s.f.touchTarget = child; return 1 }
+      }
+    }
+    return viewDispatch(s, me)
   }
+  const installTouch = () => {
+    const root = env.root
+    if ((root as any).__touch) return
+    ;(root as any).__touch = true
+    root.style.touchAction = 'none'
+    const send = (ev: PointerEvent, kind: 'down' | 'move' | 'up' | 'cancel') => {
+      const act = h.activity()
+      if (!act) return
+      const rr = rootRect(), k = scaleOf()
+      const rx = ((ev.clientX - rr.left) / k) * dp, ry = ((ev.clientY - rr.top) / k) * dp
+      let action = 2
+      if (kind === 'down') {
+        if (!pointers.size) {
+          downTime = performance.now()
+          // the views under the finger, outermost first (the gesture keeps going to these)
+          const path: JObject[] = []
+          for (let e = ev.target as HTMLElement | null; e && e !== root; e = e.parentElement) if ((e as any).__view) path.unshift((e as any).__view)
+          touchPath = path
+        }
+        const used = new Set([...pointers.values()].map((p) => p.id))
+        let id = 0
+        while (used.has(id)) id++
+        pointers.set(ev.pointerId, { rx, ry, id })
+        action = pointers.size === 1 ? 0 : 5
+      } else {
+        const p = pointers.get(ev.pointerId)
+        if (!p) return
+        p.rx = rx; p.ry = ry
+        if (kind !== 'move') action = kind === 'cancel' ? 3 : pointers.size === 1 ? 1 : 6
+      }
+      const idx = Math.max(0, [...pointers.keys()].indexOf(ev.pointerId))
+      const me = obj('Landroid/view/MotionEvent;', { action: action | (action === 5 || action === 6 ? idx << 8 : 0), ps: [...pointers.values()].map((p) => ({ ...p, x: p.rx, y: p.ry })), time: BigInt(Math.round(ev.timeStamp)), down: BigInt(Math.round(downTime)) })
+      if (kind === 'up' || kind === 'cancel') pointers.delete(ev.pointerId)
+      try { vm.callVirtual(act, 'dispatchTouchEvent(Landroid/view/MotionEvent;)Z', [me]) } catch (er) { h.report(er) }
+    }
+    root.addEventListener('pointerdown', (ev) => send(ev, 'down'))
+    root.addEventListener('pointermove', (ev) => { if (pointers.has(ev.pointerId)) send(ev, 'move') })
+    // a finger can end outside the root: listen on the window for the ends
+    addEventListener('pointerup', (ev) => send(ev, 'up'))
+    addEventListener('pointercancel', (ev) => send(ev, 'cancel'))
+  }
+  // older callers: the root listener covers every view now
+  const bindTouch = (s: JObject) => { void s; installTouch() }
   // keys: the activity gets onKeyDown / onKeyUp (the shell's back key is handled elsewhere)
   def('Landroid/view/View;', OBJ, {
     ...ctors,
-    'dispatchTouchEvent(Landroid/view/MotionEvent;)Z': (v, s, [e]) => vm.callVirtual(s, 'onTouchEvent(Landroid/view/MotionEvent;)Z', [e]) ?? 0,
+    'dispatchTouchEvent(Landroid/view/MotionEvent;)Z': (v, s, [e]) => viewDispatch(s, e),
     'onTouchEvent(Landroid/view/MotionEvent;)Z': () => 0,
     'dispatchTrackballEvent(Landroid/view/MotionEvent;)Z': () => 0,
     'onKeyDown(ILandroid/view/KeyEvent;)Z': () => 0, 'onKeyUp(ILandroid/view/KeyEvent;)Z': () => 0, 'onKeyPreIme(ILandroid/view/KeyEvent;)Z': () => 0,
@@ -129,7 +182,7 @@ export function registerMore(vm: VM, env: Env, h: MoreHelpers) {
     'findPointerIndex(I)I': (v, s, [id]) => (s.f.ps || []).findIndex((p: any) => p.id === id),
     'getX()F': (v, s) => Math.fround(ptr(s, 0).x), 'getY()F': (v, s) => Math.fround(ptr(s, 0).y),
     'getX(I)F': (v, s, [i]) => Math.fround(ptr(s, i).x), 'getY(I)F': (v, s, [i]) => Math.fround(ptr(s, i).y),
-    'getRawX()F': (v, s) => Math.fround(ptr(s, 0).x), 'getRawY()F': (v, s) => Math.fround(ptr(s, 0).y),
+    'getRawX()F': (v, s) => Math.fround(ptr(s, 0).rx ?? ptr(s, 0).x), 'getRawY()F': (v, s) => Math.fround(ptr(s, 0).ry ?? ptr(s, 0).y),
     'getPressure()F': () => 1, 'getPressure(I)F': () => 1, 'getSize()F': () => 0.1, 'getSize(I)F': () => 0.1,
     'getTouchMajor(I)F': () => 10, 'getToolType(I)I': () => 1,
     'getEventTime()J': (v, s) => s.f.time ?? 0n, 'getDownTime()J': (v, s) => s.f.down ?? 0n,
@@ -175,6 +228,9 @@ export function registerMore(vm: VM, env: Env, h: MoreHelpers) {
   for (const c of ['Landroid/widget/FrameLayout$LayoutParams;', 'Landroid/widget/RelativeLayout$LayoutParams;', 'Landroid/widget/LinearLayout$LayoutParams;', 'Landroid/view/WindowManager$LayoutParams;', 'Landroid/widget/AbsoluteLayout$LayoutParams;']) lp(c)
   def('Landroid/view/ViewGroup;', 'Landroid/view/View;', {
     ...ctors,
+    'dispatchTouchEvent(Landroid/view/MotionEvent;)Z': (v, s, [e]) => groupDispatch(s, e),
+    'onInterceptTouchEvent(Landroid/view/MotionEvent;)Z': () => 0,
+    'requestDisallowInterceptTouchEvent(Z)V': noop,
     'addView(Landroid/view/View;)V': (v, s, [c]) => { ensureEl(s); ensureEl(c); el(s).append(el(c)); attached(c) },
     'addView(Landroid/view/View;I)V': (v, s, [c, i]) => { ensureEl(s); ensureEl(c); const k = el(s).children[i]; if (k && i >= 0) el(s).insertBefore(el(c), k); else el(s).append(el(c)); attached(c) },
     'addView(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V': (v, s, [c, p]) => { ensureEl(s); ensureEl(c); el(s).append(el(c)); c.f.lp = p; applyLp(c, p); attached(c) },
@@ -319,6 +375,12 @@ export function registerMore(vm: VM, env: Env, h: MoreHelpers) {
     'getRequestedOrientation()I': (v, s) => s.f.orientation ?? -1,
     'setRequestedOrientation(I)V': (v, s, [o]) => { s.f.orientation = o; const want = o === 1 || o === 7 || o === 9 || o === 12 ? 'portrait' : o === 0 || o === 6 || o === 8 || o === 11 ? 'landscape' : 'any'; env.droid.system.orientation?.(want)?.catch?.(() => {}) },
     'onWindowFocusChanged(Z)V': noop, 'onTouchEvent(Landroid/view/MotionEvent;)Z': () => 0,
+    // the content view first, then the activity's own onTouchEvent
+    'dispatchTouchEvent(Landroid/view/MotionEvent;)Z': (v, s, [e]) => {
+      const content = (env.root.querySelector(':scope > .an-root') as any)?.__view as JObject | undefined
+      if (content && dispatchTo(content, e)) return 1
+      return vm.callVirtual(s, 'onTouchEvent(Landroid/view/MotionEvent;)Z', [e]) ? 1 : 0
+    },
     'onKeyDown(ILandroid/view/KeyEvent;)Z': () => 0, 'onKeyUp(ILandroid/view/KeyEvent;)Z': () => 0,
     'onConfigurationChanged(Landroid/content/res/Configuration;)V': noop, 'onLowMemory()V': noop,
     'getWindowManager()Landroid/view/WindowManager;': () => obj('Landroid/view/WindowManager;'),
@@ -772,6 +834,7 @@ export function registerMore(vm: VM, env: Env, h: MoreHelpers) {
   const sp = h.prefsFor('__probe')
   void sp
   void box
+  installTouch()
 }
 
 // ---------- tiny sync inflate (raw deflate) for compressed assets ----------

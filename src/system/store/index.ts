@@ -3,10 +3,13 @@
 // manifest's integrity map (parseDpk). permissions are shown before installing.
 import type { SystemApp, ActivityContext, Activity } from '../../shell/types'
 import { page, pageStack } from '../../shell/appkit'
-import { h, pressable, dialog, toast } from '../../shell/ui'
+import { h, pressable, dialog, toast, progress } from '../../shell/ui'
+import { storeApi, signedIn } from '../../shell/danen-remote'
+import { listZip } from '../../runtime/zip'
 import { kernel } from '../../shell/kernel'
 import { wm } from '../../shell/wm'
 import { img } from '../../shell/assets'
+import { pickPackage } from '../../runtime'
 import { parseDpk, install, getPackage } from '../../runtime/packages'
 import { sha256 } from '../../runtime/manifest'
 import { permissionText } from '../../runtime/bridge'
@@ -38,20 +41,22 @@ function storeApp(ctx: ActivityContext): Activity {
   const home = (el: HTMLElement) => {
     const p = page(el, { title: 'Danen Store', icon: 'assets/brand/droid-d-icon.svg' })
     p.menu([
+      { title: 'Install from file', icon: img('framework', 'ic_menu_upload'), always: true, onclick: () => pickPackage() },
       { title: 'Search', icon: img('framework', 'ic_menu_search_holo_dark'), always: true, onclick: () => search() },
       { title: 'My apps', onclick: () => stack.push((e2, pop) => myApps(e2, pop)) },
-      { title: 'Publish an app', onclick: () => wm.start({ action: 'view', data: REPO + '/tree/main/store' }) },
+      { title: 'Publish an app', onclick: () => stack.push((e2, pop) => publish(e2, pop)) },
+      { title: 'My published apps', onclick: () => stack.push((e2, pop) => published(e2, pop)) },
       { title: 'Refresh', onclick: () => refresh(true) },
     ])
     const tabs = h('div.h-tabs.st-tabs')
     const body = h('div.st-body')
     p.content.append(tabs, body)
-    let tab: 'featured' | 'categories' | 'updates' = (ctx.intent.extras?.page as any) === 'updates' ? 'updates' : 'featured'
+    let tab: 'featured' | 'community' | 'categories' | 'updates' = (ctx.intent.extras?.page as any) === 'updates' ? 'updates' : 'featured'
     let gen = 0
     const draw = async () => {
       const my = ++gen
       tabs.innerHTML = ''
-      for (const [k, label] of [['featured', 'Featured'], ['categories', 'Categories'], ['updates', 'Updates']] as const) {
+      for (const [k, label] of [['featured', 'Featured'], ['community', 'Community'], ['categories', 'Categories'], ['updates', 'Updates']] as const) {
         tabs.append(pressable(h('span.h-tab' + (tab === k ? '.selected' : ''), { onclick: () => { tab = k; draw() } }, label)))
       }
       body.innerHTML = ''
@@ -59,7 +64,16 @@ function storeApp(ctx: ActivityContext): Activity {
       if (tab === 'featured') {
         body.append(h('div.st-banner', {}, h('img', { src: 'assets/brand/droid-logo.svg' }), h('div', {}, h('div.st-banner-t', {}, 'Apps for Droid'), h('div.st-banner-s', {}, 'Every app here is a DPK checked by the Danen store action.'))))
         const grid = h('div.st-grid')
-        cat.apps.forEach((l) => grid.append(card(l)))
+        cat.apps.filter((l) => !l.community).forEach((l) => grid.append(card(l)))
+        body.append(grid)
+      }
+      if (tab === 'community') {
+        body.append(h('div.st-banner.st-community', {}, h('div', {}, h('div.st-banner-t', {}, 'Community apps'), h('div.st-banner-s', {}, 'Published from Droid with a Danen account. Not reviewed: they still only get the permissions you allow.')),
+          pressable(h('button.h-btn.st-primary', { onclick: () => stack.push((e2, pop) => publish(e2, pop)) }, 'Publish'))))
+        const apps = cat.apps.filter((l) => l.community)
+        if (!apps.length) body.append(h('div.st-msg', {}, 'Nothing here yet. Be the first to publish an app.'))
+        const grid = h('div.st-grid')
+        apps.forEach((l) => grid.append(card(l)))
         body.append(grid)
       }
       if (tab === 'categories') {
@@ -158,13 +172,111 @@ function storeApp(ctx: ActivityContext): Activity {
     const shots = h('div.st-shots')
     l.screenshots.forEach((s) => shots.append(h('img', { src: abs(cat!, s) })))
     const report = `${REPO}/issues/new?title=${encodeURIComponent('report: ' + l.id)}&body=${encodeURIComponent(`app: ${l.id} ${l.version}\n\nwhat is wrong:\n`)}`
-    p.content.append(head, btns, l.screenshots.length ? shots : '',
+    // community apps are reported to danen (5 reports take a listing down)
+    const reportCommunity = async () => {
+      if (!signedIn()) { const r = await dialog({ title: 'Report this app', message: 'Sign in with your Danen account to report apps.', cancel: 'Cancel', ok: 'Sign in' }); if (r.button === 'ok') wm.start({ action: 'danen-account' }); return }
+      const r = await dialog({ title: 'Report ' + l.name, kind: 'input', placeholder: 'What is wrong with it?', ok: 'Report' })
+      if (r.button !== 'ok') return
+      try { await storeApi.report(l.id, r.value || ''); toast('Thanks, the report was sent') } catch (e) { toast((e as Error).message) }
+    }
+    p.content.append(head, btns, l.community ? h('div.st-note', {}, `A community app${l.converted ? ' (converted from an Android APK)' : ''}, published by ${l.author}. Not reviewed by Danen.`) : '', l.screenshots.length ? shots : '',
       h('div.h-section', {}, 'Description'), h('div.st-desc', {}, l.description),
       h('div.h-section', {}, 'Permissions'), h('div.st-desc', {}, l.permissions.length ? l.permissions.map(permissionText).join(', ') : 'None'),
       h('div.h-section', {}, 'Additional information'),
-      h('div.st-desc', {}, `Version ${l.version} · updated ${l.updated} · ${l.id}`),
-      pressable(h('button.h-btn-borderless.st-report', { onclick: () => wm.start({ action: 'view', data: report }) }, 'Report this app')))
+      h('div.st-desc', {}, `Version ${l.version} · updated ${String(l.updated).slice(0, 10)} · ${l.id}`),
+      pressable(h('button.h-btn-borderless.st-report', { onclick: () => (l.community ? reportCommunity() : wm.start({ action: 'view', data: report })) }, 'Report this app')))
     return () => off()
+  }
+
+  // ---------- publishing to the community side (danen account, no github) ----------
+  const needSignIn = (el: HTMLElement) => {
+    el.append(h('div.st-msg', {}, 'Publishing needs a Danen account.'), h('div.st-center', {}, pressable(h('button.h-btn.st-primary', { onclick: () => wm.start({ action: 'danen-account' }) }, 'Sign in to Danen'))))
+  }
+  const publish = (el: HTMLElement, pop: () => void) => {
+    const p = page(el, { title: 'Publish an app', icon: 'assets/brand/droid-d-icon.svg', up: pop })
+    if (!signedIn()) { needSignIn(p.content); return }
+    const form = h('div.st-form')
+    p.content.append(h('div.st-desc', {}, 'Pick an app (.dpk, or an Android .apk: it is converted to a DPK first). It goes to the Community tab right away. Up to 50 MB. To update it later, publish a version with a higher version code.'),
+      h('div.st-center', {}, pressable(h('button.h-btn.st-primary', { onclick: () => choose() }, 'Choose a package'))), form)
+    const choose = () => {
+      const i = h('input', { type: 'file', style: { display: 'none' } }) as HTMLInputElement
+      i.addEventListener('change', () => { const f = i.files?.[0]; i.remove(); if (f) prepare(f) })
+      document.body.append(i); i.click()
+    }
+    const prepare = async (f: File) => {
+      let buf = await f.arrayBuffer(), converted = false
+      try {
+        const entries = listZip(buf)
+        if (entries.some((e) => e.path === 'AndroidManifest.xml') && !entries.some((e) => e.path === 'manifest.json')) {
+          const stop = progress('Converting the APK…')
+          try {
+            const { convertApk } = await import('../../runtime/android/convert')
+            const runtime = await (await fetch('runtime/android-runtime.js')).text()
+            const r = await convertApk(buf, runtime)
+            buf = r.dpk.buffer.slice(r.dpk.byteOffset, r.dpk.byteOffset + r.dpk.length) as ArrayBuffer
+            converted = true
+          } finally { stop() }
+        }
+      } catch (e) { dialog({ title: 'Can\'t publish', message: `That is not an app package. ${(e as Error).message}` }); return }
+      let parsed
+      try { parsed = await parseDpk(buf) } catch (e) { dialog({ title: 'Can\'t publish', message: (e as Error).message }); return }
+      const m = parsed.manifest
+      if (buf.byteLength > 50 * 1024 * 1024) { dialog({ title: 'Too big', message: `The package is ${fmt(buf.byteLength)}; the community store takes up to 50 MB.` }); return }
+      const iconBytes = m.icon ? parsed.files.get(m.icon) : null
+      const iconType = m.icon ? (m.icon.endsWith('.svg') ? 'image/svg+xml' : m.icon.endsWith('.jpg') || m.icon.endsWith('.jpeg') ? 'image/jpeg' : m.icon.endsWith('.webp') ? 'image/webp' : 'image/png') : null
+      form.innerHTML = ''
+      const name = h('input.h-edit', { value: m.name || m.id, maxlength: '50' }) as HTMLInputElement
+      const desc = h('textarea.h-edit.st-textarea', { placeholder: 'What does it do?', maxlength: '4000', rows: '4' }) as HTMLTextAreaElement
+      const catSel = h('select.h-edit') as HTMLSelectElement
+      for (const [k, label] of Object.entries(CATS)) catSel.append(h('option', { value: k }, label))
+      catSel.value = (m as any).category && CATS[(m as any).category] ? (m as any).category : m.type === 'converted' ? 'games' : 'tools'
+      form.append(
+        h('div.st-head', {}, h('img', { src: iconBytes ? URL.createObjectURL(new Blob([iconBytes as BlobPart], { type: iconType! })) : 'assets/brand/default-app-icon.svg' }),
+          h('div', {}, h('div.st-h-name', {}, m.name || m.id), h('div.st-h-meta', {}, `${m.id} · version ${m.version} (${m.versioncode}) · ${fmt(buf.byteLength)}${converted ? ' · from an APK' : ''}`))),
+        h('div.h-section', {}, 'Name'), name, h('div.h-section', {}, 'Category'), catSel, h('div.h-section', {}, 'Description'), desc,
+        h('div.st-center', {}, pressable(h('button.h-btn.st-primary', { onclick: () => send() }, 'Publish'))))
+      const send = async () => {
+        const stop = progress(`Uploading ${fmt(buf.byteLength)}…`)
+        try {
+          const bytes = new Uint8Array(buf)
+          const sha = await sha256(bytes)
+          const up = await storeApi.upload({ id: m.id, versioncode: m.versioncode, size: bytes.length, icon: iconBytes ? iconType : null })
+          await storeApi.put(up.dpk.url, new Blob([bytes as BlobPart]), 'application/x-dpk')
+          if (up.icon && iconBytes) await storeApi.put(up.icon.url, new Blob([iconBytes as BlobPart], { type: iconType! }), iconType!)
+          await storeApi.publish({ id: m.id, name: name.value.trim() || m.name, description: desc.value.trim(), category: catSel.value, version: m.version, versioncode: m.versioncode, size: bytes.length, sha256: sha, permissions: (m.permissions || []).map((x: any) => (typeof x === 'string' ? x : x.name)), converted, icon: !!up.icon })
+          stop()
+          toast(`${name.value.trim() || m.name} is published`)
+          try { cat = await loadCatalog(true) } catch { /* shows next time */ }
+          pop()
+        } catch (e) { stop(); dialog({ title: 'Can\'t publish', message: (e as Error).message }) }
+      }
+    }
+  }
+  const published = (el: HTMLElement, pop: () => void) => {
+    const p = page(el, { title: 'My published apps', icon: 'assets/brand/droid-d-icon.svg', up: pop })
+    if (!signedIn()) { needSignIn(p.content); return }
+    const body = h('div')
+    p.content.append(body)
+    const draw = async () => {
+      body.innerHTML = ''
+      body.append(h('div.st-msg', {}, 'Loading…'))
+      let apps: Listing[] = []
+      try { apps = (await storeApi.mine()).apps } catch (e) { body.innerHTML = ''; body.append(h('div.st-msg', {}, (e as Error).message)); return }
+      body.innerHTML = ''
+      if (!apps.length) { body.append(h('div.st-msg', {}, 'You have not published anything yet.')); return }
+      const ul = h('ul.h-list')
+      for (const a of apps) {
+        ul.append(h('li.h-item', {}, h('img.st-li-icon', { src: a.icon || 'assets/brand/default-app-icon.svg' }),
+          h('div.lines', {}, h('span.title', {}, a.name), h('span.summary', {}, `${a.version} (${a.versioncode}) · ${(a as any).status === 'hidden' ? 'taken down after reports' : 'live'}`)),
+          pressable(h('button.h-btn-borderless', { onclick: async () => {
+            const r = await dialog({ title: 'Unpublish ' + a.name + '?', message: 'It leaves the store. People who installed it keep it.', cancel: 'Cancel', ok: 'Unpublish' })
+            if (r.button !== 'ok') return
+            try { await storeApi.unpublish(a.id); toast('Unpublished'); try { cat = await loadCatalog(true) } catch { /* later */ } draw() } catch (e) { toast((e as Error).message) }
+          } }, 'Unpublish'))), h('li.h-divider'))
+      }
+      body.append(ul)
+    }
+    draw()
   }
 
   stack.push((el) => home(el))
