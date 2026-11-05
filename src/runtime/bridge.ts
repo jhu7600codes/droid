@@ -38,7 +38,8 @@ export async function ensure(pkg: string, perm: string) {
   if (!declared.includes(perm)) throw err('denied', `${perm} is not in the manifest`)
   const rec = await getPackage(pkg)
   const g = rec?.grants[perm]
-  if (g === 'granted') return
+  // internet is a normal permission on android: declared means granted, no question
+  if (g === 'granted' || perm === 'network') return
   if (g === 'denied') throw err('denied', `${perm} was denied`)
   const r = await dialog({
     title: app!.manifest.name,

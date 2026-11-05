@@ -1,5 +1,6 @@
 // kitkat lockscreen: big thin clock, date, owner info, glowpad at the bottom.
 // drag the handle to the unlock target (right) or the camera (left). optional pin bouncer.
+import { isDesktop } from '../../shell/desktop'
 import { layers, screenEl } from '../../shell/layers'
 import { img } from '../../shell/assets'
 import { h, pressable } from '../../shell/ui'
@@ -57,7 +58,9 @@ function build() {
     const d = Math.hypot(dx, dy)
     if (d > R) { dx = (dx / d) * R; dy = (dy / d) * R }
     handle.style.transform = `translate(${dx}px, ${dy}px)`
-    const near = (tx: number) => Math.hypot(dx - tx, dy) < 40
+    // a target counts when the handle is mostly toward it and most of the way there (a mouse drag
+    // rarely lands exactly on it)
+    const near = (tx: number) => Math.hypot(dx - tx, dy) < 40 || (Math.sign(dx) === Math.sign(tx) && Math.abs(dx) > R * 0.6 && Math.abs(dy) < Math.abs(dx))
     unlockT.src = img(KG, near(R) ? 'ic_lockscreen_unlock_activated' : 'ic_lockscreen_unlock_normal')
     cameraT.src = img(KG, near(-R) ? 'ic_lockscreen_camera_activated' : 'ic_lockscreen_camera_normal')
     handle.dataset.hit = near(R) ? 'unlock' : near(-R) ? 'camera' : ''
@@ -74,7 +77,20 @@ function build() {
   handle.addEventListener('pointerup', release)
   handle.addEventListener('pointercancel', release)
   // a tap shows the hint like kitkat
-  handle.addEventListener('click', () => { hint.textContent = 'Swipe to unlock'; setTimeout(() => (hint.textContent = ''), 1500) })
+  // on desktop a click unlocks (a mouse is not a finger); on touch it shows the hint like kitkat
+  let moved = false
+  handle.addEventListener('pointerdown', () => (moved = false))
+  handle.addEventListener('pointermove', (e) => { if (pad.classList.contains('active') && Math.hypot(e.clientX - x0, e.clientY - y0) > 8) moved = true })
+  handle.addEventListener('click', (e) => {
+    if (moved) return
+    if (isDesktop() || (e as PointerEvent).pointerType === 'mouse') return attemptUnlock()
+    hint.textContent = 'Swipe to unlock'; setTimeout(() => (hint.textContent = ''), 1500)
+  })
+  // keyboard: enter or space unlocks
+  document.addEventListener('keydown', (e) => {
+    if (!locked || root.querySelector('.pin-bouncer')) return
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); attemptUnlock() }
+  })
 
   root.append(status, h('div', { style: { flex: '1' } }), hint, pad)
   layers.lock.append(root)

@@ -4,6 +4,7 @@ import { VM, JObject, JArray, JavaThrow, splitParams, type NativeFn } from './da
 import { Block } from './threads.ts'
 import { registerMore } from './android-more.ts'
 import { registerWidgets } from './widgets.ts'
+import { registerHttp } from './net.ts'
 import { registerGlJava } from './gl-java.ts'
 import { registerAudio, registerNet } from './audio.ts'
 import { jstr, jformat, box } from './java.ts'
@@ -1160,6 +1161,7 @@ export function registerAndroid(vm: VM, env: Env) {
   registerGlJava(vm, env, report)
   registerAudio(vm)
   registerNet(vm)
+  registerHttp(vm, env.droid, () => vm.current === vm.main)
   // the app-wide default prefs file android names <package>_preferences
   vm.shim('Landroid/preference/PreferenceManager;', { methods: {
     'getDefaultSharedPreferences(Landroid/content/Context;)Landroid/content/SharedPreferences;': () => prefsFor(env.pkg + '_preferences'),
