@@ -6,7 +6,7 @@
   "type": "wasm",
   "main": "main",
   "icon": "icon.svg",
-  "dpk": "0.1",
+  "dpk": "2.0",
   "wasm": { "module": "demo.wasm", "memory": { "initial": 2 } },
   "permissions": ["vibrate"],
   "orientation": "any",

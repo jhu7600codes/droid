@@ -7,7 +7,7 @@
   "main": "list",
   "icon": "icon.svg",
   "theme": "holo-light",
-  "dpk": "0.1",
+  "dpk": "2.0",
   "permissions": ["notifications", "clipboard"],
   "activities": {
     "list": { "entry": "index.html", "label": "Notes", "launcher": true },

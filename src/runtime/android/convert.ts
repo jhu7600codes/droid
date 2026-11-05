@@ -60,7 +60,7 @@ export async function convertApk(apk: ArrayBuffer, runtimeJs: string): Promise<C
     icon = pngs.sort((a, b) => files.get(b)!.length - files.get(a)!.length)[0]
   }
   const manifest = {
-    id: pkg.toLowerCase().replace(/[^a-z0-9_.]/g, '_'), name: label, version: versionName, versioncode: versionCode, type: 'converted', dpk: '0.1',
+    id: pkg.toLowerCase().replace(/[^a-z0-9_.]/g, '_'), name: label, version: versionName, versioncode: versionCode, type: 'converted', dpk: '2.0',
     runtime: dexes.length && libs.length ? 'both' : libs.length ? 'arm' : 'dex', shim: 'droid-framework@0.1',
     main, activities, permissions, icon: icon ? 'apk/' + icon : undefined, theme: 'holo-dark', 'legacy-menu': true,
     'converted-from': { package: pkg, version: versionName, versionCode, converter: CONVERTER_VERSION },
