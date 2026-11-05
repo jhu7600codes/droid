@@ -11,7 +11,7 @@ import { offline } from '../../shell/offline'
 import { account } from '../../shell/danen'
 import { state as netState } from '../../shell/net'
 import { listPackages, getPackage, setGrant, uninstall } from '../../runtime/packages'
-import { permName } from '../../runtime/manifest'
+import { permName, SPEC_VERSION } from '../../runtime/manifest'
 import { permissionText } from '../../runtime/bridge'
 import { pickPackage } from '../../runtime'
 import { ensureProxyToken } from '../../runtime/netclient'
@@ -365,7 +365,7 @@ function settingsApp(ctx: ActivityContext): Activity {
         if (verTaps >= 5) { verTaps = 0; import('./egg').then((m) => m.easterEgg()) }
       } },
       { type: 'item', title: 'API level', summary: '19' },
-      { type: 'item', title: 'DPK spec', summary: '0.1' },
+      { type: 'item', title: 'DPK spec', summary: SPEC_VERSION },
       { type: 'item', title: 'Kernel version', summary: `Droid Kernel ${ver}` },
       { type: 'item', title: 'Build number', summary: () => `KTU84Q.droid.${ver}`, onclick: () => {
         if (settings.get('dev.enabled')) return toast('No need, you are already a developer.')

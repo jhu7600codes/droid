@@ -11,6 +11,15 @@ import { scheduler, isBlock, tryEnter, enterBlock, exit, taskId, type Block, typ
 export interface Frame {
   m: JMethod; r: any[]; pc: number; ipc: number; ins: Uint16Array; dex: Dex; code: Code; kinds: Map<number, string>
   result: any; exc: any
+  post?: (v: any) => any // a JavaCall's frame: turns its return value into the calling native's
+  onThrow?: (e: JavaThrow) => JavaThrow // ... and its exceptions
+}
+// thrown by framework (js) code that wants to call a java method and return what it gives: the
+// interpreter runs it as an ordinary frame on the same thread (so it can wait on locks, network...)
+// instead of a nested js call. post turns the result into the native's return value.
+export class JavaCall {
+  m: JMethod; self: any; args: any[]; post?: (v: any) => any; onThrow?: (e: JavaThrow) => JavaThrow
+  constructor(m: JMethod, self: any, args: any[], post?: (v: any) => any, onThrow?: (e: JavaThrow) => JavaThrow) { this.m = m; this.self = self; this.args = args; this.post = post; this.onThrow = onThrow }
 }
 const YIELD = Symbol('yield'), BLOCKED = Symbol('blocked'), NO_CALL = Symbol('no call')
 // a java thread: its own frame stack, scheduled as a green thread
@@ -283,7 +292,12 @@ export class VM {
         if (n && !n.done) { if (n.block) { t.block = n.block; t.state = 'blocked' } return }
         t.nativeCall = false
         if (n) t.frames[t.frames.length - 1].result = n.value
-      } else if (t.block) { const b = t.block; t.block = null; const v = b.finish(); if (t.blockValue) t.frames[t.frames.length - 1].result = v }
+      } else if (t.block) {
+        // the wait is over: its value is the call's result; an exception it ends with is thrown at the call
+        const b = t.block; t.block = null
+        try { const v = b.finish(); if (t.blockValue) t.frames[t.frames.length - 1].result = v }
+        catch (e) { if (!(e instanceof JavaThrow) || !t.frames.length) throw e; t.pendingThrow = e }
+      }
       const r = this.exec(t, 0, deadline)
       if (r === YIELD) return
       if (r === BLOCKED) { t.state = 'blocked'; return }
@@ -303,7 +317,15 @@ export class VM {
   invoke(m: JMethod, self: any, args: any[]): any {
     if (m.native || m.flags & ACC.NATIVE) {
       try { return m.native ? m.native(this, self, args) : this.natives(m, self, args) }
-      catch (e) { if (isBlock(e)) return scheduler.pump(this.current, e); throw e }
+      catch (e) {
+        if (isBlock(e)) return scheduler.pump(this.current, e)
+        if (e instanceof JavaCall) {
+          let v: any
+          try { v = this.invoke(e.m, e.self, e.args) } catch (er) { if (er instanceof JavaThrow && e.onThrow) throw e.onThrow(er); throw er }
+          return e.post ? e.post(v) : v
+        }
+        throw e
+      }
     }
     if (!m.code) {
       this.missing.add(`${m.cls.name}->${m.key}`)
@@ -364,8 +386,9 @@ export class VM {
             case 0x0a: case 0x0b: case 0x0c: r[AA] = f.result; pc += 1; break
             case 0x0d: r[AA] = f.exc; pc += 1; break
             case 0x0e: case 0x0f: case 0x10: case 0x11: {
-              const value = op === 0x0e ? undefined : op === 0x11 ? obj(r[AA]) : r[AA]
+              let value = op === 0x0e ? undefined : op === 0x11 ? obj(r[AA]) : r[AA]
               t.frames.pop()
+              if (f.post) { try { value = f.post(value) } catch (er) { if (t.frames.length === stop) throw er; t.pendingThrow = er as any; continue outer } }
               if (t.frames.length === stop) return value
               t.frames[t.frames.length - 1].result = value
               continue outer
@@ -527,6 +550,14 @@ export class VM {
               let v: any
               try { v = target.native ? target.native(this, self, args) : this.natives(target, self, args) }
               catch (e) {
+                if (e instanceof JavaCall && e.m.code && !e.m.native) {
+                  f.pc = pc + 3
+                  this.pushFrame(t, e.m, e.self, e.args)
+                  const nf = t.frames[t.frames.length - 1]
+                  nf.post = e.post; nf.onThrow = e.onThrow
+                  continue outer
+                }
+                if (e instanceof JavaCall) { let x: any; try { x = this.invoke(e.m, e.self, e.args) } catch (er) { if (er instanceof JavaThrow && e.onThrow) throw e.onThrow(er); throw er } v = e.post ? e.post(x) : x; f.result = v; pc += 3; break }
                 if (!isBlock(e)) throw e
                 if (deadline === Infinity) v = scheduler.pump(t, e)
                 else { f.pc = pc + 3; t.block = e; t.blockValue = true; t.state = 'blocked'; return BLOCKED }
@@ -571,7 +602,7 @@ export class VM {
       } catch (e) {
         if (isBlock(e)) throw new Error('droid: a wait outside of a call (' + e.what + ')')
         // a java exception: look for a handler in this frame, else in the callers
-        const err = e instanceof JavaThrow ? e : this.wrapJsError(e)
+        let err = e instanceof JavaThrow ? e : this.wrapJsError(e)
         if (!err.obj.f.jstack) err.obj.f.jstack = this.javaStack(t)
         let at = pc
         for (;;) {
@@ -580,6 +611,7 @@ export class VM {
           const h = tr?.handlers.find((x) => x.type === null || this.isSubclass(err.obj.cls, this.cls(x.type)))
           if (h) { fr.exc = err.obj; fr.pc = h.addr; continue outer }
           t.frames.pop()
+          if (fr.onThrow) err = fr.onThrow(err)
           if (t.frames.length === stop) throw err
           at = t.frames[t.frames.length - 1].ipc
         }

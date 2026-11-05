@@ -41,13 +41,18 @@ export async function checkUpdate() {
   return ready
 }
 
-// checks on boot and every 30 minutes
+// every deployed change is an update: check on boot, every 2 minutes, and whenever droid comes
+// back to the front (tab shown, window focused, back online)
 export function watchUpdates() {
   const r = settings.get('ota.ready')
   if (r && String(r) <= BUILD) settings.set('ota.ready', false) // just updated
-  setTimeout(checkUpdate, 10000)
-  setInterval(checkUpdate, 30 * 60 * 1000)
-  addEventListener('online', () => checkUpdate())
+  let last = 0
+  const soon = () => { if (Date.now() - last < 15000) return; last = Date.now(); checkUpdate() }
+  setTimeout(soon, 5000)
+  setInterval(soon, 2 * 60 * 1000)
+  addEventListener('online', soon)
+  addEventListener('focus', soon)
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) soon() })
 }
 
 // restart into the deployed build: a fresh url skips the browser's page cache (github pages keeps

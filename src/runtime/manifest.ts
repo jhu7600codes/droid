@@ -1,7 +1,7 @@
 // manifest and package validation (dpk-spec.md sections 3, 4, 11, 12).
 // erasable typescript only: node runs this file directly for tools/pack-dpk.
 
-export const SPEC_VERSION = '0.1'
+export const SPEC_VERSION = '2.0'
 export const API_LEVEL = 19
 export const LIMITS = { total: 64 * 1024 * 1024, file: 20 * 1024 * 1024, files: 5000, extras: 256 * 1024, saved: 64 * 1024 }
 export const PERMISSIONS = ['network', 'storage', 'notifications', 'vibrate', 'clipboard', 'camera', 'microphone', 'location', 'fullscreen', 'background-audio', 'danen']

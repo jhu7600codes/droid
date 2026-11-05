@@ -1,4 +1,4 @@
-# droid sdk (dpk spec 0.1, droid 4.4, api 19)
+# droid sdk (dpk spec 2.0, droid 4.4, api 19)
 
 a dpk is a zip with `manifest.json` at the root. hello world is two files:
 

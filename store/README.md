@@ -20,4 +20,4 @@ the files live in the danen backend's `droid-store` bucket (see backend/supabase
 3. a maintainer reviews and merges; the pages build rebuilds the catalog and deploys it
 
 each listing has a report button in the store, which opens a pre-filled github issue. listings are taken down
-by removing the folder. no paid apps and no signing keys in dpk spec 0.1 (hashes only).
+by removing the folder. no paid apps and no signing keys in dpk spec 2.0 (hashes only).

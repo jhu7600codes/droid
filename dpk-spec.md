@@ -1,4 +1,4 @@
-# dpk spec (droid package) - draft 0.1
+# dpk spec (droid package) - 2.0
 
 this is the spec only: what a dpk is and how it behaves. the actual file format parser, the shell, the sdk code and the packer tool are implementation work and not covered here.
 
@@ -149,7 +149,7 @@ for `wasm` apps the same calls are exposed to the module through a documented im
 
 ## 10. arm runtime and apk conversion
 
-this section is part of the first release (droid 4.4 ships with dpk spec 0.1, conversion included. droid versions copy the android version they imitate, so droid 4.4 imitates android 4.4). it is built last because it is the biggest piece. the runtime layer is swappable, so the interpreter can later get a wasm-generating dynarec without changing the format:
+this section is part of the first release (droid 4.4 shipped with dpk spec 0.1 and is on 2.0 now, conversion included. droid versions copy the android version they imitate, so droid 4.4 imitates android 4.4). it is built last because it is the biggest piece. the runtime layer is swappable, so the interpreter can later get a wasm-generating dynarec without changing the format:
 
 - `type: converted` and `converted-from` are reserved in the manifest
 - converted apps use the same lifecycle, intents and permissions as native dpks
@@ -172,7 +172,7 @@ this section is part of the first release (droid 4.4 ships with dpk spec 0.1, co
 
 ## 12. versioning of this spec
 
-- the spec has a version (`dpk-spec 0.1`). manifests may declare `dpk` (spec version they target)
+- the spec has a version (`dpk-spec 2.0`). manifests may declare `dpk` (spec version they target)
 - the shell must refuse a manifest whose major spec version is higher than it supports
 - minor versions only add optional things
 

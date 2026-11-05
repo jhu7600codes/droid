@@ -36,8 +36,13 @@ export async function proxiedFetch(pkg: string, url: string, init: { method: str
 
 async function rawFetch(pkg: string, url: string, init: { method: string; headers: Record<string, string>; body?: ArrayBuffer | string }) {
   const opts: RequestInit = { method: init.method, headers: init.headers, body: init.method === 'GET' || init.method === 'HEAD' ? undefined : init.body, credentials: 'omit', mode: 'cors', redirect: 'follow' }
+  // plain http from an https page is blocked (mixed content): straight to the proxy. a direct try
+  // leaves out user-agent (it would force a cors preflight; the proxy sends it)
+  const mixed = location.protocol === 'https:' && /^http:/i.test(url)
   try {
-    return await fetch(url, opts)
+    if (mixed) throw new Error('mixed content')
+    const direct = Object.fromEntries(Object.entries(init.headers || {}).filter(([k]) => k.toLowerCase() !== 'user-agent'))
+    return await fetch(url, { ...opts, headers: direct })
   } catch {
     // cors refused (or offline): try the proxy
     await ensureProxyToken()
