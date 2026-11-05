@@ -229,5 +229,40 @@ export function registerReflect(vm: VM) {
     'getResourceAsStream(Ljava/lang/String;)Ljava/io/InputStream;': () => null,
   })
   const loader = new JObject(vm.cls('Ljava/lang/ClassLoader;'))
+
+  // ---------- dynamic proxies: a made-up class whose every interface method calls handler.invoke ----------
+  let proxyN = 0
+  const proxyClasses = new Map<string, JClass>()
+  const proxyClass = (ifaces: JClass[]): JClass => {
+    const k = ifaces.map((i) => i.name).join(',')
+    const had = proxyClasses.get(k)
+    if (had) return had
+    const name = `L$Proxy${proxyN++};`
+    const c: JClass = { name, super: vm.cls('Ljava/lang/reflect/Proxy;'), interfaces: ifaces, methods: new Map(), staticValues: {}, fieldTypes: {}, initialized: true, flags: PUBLIC | 0x10 }
+    const add = (m: JMethod) => {
+      if (c.methods.has(m.key) || m.name.startsWith('<') || m.flags & STATIC) return
+      c.methods.set(m.key, { ...m, cls: c, flags: PUBLIC, code: null, native: (vm2: VM, self: JObject, args: any[]) => {
+        const arr = m.params.length ? vm.newArray('[Ljava/lang/Object;', m.params.length) : null
+        m.params.forEach((p, i) => (arr!.data[i] = wrap(p, args[i])))
+        const r = vm.callVirtual(self.f.h, 'invoke(Ljava/lang/Object;Ljava/lang/reflect/Method;[Ljava/lang/Object;)Ljava/lang/Object;', [self, methodObj(m), arr])
+        return m.ret === 'V' ? undefined : unwrap(m.ret, r)
+      } } as JMethod)
+    }
+    for (const i of ifaces) for (const m of allMethods(i)) add(m)
+    for (const key of ['equals(Ljava/lang/Object;)Z', 'hashCode()I', 'toString()Ljava/lang/String;']) { const m = vm.findMethod(vm.cls(OBJ), key); if (m) add(m) }
+    vm.classes.set(name, c)
+    proxyClasses.set(k, c)
+    return c
+  }
+  def('Ljava/lang/reflect/Proxy;', OBJ, {
+    'newProxyInstance(Ljava/lang/ClassLoader;[Ljava/lang/Class;Ljava/lang/reflect/InvocationHandler;)Ljava/lang/Object;': (v, s, [, ifs, h]) => {
+      const o = new JObject(proxyClass([...(ifs?.data || [])].map((x: any) => ofClass(x))))
+      o.f.h = h
+      return o
+    },
+    'getProxyClass(Ljava/lang/ClassLoader;[Ljava/lang/Class;)Ljava/lang/Class;': (v, s, [, ifs]) => vm.classObject(proxyClass([...(ifs?.data || [])].map((x: any) => ofClass(x)))),
+    'isProxyClass(Ljava/lang/Class;)Z': (v, s, [c]) => (ofClass(c).super?.name === 'Ljava/lang/reflect/Proxy;' ? 1 : 0),
+    'getInvocationHandler(Ljava/lang/Object;)Ljava/lang/reflect/InvocationHandler;': (v, s, [o]) => o?.f.h ?? null,
+  })
   return { classFor, loader }
 }

@@ -3,6 +3,7 @@
 import { VM, JObject, JArray, JavaThrow, splitParams, type NativeFn } from './dalvik.ts'
 import { Block } from './threads.ts'
 import { registerMore } from './android-more.ts'
+import { registerWidgets } from './widgets.ts'
 import { registerGlJava } from './gl-java.ts'
 import { registerAudio, registerNet } from './audio.ts'
 import { jstr, jformat, box } from './java.ts'
@@ -271,6 +272,28 @@ export function registerAndroid(vm: VM, env: Env) {
     GridView: ['Landroid/widget/GridView;', 'ul', 'h-list an-list'],
     ProgressBar: ['Landroid/widget/ProgressBar;', 'span', 'h-progress'],
     View: ['Landroid/view/View;', 'div', 'an-view'],
+    AutoCompleteTextView: ['Landroid/widget/AutoCompleteTextView;', 'input', 'h-edit'],
+    MultiAutoCompleteTextView: ['Landroid/widget/AutoCompleteTextView;', 'input', 'h-edit'],
+    Spinner: ['Landroid/widget/Spinner;', 'div', 'an-spinner h-spinner'],
+    SeekBar: ['Landroid/widget/SeekBar;', 'input', 'an-seek'],
+    RatingBar: ['Landroid/widget/RatingBar;', 'input', 'an-seek'],
+    HorizontalScrollView: ['Landroid/widget/HorizontalScrollView;', 'div', 'an-hscroll'],
+    TabHost: ['Landroid/widget/TabHost;', 'div', 'an-linear'],
+    TabWidget: ['Landroid/widget/TabWidget;', 'div', 'h-tabs'],
+    ToggleButton: ['Landroid/widget/ToggleButton;', 'button', 'h-btn'],
+    ViewFlipper: ['Landroid/widget/ViewFlipper;', 'div', 'an-frame'],
+    ViewSwitcher: ['Landroid/widget/ViewSwitcher;', 'div', 'an-frame'],
+    TableLayout: ['Landroid/widget/TableLayout;', 'div', 'an-linear'],
+    TableRow: ['Landroid/widget/TableRow;', 'div', 'an-linear'],
+    RadioGroup: ['Landroid/widget/RadioGroup;', 'div', 'an-linear'],
+    WebView: ['Landroid/webkit/WebView;', 'div', 'an-view'],
+    VideoView: ['Landroid/widget/VideoView;', 'div', 'an-view'],
+    SurfaceView: ['Landroid/view/SurfaceView;', 'canvas', 'an-surface'],
+  }
+  // the framework widget a custom view class grows from (its nearest WIDGET ancestor)
+  const widgetFor = (c: any): [string, string, string] => {
+    for (let x = c; x; x = x.super) for (const w of Object.values(WIDGET)) if (w[0] === x.name) return w
+    return WIDGET.View
   }
   function applyGravity(e: HTMLElement, g: number) {
     const h = g & 7, vv = g & 0x70
@@ -278,17 +301,122 @@ export function registerAndroid(vm: VM, env: Env) {
     if (h === 5) e.style.textAlign = 'right'
     if (vv === 0x10 || g === 17) e.style.alignItems = 'center'
   }
-  function inflate(node: XmlNode, parent: JObject | null, parentHorizontal: boolean): JObject {
+  // style="@style/x": its items (and its parents') fill in attributes the tag does not set itself.
+  // style items are keyed by attribute id; names come from a fixed table of android attrs plus every
+  // attribute the app's own xml files use
+  const ATTR: Record<number, string> = {
+    0x010100f4: 'layout_width', 0x010100f5: 'layout_height', 0x01010181: 'layout_weight', 0x010100b3: 'layout_gravity', 0x010100af: 'gravity',
+    0x01010095: 'textSize', 0x01010097: 'textStyle', 0x01010098: 'textColor', 0x010100d4: 'background', 0x010100c4: 'orientation', 0x0101014f: 'text',
+    0x010100d5: 'padding', 0x010100d6: 'paddingLeft', 0x010100d7: 'paddingTop', 0x010100d8: 'paddingRight', 0x010100d9: 'paddingBottom',
+    0x010100f6: 'layout_margin', 0x010100f7: 'layout_marginLeft', 0x010100f8: 'layout_marginTop', 0x010100f9: 'layout_marginRight', 0x010100fa: 'layout_marginBottom',
+    0x0101016e: 'drawableTop', 0x0101016f: 'drawableBottom', 0x01010170: 'drawableLeft', 0x01010171: 'drawableRight', 0x01010172: 'drawablePadding',
+    0x010100dc: 'visibility', 0x010100d0: 'id', 0x01010119: 'src', 0x01010150: 'hint',
+  }
+  let attrNamesScanned = false
+  const attrName = (id: number) => {
+    if (!(id in ATTR) && !attrNamesScanned) {
+      attrNamesScanned = true
+      for (const [p, b] of env.files) if (/^res\/(layout|menu|xml|drawable|color)[^/]*\/.*\.xml$/.test(p)) {
+        try { const walk = (n: XmlNode) => { for (const a of n.attrs) if (a.resId && !(a.resId in ATTR)) ATTR[a.resId] = a.name; n.children.forEach(walk) }; walk(parseAxml(b)) } catch { /* not binary xml */ }
+      }
+    }
+    return ATTR[id]
+  }
+  const styleItems = (id: number, depth = 0): { name: string; value: XmlValue }[] => {
+    const e = env.res.entries.get(id >>> 0)
+    const val = e?.values.find((x) => x.map) ?? e?.values[0]
+    if (!val || depth > 10) return []
+    const own = (val.map || []).map((m) => ({ name: attrName(m.name), value: m.value })).filter((x) => x.name) as { name: string; value: XmlValue }[]
+    // parent: explicit, or implied by a dotted name (NavItem.Big -> NavItem)
+    let parentId = val.parent ?? 0
+    if (!parentId && e!.name.includes('.')) { const pn = e!.name.slice(0, e!.name.lastIndexOf('.')); for (const [k, x] of env.res.entries) if (x.type === 'style' && x.name === pn) { parentId = k; break } }
+    const up = parentId && (parentId >>> 24) === 0x7f ? styleItems(parentId, depth + 1) : []
+    return [...own, ...up.filter((u) => !own.some((o) => o.name === u.name))]
+  }
+  const withStyle = (node: XmlNode): XmlNode => {
+    const st = node.attrs.find((a) => a.name === 'style' && !a.ns)?.value ?? node.attrs.find((a) => a.name === 'style')?.value
+    if (!st || st.type !== T.REFERENCE) return node
+    const extra = styleItems(st.data).filter((x) => !node.attrs.some((a) => a.name === x.name))
+    return { ...node, attrs: [...node.attrs, ...extra.map((x) => ({ ns: 'http://schemas.android.com/apk/res/android', name: x.name, resId: 0, value: x.value }))] }
+  }
+  // a drawable resource as css background: images, colors, and xml drawables (selector: its plain
+  // state; shape: fill, corners, stroke; layer-list: the layers; inset / bitmap: their drawable)
+  const drawableCss = (id: number, depth = 0): string => {
+    if (depth > 6) return ''
+    const v = res(id)
+    if (!v) return ''
+    if (v.type >= T.COLOR_ARGB8 && v.type <= T.COLOR_RGB4) return cssColor(v.data)
+    if (v.type !== T.STRING) return ''
+    if (!v.str!.endsWith('.xml')) { const u = drawableUrl(id); return u ? `center / 100% 100% no-repeat url("${u}")` : '' }
+    const b = env.files.get(v.str!)
+    if (!b) return ''
+    let n: XmlNode
+    try { n = parseAxml(b) } catch { return '' }
+    return xmlDrawableCss(n, depth)
+  }
+  const refCss = (x: XmlValue | undefined, depth: number) => (!x ? '' : x.type === T.REFERENCE ? drawableCss(x.data, depth + 1) : x.type >= T.COLOR_ARGB8 && x.type <= T.COLOR_RGB4 ? cssColor(x.data) : '')
+  const xmlDrawableCss = (n: XmlNode, depth: number): string => {
+    if (n.tag === 'selector') {
+      const items = n.children.filter((c) => c.tag === 'item')
+      const plain = items.find((c) => !c.attrs.some((a) => a.name.startsWith('state_') && a.value.data)) ?? items[items.length - 1]
+      if (!plain) return ''
+      return refCss(attr(plain, 'drawable') ?? attr(plain, 'color'), depth) || (plain.children[0] ? xmlDrawableCss(plain.children[0], depth + 1) : '')
+    }
+    if (n.tag === 'shape') {
+      const solid = n.children.find((c) => c.tag === 'solid'), grad = n.children.find((c) => c.tag === 'gradient')
+      if (solid) return refCss(attr(solid, 'color'), depth)
+      if (grad) { const a = refCss(attr(grad, 'startColor'), depth), z = refCss(attr(grad, 'endColor'), depth); return a && z ? `linear-gradient(${(270 - (attr(grad, 'angle')?.data ?? 0)) % 360}deg, ${a}, ${z})` : '' }
+      return ''
+    }
+    if (n.tag === 'layer-list') return n.children.filter((c) => c.tag === 'item').map((c) => refCss(attr(c, 'drawable'), depth) || (c.children[0] ? xmlDrawableCss(c.children[0], depth + 1) : '')).filter(Boolean).reverse().join(', ')
+    if (n.tag === 'inset' || n.tag === 'bitmap' || n.tag === 'nine-patch' || n.tag === 'clip' || n.tag === 'scale') return refCss(attr(n, 'drawable') ?? attr(n, 'src'), depth)
+    if (n.tag === 'color') return refCss(attr(n, 'color'), depth)
+    return ''
+  }
+  // extra box styling from a shape drawable: corners and stroke
+  const shapeBox = (id: number, e: HTMLElement) => {
+    const v = res(id)
+    if (v?.type !== T.STRING || !v.str!.endsWith('.xml')) return
+    let n: XmlNode
+    try { n = parseAxml(env.files.get(v.str!)!) } catch { return }
+    if (n.tag === 'selector') { const it = n.children.find((c) => c.tag === 'item' && !c.attrs.some((a) => a.name.startsWith('state_') && a.value.data)); const d = it && attr(it, 'drawable'); if (d?.type === T.REFERENCE) return shapeBox(d.data, e); if (it?.children[0]) n = it.children[0]; else return }
+    if (n.tag !== 'shape') return
+    const corners = n.children.find((c) => c.tag === 'corners'), stroke = n.children.find((c) => c.tag === 'stroke')
+    if (corners) e.style.borderRadius = dimen(attr(corners, 'radius')) + 'px'
+    if (attr(n, 'shape')?.data === 1) e.style.borderRadius = '50%'
+    if (stroke) { const c = refCss(attr(stroke, 'color'), 0); if (c) e.style.border = `${dimen(attr(stroke, 'width')) || 1}px solid ${c}` }
+  }
+  function inflate(rawNode: XmlNode, parent: JObject | null, parentHorizontal: boolean): JObject {
+    const node = withStyle(rawNode)
     const tag = node.tag.replace(/^android\.(widget|view)\./, '')
     const w = WIDGET[tag]
     let v: JObject
+    const custom = node.tag === 'view' ? attrString(node, 'class') : node.tag
     if (w) v = newView(w[0], w[1], w[2])
-    else if (node.tag.includes('.') && vm.findDexClass('L' + node.tag.replace(/\./g, '/') + ';')) {
-      // the app's own view class: give it a box, it may draw nothing yet
-      v = vm.newObject('L' + node.tag.replace(/\./g, '/') + ';')
-      v.f.el = document.createElement('div')
-      v.f.el.className = 'an-view'
-      vm.missing.add('custom view ' + node.tag)
+    else if (custom && custom.includes('.') && vm.findDexClass('L' + custom.replace(/\./g, '/').replace(/\$/g, '$') + ';')) {
+      // the app's own view class: the element of the widget it extends, then its (Context, AttributeSet) constructor
+      const cname = 'L' + custom.replace(/\./g, '/') + ';'
+      const c = vm.cls(cname)
+      vm.init(c)
+      v = new JObject(c)
+      const [, t, k] = widgetFor(c)
+      const ce = document.createElement(t)
+      ce.className = k
+      if (t === 'canvas') ce.style.cssText = 'display:block;width:100%;height:100%;touch-action:none'
+      v.f.el = ce
+      ;(ce as any).__view = v
+      const set = new JObject(vm.cls('Landroid/util/AttributeSet;'))
+      set.f.node = node
+      const ctx = activityObj ?? appObj
+      const m2 = vm.findMethod(c, '<init>(Landroid/content/Context;Landroid/util/AttributeSet;)V')
+      const m3 = m2 ? null : vm.findMethod(c, '<init>(Landroid/content/Context;Landroid/util/AttributeSet;I)V')
+      const m1 = m2 || m3 ? null : vm.findMethod(c, '<init>(Landroid/content/Context;)V')
+      try {
+        if (m2) vm.invoke(m2, v, [ctx, set])
+        else if (m3) vm.invoke(m3, v, [ctx, set, 0])
+        else if (m1) vm.invoke(m1, v, [ctx])
+      } catch (er) { report(er) }
+      v.f.el = ce
     } else { vm.missing.add('widget ' + node.tag); v = newView('Landroid/view/View;', 'div', 'an-view') }
     const e = el(v)
     const id = attr(node, 'id')
@@ -314,8 +442,10 @@ export function registerAndroid(vm: VM, env: Env) {
       const m = node.attrs.find((a) => a.name === k)?.value
       if (m) (e.style as any)[css] = dimen(m) + 'px'
     }
-    const bg = valueColor(attr(node, 'background'))
+    const bgv = attr(node, 'background')
+    const bg = valueColor(bgv)
     if (bg) e.style.background = bg
+    else if (bgv?.type === T.REFERENCE) { const css = drawableCss(bgv.data); if (css) e.style.background = css; shapeBox(bgv.data, e) }
     const lg = attr(node, 'layout_gravity')
     if (lg && (lg.data === 17 || (lg.data & 7) === 1)) { e.style.alignSelf = 'center'; e.style.margin = 'auto' }
     const grav = attr(node, 'gravity')
@@ -347,6 +477,27 @@ export function registerAndroid(vm: VM, env: Env) {
     if (ts) e.style.fontSize = dimen(ts) + 'px'
     const tc = valueColor(attr(node, 'textColor'))
     if (tc) e.style.color = tc
+    else { const tcv = attr(node, 'textColor'); if (tcv?.type === T.REFERENCE) { const c = drawableCss(tcv.data); if (c && !c.includes('url(')) e.style.color = c } }
+    for (const [k, css] of [['paddingLeft', 'paddingLeft'], ['paddingTop', 'paddingTop'], ['paddingRight', 'paddingRight'], ['paddingBottom', 'paddingBottom'], ['paddingStart', 'paddingLeft'], ['paddingEnd', 'paddingRight']] as const) {
+      const pv = attr(node, k)
+      if (pv) (e.style as any)[css] = dimen(pv) + 'px'
+    }
+    const tsy = attr(node, 'textStyle')
+    if (tsy) { if (tsy.data & 1) e.style.fontWeight = 'bold'; if (tsy.data & 2) e.style.fontStyle = 'italic' }
+    if (attr(node, 'textAllCaps')?.data) e.style.textTransform = 'uppercase'
+    const ml = attr(node, 'maxLines'), sl = attr(node, 'singleLine')
+    if (sl?.data || ml?.data === 1) { e.style.whiteSpace = 'nowrap'; e.style.overflow = 'hidden'; e.style.textOverflow = 'ellipsis' }
+    else if (ml && ml.data > 1) { e.style.display = '-webkit-box'; (e.style as any).webkitLineClamp = String(ml.data); (e.style as any).webkitBoxOrient = 'vertical'; e.style.overflow = 'hidden' }
+    if (attr(node, 'ellipsize') && !e.style.overflow) { e.style.overflow = 'hidden'; e.style.textOverflow = 'ellipsis' }
+    const mh = attr(node, 'minHeight'), mw = attr(node, 'minWidth')
+    if (mh) e.style.minHeight = dimen(mh) + 'px'
+    if (mw) e.style.minWidth = dimen(mw) + 'px'
+    const cds = ['drawableLeft', 'drawableTop', 'drawableRight', 'drawableBottom'].map((k) => attr(node, k) ?? attr(node, k.replace('Left', 'Start').replace('Right', 'End')))
+    if (cds.some((x) => x?.type === T.REFERENCE)) {
+      const dpad = attr(node, 'drawablePadding')
+      if (dpad) v.f.cdPad = dimen(dpad) * env.density
+      try { vm.callVirtual(v, 'setCompoundDrawablesWithIntrinsicBounds(IIII)V', cds.map((x) => (x?.type === T.REFERENCE ? x.data | 0 : 0))) } catch (er) { report(er) }
+    }
     const src = attr(node, 'src')
     if (src && src.type === T.REFERENCE) (e as HTMLImageElement).src = drawableUrl(src.data)
     if (tag === 'ProgressBar') { e.append(Object.assign(document.createElement('span'), { className: 'bar' })) }
@@ -355,21 +506,47 @@ export function registerAndroid(vm: VM, env: Env) {
     if (oc) e.addEventListener('click', () => { try { vm.callVirtual(activityObj, `${oc}(Landroid/view/View;)V`, [v]) } catch (er) { report(er) } })
     const horizontal = tag === 'LinearLayout' && attr(node, 'orientation')?.data !== 1
     if (tag === 'LinearLayout') e.style.flexDirection = horizontal ? 'row' : 'column'
-    for (const c of node.children) e.append(el(inflate(c, v, horizontal)))
+    if (tag === 'SeekBar' || tag === 'RatingBar') { const r = e as HTMLInputElement; r.type = 'range'; r.min = '0'; r.max = String(attr(node, tag === 'RatingBar' ? 'numStars' : 'max')?.data ?? 100); r.value = String(attr(node, 'progress')?.data ?? 0) }
+    if (tag === 'HorizontalScrollView') { e.style.overflowX = 'auto'; e.style.display = 'flex' }
+    inflateChildren(node, v, horizontal)
     void parent
     return v
+  }
+  // children, with <include layout="@layout/x"/> and <merge> (whose children join the parent)
+  function inflateChildren(node: XmlNode, v: JObject, horizontal: boolean) {
+    const e = el(v)
+    for (const c of node.children) {
+      if (c.tag === 'include') {
+        const lay = attr(c, 'layout')
+        if (!lay) continue
+        const r = res(lay.data), xml = r?.type === T.STRING ? env.files.get(r.str!) : undefined
+        if (!xml) continue
+        const root = parseAxml(xml)
+        if (root.tag === 'merge') { inflateChildren(root, v, horizontal); continue }
+        const x = inflate(root, v, horizontal)
+        const iid = attr(c, 'id')
+        if (iid && iid.type === T.REFERENCE) { x.f.id = iid.data | 0; views.set(iid.data | 0, x) }
+        const vis = attr(c, 'visibility')
+        if (vis && vis.data === 2) el(x).style.display = 'none'
+        e.append(el(x))
+      } else if (c.tag === 'merge') inflateChildren(c, v, horizontal)
+      else if (c.tag === 'requestFocus') continue
+      else e.append(el(inflate(c, v, horizontal)))
+    }
   }
   const inflateId = (id: number, parent: JObject | null) => {
     const v = res(id)
     if (!v || v.type !== T.STRING) throw vm.error('Landroid/content/res/Resources$NotFoundException;', `layout 0x${(id >>> 0).toString(16)}`)
     const xml = env.files.get(v.str!)
     if (!xml) throw vm.error('Landroid/content/res/Resources$NotFoundException;', v.str!)
-    return inflate(parseAxml(xml), parent, false)
+    const root = parseAxml(xml)
+    if (root.tag === 'merge' && parent) { inflateChildren(root, parent, false); return parent }
+    return inflate(root, parent, false)
   }
   def('Landroid/view/LayoutInflater;', OBJ, {
     'from(Landroid/content/Context;)Landroid/view/LayoutInflater;': () => new JObject(vm.cls('Landroid/view/LayoutInflater;')),
-    'inflate(ILandroid/view/ViewGroup;)Landroid/view/View;': (v, s, [id, p]) => { const x = inflateId(id, p); if (p) el(p).append(el(x)); return x },
-    'inflate(ILandroid/view/ViewGroup;Z)Landroid/view/View;': (v, s, [id, p, attach]) => { const x = inflateId(id, p); if (p && attach) el(p).append(el(x)); return x },
+    'inflate(ILandroid/view/ViewGroup;)Landroid/view/View;': (v, s, [id, p]) => { const x = inflateId(id, p); if (p && x !== p) el(p).append(el(x)); return x },
+    'inflate(ILandroid/view/ViewGroup;Z)Landroid/view/View;': (v, s, [id, p, attach]) => { const x = inflateId(id, p); if (p && attach && x !== p) el(p).append(el(x)); return x },
   })
 
   // ---------- activity, context, intents ----------
@@ -489,12 +666,28 @@ export function registerAndroid(vm: VM, env: Env) {
   def('Landroid/util/DisplayMetrics;', OBJ, {})
   const resources = new JObject(vm.cls('Landroid/content/res/Resources;'))
 
+  // the window's content frame (android.R.id.content): a FrameLayout holding the activity's layout,
+  // which apps look up to wrap or rearrange their content
+  let contentFrame: JObject | null = null
   const setContent = (v: JObject) => {
     content = v
+    if (!contentFrame) {
+      contentFrame = new JObject(vm.cls('Landroid/widget/FrameLayout;'))
+      const f = document.createElement('div')
+      f.className = 'an-view an-content'
+      f.style.cssText = 'position:relative;width:100%;height:100%'
+      contentFrame.f.el = f
+      contentFrame.f.id = 0x1020002
+      ;(f as any).__view = contentFrame
+      views.set(0x1020002, contentFrame)
+    }
+    const f = el(contentFrame)
     env.root.innerHTML = ''
+    f.innerHTML = ''
     const e = el(v)
     e.classList.add('an-root')
-    env.root.append(e)
+    f.append(e)
+    env.root.append(f)
   }
 
   // bundles and intents keep their extras in a js object
@@ -963,6 +1156,7 @@ export function registerAndroid(vm: VM, env: Env) {
   // ---------- running an activity ----------
   // last: it extends classes defined (and patched) above
   registerMore(vm, env, { el, report, runSafe, activity: () => activityObj, app: () => appObj, prefsFor, noop, appInfo: () => appInfo() })
+  registerWidgets(vm, env, { el, report, activity: () => activityObj, res, drawableUrl, resString, valueText, cssColor, renderList, views, setText, getText, addMenuItem: (id, title, icon, order) => { const it = addItem(id, title); if (icon) it.f.icon = icon; it.f.order = order ?? 0; return it }, newView })
   registerGlJava(vm, env, report)
   registerAudio(vm)
   registerNet(vm)

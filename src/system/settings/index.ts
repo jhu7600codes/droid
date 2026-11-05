@@ -366,7 +366,7 @@ function settingsApp(ctx: ActivityContext): Activity {
       } },
       { type: 'item', title: 'API level', summary: '19' },
       { type: 'item', title: 'DPK spec', summary: '0.1' },
-      { type: 'item', title: 'Kernel version', summary: 'Danen shell, running in ' + (navigator.userAgent.match(/(Firefox|Chrome|Safari)\/[\d.]+/)?.[0] || 'a browser') },
+      { type: 'item', title: 'Kernel version', summary: `Droid Kernel ${ver}` },
       { type: 'item', title: 'Build number', summary: () => `KTU84Q.droid.${ver}`, onclick: () => {
         if (settings.get('dev.enabled')) return toast('No need, you are already a developer.')
         taps++
@@ -416,7 +416,7 @@ function settingsApp(ctx: ActivityContext): Activity {
     p.content.append(box)
     const draw = async () => {
       box.innerHTML = ''
-      box.append(h('img.upd-logo', { src: 'assets/brand/droid-logo.svg' }), h('div.upd-ver', {}, 'Droid 4.4'), h('div.upd-sub', {}, `build ${BUILD}`))
+      box.append(h('img.upd-logo', { src: 'assets/brand/droid-logo.svg' }), h('div.upd-ver', {}, 'Droid 4.4'), h('div.upd-sub', {}, `Droid Kernel ${BUILD}`))
       const ready = settings.get('ota.ready')
       if (ready) {
         box.append(h('div.upd-msg', {}, `System update ${ready} is available. Droid will restart to install it.`), pressable(h('button.h-btn', { onclick: () => applyUpdate() }, 'Restart & install')))

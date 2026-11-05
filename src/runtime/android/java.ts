@@ -2,6 +2,8 @@
 // keys are "name(params)return", exactly like dex method keys.
 import { VM, JObject, JArray, JavaThrow, type NativeFn } from './dalvik.ts'
 import { registerNio } from './nio.ts'
+import { registerJavaMore } from './javamore.ts'
+import { registerPlatform } from './platform.ts'
 
 const OBJ = 'Ljava/lang/Object;'
 export const jstr = (vm: VM, v: any): string => {
@@ -398,6 +400,8 @@ export function registerJava(vm: VM) {
     ...arraysAll(vm),
   })
   ;(vm as any).nio = registerNio(vm)
+  registerJavaMore(vm)
+  registerPlatform(vm)
 }
 
 // java.util.Arrays for every element type: copyOf, copyOfRange, fill, sort, equals, hashCode, toString

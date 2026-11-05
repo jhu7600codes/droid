@@ -46,7 +46,8 @@ for (const d of dexes) for (const c of d.classes) {
     if (!ins) continue
     for (let pc = 0; pc < ins.length;) {
       const op = ins[pc] & 0xff
-      if ((op >= 0x6e && op <= 0x72) || (op >= 0x74 && op <= 0x78)) { const r = d.methods[ins[pc + 1]]; const k = r.cls + '->' + r.key; uses.set(k, (uses.get(k) || 0) + 1) }
+      // (invoke-interface 0x72 / 0x78 is left out: it goes to the object's real class at run time)
+      if ((op >= 0x6e && op <= 0x71) || (op >= 0x74 && op <= 0x77)) { const r = d.methods[ins[pc + 1]]; const k = r.cls + '->' + r.key; uses.set(k, (uses.get(k) || 0) + 1) }
       pc += width(op, ins, pc)
     }
   }

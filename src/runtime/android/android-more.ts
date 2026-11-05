@@ -131,8 +131,8 @@ export function registerMore(vm: VM, env: Env, h: MoreHelpers) {
     root.addEventListener('pointerdown', (ev) => send(ev, 'down'))
     root.addEventListener('pointermove', (ev) => { if (pointers.has(ev.pointerId)) send(ev, 'move') })
     // a finger can end outside the root: listen on the window for the ends
-    addEventListener('pointerup', (ev) => send(ev, 'up'))
-    addEventListener('pointercancel', (ev) => send(ev, 'cancel'))
+    globalThis.addEventListener?.('pointerup', (ev: Event) => send(ev as PointerEvent, 'up'))
+    globalThis.addEventListener?.('pointercancel', (ev: Event) => send(ev as PointerEvent, 'cancel'))
   }
   // older callers: the root listener covers every view now
   const bindTouch = (s: JObject) => { void s; installTouch() }
@@ -168,6 +168,7 @@ export function registerMore(vm: VM, env: Env, h: MoreHelpers) {
     const len = (x: number) => (x === -1 ? '100%' : x === -2 ? 'auto' : x / dp + 'px')
     if (p.f.w != null) e.style.width = len(p.f.w)
     if (p.f.h != null) e.style.height = len(p.f.h)
+    if (p.f.weight > 0) { e.style.flex = `${p.f.weight} 1 0`; e.style.minWidth = e.style.minHeight = '0'; const row = e.parentElement?.style.flexDirection === 'row'; e.style[row ? 'width' : 'height'] = 'auto' }
     if (p.f.gravity != null && e.parentElement) { e.style.position = 'absolute'; const g = p.f.gravity; if ((g & 0x70) === 0x50) e.style.bottom = '0'; if ((g & 0x70) === 0x30) e.style.top = '0'; if ((g & 7) === 5) e.style.right = '0'; if ((g & 7) === 3) e.style.left = '0'; if ((g & 0x11) === 0x11) { e.style.left = '50%'; e.style.top = '50%'; e.style.transform = 'translate(-50%,-50%)' } }
   }
   // MotionEvent: pointer list, action, times
@@ -218,7 +219,7 @@ export function registerMore(vm: VM, env: Env, h: MoreHelpers) {
   const lp = (cls: string) => def(cls, 'Landroid/view/ViewGroup$LayoutParams;', {
     '<init>(II)V': (v, s, [w, hh]) => { s.f.w = w; s.f.h = hh },
     '<init>(III)V': (v, s, [w, hh, g]) => { s.f.w = w; s.f.h = hh; s.f.gravity = g },
-    '<init>(IIF)V': (v, s, [w, hh]) => { s.f.w = w; s.f.h = hh },
+    '<init>(IIF)V': (v, s, [w, hh, wt]) => { s.f.w = w; s.f.h = hh; s.f.weight = wt },
     '<init>(Landroid/view/ViewGroup$LayoutParams;)V': (v, s, [o]) => { s.f.w = o?.f.w; s.f.h = o?.f.h },
     'addRule(I)V': (v, s, [r]) => { (s.f.rules ||= []).push(r) }, 'addRule(II)V': (v, s, [r]) => { (s.f.rules ||= []).push(r) },
     'setMargins(IIII)V': noop,
@@ -377,7 +378,7 @@ export function registerMore(vm: VM, env: Env, h: MoreHelpers) {
     'onWindowFocusChanged(Z)V': noop, 'onTouchEvent(Landroid/view/MotionEvent;)Z': () => 0,
     // the content view first, then the activity's own onTouchEvent
     'dispatchTouchEvent(Landroid/view/MotionEvent;)Z': (v, s, [e]) => {
-      const content = (env.root.querySelector(':scope > .an-root') as any)?.__view as JObject | undefined
+      const content = (env.root.querySelector(':scope > .an-content') as any)?.__view as JObject | undefined
       if (content && dispatchTo(content, e)) return 1
       return vm.callVirtual(s, 'onTouchEvent(Landroid/view/MotionEvent;)Z', [e]) ? 1 : 0
     },
