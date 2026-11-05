@@ -40,3 +40,28 @@ export const danenApi = {
   push: (pkg: string | null, title: string, body: string, data?: unknown) => call('/push/send', 'POST', { pkg, title, body, data }),
   deleteAccount: () => call('/account/delete', 'POST'),
 }
+
+// the community side of the danen store: apps published from droid with a danen account
+export interface StoreUpload { dpk: { url: string; path: string }; icon: { url: string; path: string } | null }
+export const signedIn = () => !!settings.get('danen.session') && !!backendUrl()
+export const storeApi = {
+  apps: () => call('/store/apps') as Promise<{ apps: any[] }>,
+  mine: () => call('/store/mine') as Promise<{ apps: any[] }>,
+  upload: (b: { id: string; versioncode: number; size: number; icon?: string | null }) => call('/store/upload', 'POST', b) as Promise<StoreUpload>,
+  publish: (b: Record<string, unknown>) => call('/store/publish', 'POST', b),
+  unpublish: (id: string) => call('/store/unpublish', 'POST', { id }),
+  report: (id: string, reason: string) => call('/store/report', 'POST', { id, reason }),
+  // a file straight to the store's storage (signed upload url from upload())
+  async put(url: string, body: Blob, type: string, progress?: (f: number) => void) {
+    // xhr for upload progress (fetch has none)
+    await new Promise<void>((ok, fail) => {
+      const x = new XMLHttpRequest()
+      x.open('PUT', url)
+      x.setRequestHeader('content-type', type)
+      x.upload.onprogress = (e) => { if (e.lengthComputable) progress?.(e.loaded / e.total) }
+      x.onload = () => (x.status >= 200 && x.status < 300 ? ok() : fail(new Error(`the upload failed (${x.status})`)))
+      x.onerror = () => fail(new Error('the upload failed: check your connection'))
+      x.send(body)
+    })
+  },
+}
