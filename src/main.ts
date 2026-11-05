@@ -65,7 +65,7 @@ function showBootErrors(fatal: boolean) {
 }
 ;(window as any).droid_boot_errors = bootErrors
 const firstBoot = !settings.get('setup.done')
-boot(layers.boot, ready, { short: new URLSearchParams(location.search).has('fastboot') }).then(() => {
+boot(layers.boot, ready, { short: new URLSearchParams(location.search).has('fastboot'), anim: new URLSearchParams(location.search).get('bootanim') || (settings.get('boot.anim') as string) }).then(() => {
   if (firstBoot) wm.start({ action: 'setup' })
   else lockscreen.lock()
   // a tapped push notification opens its app (?open=<package>)

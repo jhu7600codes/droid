@@ -2,3 +2,5 @@ node_modules/
 dist/
 tools/import-aosp/.cache/
 *.log
+tools/aosp/.cache/
+__pycache__/

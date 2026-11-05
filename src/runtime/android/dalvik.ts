@@ -89,7 +89,9 @@ export class VM {
   log = (s: string) => console.log(s)
   steps = 0
 
-  addDex(d: Dex) { this.dexes.push(d) }
+  // class name -> where it is defined (the first dex that has it wins)
+  private dexIndex = new Map<string, { c: DexClass; d: Dex }>()
+  addDex(d: Dex) { this.dexes.push(d); for (const c of d.classes) if (!this.dexIndex.has(c.name)) this.dexIndex.set(c.name, { c, d }) }
   shim(name: string, c: ShimClass) {
     this.shims.set(name, c)
     this.missing.delete(name)
@@ -107,9 +109,15 @@ export class VM {
   }
 
   // ---------- classes ----------
-  findDexClass(name: string) {
-    for (const d of this.dexes) { const c = d.classes.find((x) => x.name === name); if (c) return { c, d } }
-    return null
+  findDexClass(name: string) { return this.dexIndex.get(name) ?? null }
+  // js implementations of `native` methods in dex classes (the android framework's natives)
+  dexNatives = new Map<string, NativeFn>()
+  registerNatives(cls: string, fns: Record<string, NativeFn>) {
+    for (const [k, f] of Object.entries(fns)) {
+      this.dexNatives.set(cls + '->' + k, f)
+      const m = this.classes.get(cls)?.methods.get(k)
+      if (m) m.native = f
+    }
   }
   cls(name: string): JClass {
     let c = this.classes.get(name)
@@ -126,7 +134,7 @@ export class VM {
       c.dex = fromDex.d
       c.interfaces = dc.interfaces.map((i) => this.cls(i))
       for (const m of [...dc.directMethods, ...dc.virtualMethods]) {
-        c.methods.set(m.ref.key, { cls: c, name: m.ref.name, key: m.ref.key, desc: m.ref.proto.desc, ret: m.ref.proto.ret, params: m.ref.proto.params, flags: m.flags, code: m.code, dex: fromDex.d })
+        c.methods.set(m.ref.key, { cls: c, name: m.ref.name, key: m.ref.key, desc: m.ref.proto.desc, ret: m.ref.proto.ret, params: m.ref.proto.params, flags: m.flags, code: m.code, dex: fromDex.d, native: m.flags & ACC.NATIVE ? this.dexNatives.get(name + '->' + m.ref.key) : undefined })
       }
       dc.staticFields.forEach((f, i) => { c!.fieldTypes[f.ref.name] = f.ref.type; c!.staticValues[f.ref.name] = i < dc.staticValues.length ? this.fromEncoded(dc.staticValues[i], f.ref.type) : defaultFor(f.ref.type[0]) })
       for (const f of dc.instanceFields) c.fieldTypes[f.ref.name] = f.ref.type

@@ -4,7 +4,7 @@
   "description": "",
   "scripts": {
     "dev": "vite",
-    "build": "node tools/pack-dpk/examples.mjs && vite build -c vite.android.config.ts && vite build && node tools/store/build-catalog.mjs",
+    "build": "node tools/pack-dpk/examples.mjs && vite build -c vite.android.config.ts && vite build && node tools/store/build-catalog.mjs && node tools/aosp/ci.mjs",
     "import-aosp": "node tools/import-aosp/import.mjs",
     "css": "node tools/import-aosp/css.mjs",
     "shots": "node tools/screens/shot.mjs",

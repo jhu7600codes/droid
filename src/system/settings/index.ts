@@ -88,6 +88,7 @@ function settingsApp(ctx: ActivityContext): Activity {
   const display = sub('Display', () => [
     { type: 'slider', title: 'Brightness', min: 0.3, max: 1, step: 0.05, get: () => settings.get('brightness'), set: (v) => settings.set('brightness', v), label: (v) => Math.round(v * 100) + '%' },
     { type: 'item', title: 'Wallpaper', onclick: () => wm.start({ action: 'set-wallpaper' }) },
+    { type: 'list', title: 'Boot animation', options: [['field', 'Field'], ['lens', 'Lens']], get: () => (settings.get('boot.anim') as string) || 'field', set: (v) => settings.set('boot.anim', v) },
     { type: 'check', title: 'Auto-rotate screen', get: () => !settings.get('rotation.lock'), set: (v) => settings.set('rotation.lock', !v) },
     { type: 'list', title: 'Font size', options: [['0.85', 'Small'], ['1', 'Normal'], ['1.15', 'Large'], ['1.3', 'Huge']], get: () => String(settings.get('font.scale')), set: (v) => settings.set('font.scale', +v) },
     { type: 'list', title: 'Display size', options: [['0.85', 'Small'], ['1', 'Default'], ['1.15', 'Large'], ['1.3', 'Largest']], get: () => String(settings.get('screen.scale')), set: (v) => settings.set('screen.scale', +v), summary: () => 'Makes everything bigger or smaller (changes density)' },
