@@ -1,4 +1,5 @@
-/* boot screen: ported from assets/brand/danen-intro.html (jhu's animation) */
+/* boot screen: ported from assets/brand/danen-intro.html (jhu's animation); the d now falls in
+   where the pigeon stood, and the flock leaves when it lands. the lens intro is below. */
 #intro { position: absolute; inset: 0; container-type: size; background: #000; cursor: pointer; }
   #shot, #mark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
   #shot { opacity: 0; }
@@ -11,38 +12,68 @@
   #wm { font-size: 8.5cqmin; letter-spacing: .03em; color: #e8eef5; line-height: 1.2; }
   #wm svg { width: 1.65em; height: 1.65em; vertical-align: -.47em; margin: 0 -.06em 0 .02em; }
 
-  #zoom { transform-box: view-box; transform-origin: 100px 52px; }
+  #zoom { transform-box: view-box; transform-origin: 86px 52px; }
   #glow { opacity: 0; }
-  .peck, .fly, .hop { transform-box: view-box; }
+  .peck, .fly, .drop { transform-box: view-box; }
+  .drop { opacity: 0; }
+  .land { transform-box: fill-box; transform-origin: 50% 100%; }
+  .field .d-dot { transform-box: fill-box; transform-origin: center; }
   .wing { transform-box: fill-box; transform-origin: 10% 90%; }
-  #eye { transform-box: fill-box; transform-origin: center; }
 
   #intro.run #shot { animation: shot-in 1.2s ease forwards, shot-out 1s 5.9s ease-in forwards; }
   #intro.run #zoom { animation: zoom 1.9s 3s cubic-bezier(.45, 0, .2, 1) forwards; }
   #intro.run #glow { animation: glow 1.6s 3.6s ease forwards; }
-  #intro.run .hop { animation: hop 1.2s 1.5s ease-in-out; }
+  /* the d falls (gravity: ease-in), lands with a squash, the birds take off at the thud */
+  #intro.run .drop { animation: drop .8s 1.4s cubic-bezier(.55, 0, 1, .45) forwards; }
+  #intro.run .land { animation: land .5s 2.2s ease-out; }
   #intro.run .peck { animation: peck 1.1s ease-in-out infinite; }
   #intro.run .fly { animation: fly var(--dur) var(--delay) cubic-bezier(.35, 0, .8, .6) forwards; }
   #intro.run .wing { animation: flap .16s var(--delay) infinite alternate; }
-  #intro.run #eye { animation: blink .3s 5.2s; }
+  #intro.field.run .d-dot { animation: dot-on .6s 4.9s ease-out; }
   #intro.run #mark { animation: mark-in 1.1s 6.5s ease-out forwards; }
   #intro.run #powered { animation: fade .8s 7.7s ease forwards; }
 
   @keyframes shot-in { to { opacity: 1; } }
   @keyframes shot-out { from { opacity: 1; filter: blur(0); } to { opacity: 0; filter: blur(28px); } }
-  @keyframes zoom { from { transform: translate(0, 0) scale(1); } to { transform: translate(-20px, -7px) scale(3.4); } }
+  @keyframes zoom { from { transform: translate(0, 0) scale(1); } to { transform: translate(-6px, -7px) scale(3.4); } }
   @keyframes glow { to { opacity: .16; } }
-  @keyframes hop { 0%, 50%, 100% { transform: translateY(0); } 25% { transform: translateY(-5px); } 75% { transform: translateY(-3px); } }
+  @keyframes drop { from { opacity: 1; transform: translateY(-60px); } to { opacity: 1; transform: none; } }
+  @keyframes land { 0% { transform: scale(1.12, .8); } 45% { transform: scale(.95, 1.06); } 100% { transform: none; } }
+  @keyframes dot-on { 0%, 100% { transform: none; } 40% { transform: scale(1.8); } }
   @keyframes peck { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(.7px); } }
   @keyframes fly { to { transform: translate(var(--dx), var(--dy)) scale(.5); opacity: 0; } }
   @keyframes flap { from { transform: scaleY(1); } to { transform: scaleY(-.6); } }
-  @keyframes blink { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(.1); } }
   @keyframes mark-in { from { opacity: 0; filter: blur(16px); transform: scale(.9); } to { opacity: 1; filter: blur(0); transform: none; } }
   @keyframes fade { to { opacity: 1; } }
 
   @media (prefers-reduced-motion: reduce) {
     #intro.run #shot { animation: none; opacity: 0; }
+    #intro.run #lens, #intro.run #lword, #intro.run #lby { animation: none; opacity: 1; }
+    #intro.run .lens * { animation: none !important; }
     #intro.run #mark, #intro.run #powered { animation: none; opacity: 1; filter: none; transform: none; }
   }
 #intro { z-index: 1000; transition: opacity .4s; }
 #intro.gone { opacity: 0; pointer-events: none; }
+
+/* lens intro: the d draws itself in, the lens spins up, the light comes on, the name fades in */
+#intro.lens { display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 50% 45%, #0d1a22, #000 70%); }
+  #lens { display: flex; flex-direction: column; align-items: center; gap: 2cqmin; }
+  #lens svg { width: 34cqmin; height: 34cqmin; overflow: visible; }
+  #lword { font-family: "roboto", "helvetica neue", arial, sans-serif; font-weight: 300; font-size: 8cqmin; letter-spacing: .14em; margin-right: -.14em; color: #e8eef5; opacity: 0; }
+  #lby { position: absolute; bottom: 6cqmin; font-family: "roboto", arial, sans-serif; font-size: 2.8cqmin; letter-spacing: .08em; color: #8a94a3; opacity: 0; }
+  .lens .d-ring { stroke-dasharray: 100; stroke-dashoffset: 100; transform-box: fill-box; transform-origin: center; transform: rotate(-90deg); }
+  .lens .d-stem { transform-box: fill-box; transform-origin: 50% 100%; transform: scaleY(0); }
+  .lens .d-bowl, .lens .d-arc, .lens .d-dot { opacity: 0; }
+  .lens .d-arc { transform-box: view-box; transform-origin: 42px 60px; }
+  .lens .d-dot { transform-box: fill-box; transform-origin: center; }
+  #intro.lens.run .d-ring { animation: ring .9s .3s cubic-bezier(.6, 0, .2, 1) forwards; }
+  #intro.lens.run .d-stem { animation: stem .5s 1s cubic-bezier(.2, .8, .2, 1.2) forwards; }
+  #intro.lens.run .d-bowl { animation: fade .5s 1.3s ease forwards; }
+  #intro.lens.run .d-arc { animation: fade .3s 1.5s ease forwards, spin 1.5s 1.5s cubic-bezier(.3, 0, .1, 1) forwards; }
+  #intro.lens.run .d-dot { animation: light .7s 2.5s ease-out forwards; }
+  #intro.lens.run #lword { animation: fade .8s 3s ease forwards; }
+  #intro.lens.run #lby { animation: fade .8s 3.4s ease forwards; }
+  @keyframes ring { to { stroke-dashoffset: 0; } }
+  @keyframes stem { to { transform: none; } }
+  @keyframes spin { from { transform: rotate(-540deg); } to { transform: none; } }
+  @keyframes light { 0% { opacity: 0; transform: scale(.2); filter: none; } 60% { opacity: 1; transform: scale(1.6); filter: drop-shadow(0 0 3px #33b5e5); } 100% { opacity: 1; transform: none; filter: drop-shadow(0 0 1.5px #33b5e5); } }

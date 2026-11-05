@@ -61,6 +61,7 @@ const DEFAULTS: Partial<SystemSettings> = {
   // the danen backend (supabase edge function); changing it needs developer options
   'danen.backend': 'https://kicqdpzodcwiuzrdriie.supabase.co/functions/v1/danen',
   'dev.enabled': false,
+  'boot.anim': 'field', // boot intro: field (jhu's scene) or lens
 }
 
 const KEY = 'droid.settings'

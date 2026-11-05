@@ -1,11 +1,22 @@
-// boot screen: the danen intro (pigeon scene, the big d, "powered by droid").
+// boot screen. two intros (settings > display > boot animation):
+//   field (default): jhu's scene. a flock in a field; the droid d falls from the sky and lands,
+//                    which startles the flock away; then the big d and "powered by droid".
+//   lens: the d alone, it draws itself in, its lens spins up and its light comes on.
 // the shell boots behind it. it ends when both the animation ('danen:intro-done')
 // and the system (ready promise) are finished.
 import './boot.css'
 
-const BODY = `<div id="intro">
+// the droid d (assets/brand/droid-d-icon.svg); ids get a prefix so two copies can share a page
+const dMark = (id: string, parts = false) => `<defs><linearGradient id="${id}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4fc3ef"/><stop offset="1" stop-color="#0099cc"/></linearGradient><radialGradient id="${id}s" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#1c3442"/><stop offset="1" stop-color="#0a1218"/></radialGradient></defs>
+  <circle${parts ? ' class="d-bowl"' : ''} cx="42" cy="60" r="22" fill="url(#${id}s)"/>
+  <path${parts ? ' class="d-arc"' : ''} d="M30 60 a12 12 0 0 1 12 -12" fill="none" stroke="#33b5e5" stroke-width="4" stroke-linecap="round" opacity=".9"/>
+  <circle${parts ? ' class="d-dot"' : ''} cx="42" cy="60" r="4.5" fill="#33b5e5"/>
+  <circle${parts ? ' class="d-ring"' : ''} cx="42" cy="60" r="26" fill="none" stroke="url(#${id}g)" stroke-width="8"${parts ? ' pathLength="100"' : ''}/>
+  <rect${parts ? ' class="d-stem"' : ''} x="64" y="10" width="8" height="80" rx="4" fill="url(#${id}g)"/>`
+
+const FIELD = `<div id="intro" class="field">
   <div id="shot">
-    <svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" role="img" aria-label="a pigeon in a field, the flock flies away">
+    <svg viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" role="img" aria-label="the droid d falls into a field and the flock flies away">
       <defs>
         <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0b1d2c"/><stop offset="1" stop-color="#2f6070"/></linearGradient>
         <linearGradient id="field" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2e6b2f"/><stop offset="1" stop-color="#143a1c"/></linearGradient>
@@ -16,20 +27,10 @@ const BODY = `<div id="intro">
         <path d="M0 44 Q30 36 60 42 T120 40 T160 43 V50 H0 Z" fill="#1e4a2c"/>
         <rect y="44" width="160" height="46" fill="url(#field)"/>
         <g id="flock"></g>
-        <circle id="glow" cx="100" cy="52" r="16" fill="#33b5e5"/>
-        <g class="hop">
-          <g transform="translate(88,42) scale(.24)">
-            <path d="M10 100 C8 84 20 70 40 68 L74 64 C92 66 96 84 96 100 Z" fill="#4a4f57"/>
-            <path d="M58 100 C60 86 74 76 92 80 L96 100 Z" fill="#0099cc"/>
-            <path d="M27 38 Q17 40 11 44 Q17 47.5 28 47 Z" fill="#ffbb33"/>
-            <path d="M26 38 C30 28 40 22 52 22 C62 22 68 30 69 40 C70 52 70 60 76 66 Q54 86 28 76 C34 66 34 54 28 47 Z" fill="#0099cc"/>
-            <path d="M26 38 C30 28 40 22 52 22 C62 22 68 30 69 40 C68 50 58 56 45 56 C36 55 30 51 28 47 Z" fill="#33b5e5"/>
-            <ellipse cx="27.5" cy="40.5" rx="3.2" ry="2.6" fill="#7fd4f0"/>
-            <path d="M28 76 Q54 86 76 66" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
-            <circle cx="45" cy="33" r="5" fill="#fff"/>
-            <g id="eye"><circle cx="45" cy="33" r="3.8" fill="#000"/><circle cx="46.2" cy="31.8" r="1.1" fill="#fff"/></g>
-          </g>
-        </g>
+        <circle id="glow" cx="86" cy="52" r="16" fill="#33b5e5"/>
+        <g class="drop"><g class="land">
+          <g transform="translate(78,40) scale(.2)">${dMark('fd', true)}</g>
+        </g></g>
         <path id="grass" fill="#0d2412"/>
       </g>
     </svg>
@@ -42,23 +43,15 @@ const BODY = `<div id="intro">
     </svg>
   </div>
 
-  <div id="powered"><div id="pb">powered by</div><div id="wm"><svg viewBox="0 0 100 100" role="img" aria-label="d">
-    <defs><clipPath id="bowl"><circle cx="42" cy="60" r="22"/></clipPath></defs>
-    <circle cx="42" cy="60" r="22" fill="#0a1218"/>
-    <g clip-path="url(#bowl)">
-      <g transform="translate(16.4,41.2) scale(.6)">
-        <path d="M27 38 Q17 40 11 44 Q17 47.5 28 47 Z" fill="#ffbb33"/>
-        <path d="M26 38 C30 28 40 22 52 22 C62 22 68 30 69 40 C70 52 70 60 76 66 L76 110 L28 110 C34 66 34 54 28 47 Z" fill="#0099cc"/>
-        <path d="M26 38 C30 28 40 22 52 22 C62 22 68 30 69 40 C68 50 58 56 45 56 C36 55 30 51 28 47 Z" fill="#33b5e5"/>
-        <ellipse cx="27.5" cy="40.5" rx="3.2" ry="2.6" fill="#7fd4f0"/>
-        <circle cx="45" cy="33" r="5" fill="#fff"/>
-        <circle cx="45" cy="33" r="3.8" fill="#000"/>
-        <circle cx="46.2" cy="31.8" r="1.1" fill="#fff"/>
-      </g>
-    </g>
-    <circle cx="42" cy="60" r="26" fill="none" stroke="#33b5e5" stroke-width="8"/>
-    <rect x="64" y="10" width="8" height="80" fill="#33b5e5"/>
-  </svg>roid</div></div>
+  <div id="powered"><div id="pb">powered by</div><div id="wm"><svg viewBox="0 0 100 100" role="img" aria-label="d">${dMark('wd')}</svg>roid</div></div>
+</div>`
+
+const LENS = `<div id="intro" class="lens">
+  <div id="lens">
+    <svg viewBox="0 0 100 100" role="img" aria-label="droid">${dMark('ld', true)}</svg>
+    <div id="lword">droid</div>
+  </div>
+  <div id="lby">by Danen</div>
 </div>`
 
 function pigeon() {
@@ -77,21 +70,25 @@ const birds = [
 ]
 
 // shows the intro inside parent; resolves when it is gone
-export function boot(parent: HTMLElement, ready: Promise<unknown>, opts: { short?: boolean } = {}) {
-  parent.insertAdjacentHTML('beforeend', BODY)
+export function boot(parent: HTMLElement, ready: Promise<unknown>, opts: { short?: boolean; anim?: string } = {}) {
+  const lens = opts.anim === 'lens'
+  parent.insertAdjacentHTML('beforeend', lens ? LENS : FIELD)
   const intro = parent.querySelector<HTMLElement>('#intro')!
-  intro.querySelector('#flock')!.innerHTML = birds.map((b, i) =>
-    `<g transform="translate(${b[0]},${b[1]}) scale(.8)"><g class="peck" style="animation-delay:${i * 0.13}s">` +
-    `<g class="fly" style="--dx:${b[2]}px;--dy:${b[3]}px;--delay:${2.9 + b[4]}s;--dur:${b[5]}s">${pigeon()}</g></g></g>`).join('')
-  let d = 'M0 90 L0 60'
-  for (let x = 0; x <= 160; x += 3) d += ` L${x + 1} ${56 + ((x * 37) % 5)} L${x + 3} 60`
-  intro.querySelector('#grass')!.setAttribute('d', d + ' L160 90 Z')
-
+  if (!lens) fieldScene(intro)
   intro.classList.add('run')
-  const length = opts.short ? 0 : 8800
+  const length = opts.short ? 0 : lens ? 4600 : 8800
   const animDone = new Promise<void>((ok) => setTimeout(() => { document.dispatchEvent(new CustomEvent('danen:intro-done')); ok() }, length))
   return Promise.all([animDone, ready]).then(() => new Promise<void>((ok) => {
     intro.classList.add('gone')
     setTimeout(() => { intro.remove(); ok() }, 450)
   }))
+}
+
+function fieldScene(intro: HTMLElement) {
+  intro.querySelector('#flock')!.innerHTML = birds.map((b, i) =>
+    `<g transform="translate(${b[0]},${b[1]}) scale(.8)"><g class="peck" style="animation-delay:${i * 0.13}s">` +
+    `<g class="fly" style="--dx:${b[2]}px;--dy:${b[3]}px;--delay:${2.3 + b[4]}s;--dur:${b[5]}s">${pigeon()}</g></g></g>`).join('')
+  let d = 'M0 90 L0 60'
+  for (let x = 0; x <= 160; x += 3) d += ` L${x + 1} ${56 + ((x * 37) % 5)} L${x + 3} 60`
+  intro.querySelector('#grass')!.setAttribute('d', d + ' L160 90 Z')
 }
