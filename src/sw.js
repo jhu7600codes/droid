@@ -21,6 +21,19 @@ self.addEventListener('message', (e) => { if (e.data === 'skip-waiting') self.sk
 
 self.addEventListener('fetch', (e) => {
   const req = e.request
+  // an .apk / .dpk shared to droid from another app (manifest share_target): keep it, open droid
+  if (req.method === 'POST' && new URL(req.url).pathname.endsWith('/share-target')) {
+    e.respondWith((async () => {
+      try {
+        const form = await req.formData()
+        const cache = await caches.open('droid-shared')
+        let n = 0
+        for (const f of form.getAll('file')) if (f && typeof f !== 'string') await cache.put(new Request(`./__shared/${Date.now()}-${n++}`), new Response(f))
+      } catch { /* nothing usable */ }
+      return Response.redirect(new URL('./?shared=1', self.registration.scope).href, 303)
+    })())
+    return
+  }
   if (req.method !== 'GET') return
   const url = new URL(req.url)
   if (url.origin !== location.origin) return

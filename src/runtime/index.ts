@@ -30,7 +30,38 @@ export async function startRuntime() {
   })
   const q = new URLSearchParams(location.search).get('install')
   if (q) fetch(q).then((r) => r.blob()).then((b) => openDpk(b)).catch(() => {})
+  takeShared()
+  // drop an .apk / .dpk anywhere on droid to install it
+  document.addEventListener('dragover', (e) => { if ([...(e.dataTransfer?.items || [])].some((x) => x.kind === 'file')) e.preventDefault() })
+  document.addEventListener('drop', (e) => {
+    const f = [...(e.dataTransfer?.files || [])].find(isPackage)
+    if (!f) return
+    e.preventDefault()
+    openDpk(f)
+  })
 }
+
+// lets the user pick an .apk / .dpk from the device and installs it. no type filter: iphones grey out
+// files whose type they do not know (.apk), and the installer looks at the content anyway
+export function pickPackage() {
+  const i = document.createElement('input')
+  i.type = 'file'
+  i.style.display = 'none'
+  i.addEventListener('change', () => { const f = i.files?.[0]; if (f) openDpk(f); i.remove() })
+  document.body.append(i)
+  i.click()
+  setTimeout(() => i.remove(), 10 * 60000)
+}
+// packages shared to droid from another app (android share sheet -> sw.js keeps them for us)
+export async function takeShared() {
+  if (!new URLSearchParams(location.search).has('shared')) return
+  history.replaceState(null, '', location.pathname)
+  try {
+    const cache = await caches.open('droid-shared')
+    for (const req of await cache.keys()) { const r = await cache.match(req); await cache.delete(req); if (r) openDpk(await r.blob()) }
+  } catch { /* nothing shared */ }
+}
+const isPackage = (f: File) => /\.(apk|dpk)$/i.test(f.name) || /android\.package-archive|x-dpk/.test(f.type)
 
 // hands a dpk to the package installer (shows permissions, then installs)
 export async function openDpk(file: Blob) {

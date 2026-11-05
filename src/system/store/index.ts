@@ -7,6 +7,7 @@ import { h, pressable, dialog, toast } from '../../shell/ui'
 import { kernel } from '../../shell/kernel'
 import { wm } from '../../shell/wm'
 import { img } from '../../shell/assets'
+import { pickPackage } from '../../runtime'
 import { parseDpk, install, getPackage } from '../../runtime/packages'
 import { sha256 } from '../../runtime/manifest'
 import { permissionText } from '../../runtime/bridge'
@@ -38,6 +39,7 @@ function storeApp(ctx: ActivityContext): Activity {
   const home = (el: HTMLElement) => {
     const p = page(el, { title: 'Danen Store', icon: 'assets/brand/droid-d-icon.svg' })
     p.menu([
+      { title: 'Install from file', icon: img('framework', 'ic_menu_upload'), always: true, onclick: () => pickPackage() },
       { title: 'Search', icon: img('framework', 'ic_menu_search_holo_dark'), always: true, onclick: () => search() },
       { title: 'My apps', onclick: () => stack.push((e2, pop) => myApps(e2, pop)) },
       { title: 'Publish an app', onclick: () => wm.start({ action: 'view', data: REPO + '/tree/main/store' }) },
