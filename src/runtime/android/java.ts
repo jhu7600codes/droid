@@ -97,6 +97,10 @@ export function registerJava(vm: VM) {
     'substring(II)Ljava/lang/String;': S((s, [a, b]) => s.substring(a, b)),
     'indexOf(Ljava/lang/String;)I': S((s, [x]) => s.indexOf(x)),
     'indexOf(I)I': S((s, [c]) => s.indexOf(jchar(c))),
+    'indexOf(II)I': S((s, [c, from]) => s.indexOf(jchar(c), Math.max(0, from))),
+    'indexOf(Ljava/lang/String;I)I': S((s, [x, from]) => s.indexOf(x, Math.max(0, from))),
+    'lastIndexOf(II)I': S((s, [c, from]) => (from < 0 ? -1 : s.lastIndexOf(jchar(c), from))),
+    'intern()Ljava/lang/String;': S((s) => s),
     'lastIndexOf(Ljava/lang/String;)I': S((s, [x]) => s.lastIndexOf(x)),
     'lastIndexOf(I)I': S((s, [c]) => s.lastIndexOf(jchar(c))),
     'contains(Ljava/lang/CharSequence;)Z': S((s, [x]) => (s.includes(jstr(vm, x)) ? 1 : 0)),
@@ -123,7 +127,29 @@ export function registerJava(vm: VM) {
     'valueOf(Ljava/lang/Object;)Ljava/lang/String;': (v, s, [x]) => jstr(vm, x),
     'valueOf([C)Ljava/lang/String;': (v, s, [a]) => String.fromCharCode(...(a.data as Uint16Array)),
     'format(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;': (v, s, [f, a]) => jformat(vm, f, a ? [...a.data] : []),
-    '<init>([C)V': () => {},
+    // strings are js strings: the "constructors" return the new string (the interpreter keeps the value)
+    '<init>()V': () => '',
+    '<init>(Ljava/lang/String;)V': (v, s, [x]) => x,
+    '<init>(Ljava/lang/StringBuilder;)V': (v, s, [x]) => jstr(vm, x),
+    '<init>(Ljava/lang/StringBuffer;)V': (v, s, [x]) => jstr(vm, x),
+    '<init>([C)V': (v, s, [a]) => charsToString(a.data, 0, a.data.length),
+    '<init>([CII)V': (v, s, [a, o, n]) => charsToString(a.data, o, n),
+    '<init>([III)V': (v, s, [a, o, n]) => String.fromCodePoint(...Array.prototype.slice.call(a.data, o, o + n)),
+    '<init>([B)V': (v, s, [a]) => bytesToString(a, 0, a.data.length),
+    '<init>([BLjava/lang/String;)V': (v, s, [a, cs]) => bytesToString(a, 0, a.data.length, cs),
+    '<init>([BII)V': (v, s, [a, o, n]) => bytesToString(a, o, n),
+    '<init>([BIILjava/lang/String;)V': (v, s, [a, o, n, cs]) => bytesToString(a, o, n, cs),
+    '<init>([BLjava/nio/charset/Charset;)V': (v, s, [a, cs]) => bytesToString(a, 0, a.data.length, cs?.f?.name),
+    '<init>([BIILjava/nio/charset/Charset;)V': (v, s, [a, o, n, cs]) => bytesToString(a, o, n, cs?.f?.name),
+    'getChars(II[CI)V': (v, s, [b, e, dst, at]) => { const t = s as unknown as string; for (let i = b; i < e; i++) dst.data[at + i - b] = t.charCodeAt(i) },
+  }
+  // big arrays: String.fromCharCode(...a) overflows the stack, so in chunks
+  const charsToString = (d: ArrayLike<number>, o: number, n: number) => { let out = ''; for (let i = 0; i < n; i += 8192) out += String.fromCharCode(...Array.prototype.slice.call(d, o + i, o + Math.min(n, i + 8192))); return out }
+  const bytesToString = (a: any, o: number, n: number, cs?: any) => {
+    const u = new Uint8Array((a.data as Int8Array).buffer, (a.data as Int8Array).byteOffset + o, n)
+    const name = String(cs ?? 'UTF-8').toUpperCase().replace('_', '-')
+    if (name === 'ISO-8859-1' || name === 'US-ASCII' || name === 'LATIN1') return charsToString(u, 0, n)
+    try { return new TextDecoder(name === 'UTF8' ? 'utf-8' : name).decode(u) } catch { return new TextDecoder().decode(u) }
   }
   Object.assign(vm.shims.get('Ljava/lang/String;')!.methods!, strStatic)
   def('Ljava/lang/CharSequence;', OBJ, { 'toString()Ljava/lang/String;': (v, s) => jstr(vm, s), 'length()I': (v, s) => jstr(vm, s).length })

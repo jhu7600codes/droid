@@ -807,14 +807,6 @@ export function registerMore(vm: VM, env: Env, h: MoreHelpers) {
   const fromBytes = (a: JArray, off = 0, n = a.data.length) => new TextDecoder().decode(new Uint8Array((a.data as Int8Array).buffer, (a.data as Int8Array).byteOffset + off, n))
   const toBytes = (s: string) => { const b = new TextEncoder().encode(s); const a = vm.newArray('[B', b.length); (a.data as Int8Array).set(new Int8Array(b.buffer)); return a }
   vm.shim('Ljava/lang/String;', { ...strShim, methods: { ...strShim.methods,
-    // strings are js strings: the "constructors" return the new string (the interpreter keeps the value)
-    '<init>([B)V': (v, s, [a]) => fromBytes(a),
-    '<init>([BLjava/lang/String;)V': (v, s, [a]) => fromBytes(a),
-    '<init>([BII)V': (v, s, [a, o, n]) => fromBytes(a, o, n),
-    '<init>([BIILjava/lang/String;)V': (v, s, [a, o, n]) => fromBytes(a, o, n),
-    '<init>(Ljava/lang/String;)V': (v, s, [x]) => x,
-    '<init>([C)V': (v, s, [a]) => String.fromCharCode(...a.data),
-    '<init>([CII)V': (v, s, [a, o, n]) => String.fromCharCode(...Array.prototype.slice.call(a.data, o, o + n)),
     'getBytes()[B': S((s) => toBytes(s)),
     'getBytes(Ljava/lang/String;)[B': S((s) => toBytes(s)),
     'indexOf(II)I': S((s, [c, from]) => s.indexOf(String.fromCharCode(c), from)),

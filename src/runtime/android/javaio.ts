@@ -210,6 +210,18 @@ export function registerJavaIo(vm: VM, fs: Vfs) {
     '<init>(Ljava/io/File;)V': (v, s, [f]) => { const b = fs.read(path(f)); if (!b) throw fnf(path(f)); fromText(s, dec.decode(b)) },
   })
   def('Ljava/io/StringReader;', 'Ljava/io/Reader;', { '<init>(Ljava/lang/String;)V': (v, s, [t]) => fromText(s, t ?? '') })
+  // PushbackReader: unread puts characters back in front of the position
+  const unread = (s: JObject, chars: string) => {
+    if (s.f.pos >= chars.length && s.f.text.slice(s.f.pos - chars.length, s.f.pos) === chars) s.f.pos -= chars.length
+    else { s.f.text = chars + s.f.text.slice(s.f.pos); s.f.pos = 0 }
+  }
+  def('Ljava/io/PushbackReader;', 'Ljava/io/Reader;', {
+    '<init>(Ljava/io/Reader;)V': (v, s, [r]) => fromText(s, textOf(r)),
+    '<init>(Ljava/io/Reader;I)V': (v, s, [r]) => fromText(s, textOf(r)),
+    'unread(I)V': (v, s, [c]) => unread(s, String.fromCharCode(c & 0xffff)),
+    'unread([C)V': (v, s, [a]) => unread(s, String.fromCharCode(...a.data)),
+    'unread([CII)V': (v, s, [a, o, n]) => unread(s, String.fromCharCode(...Array.prototype.slice.call(a.data, o, o + n))),
+  })
   def('Ljava/io/BufferedReader;', 'Ljava/io/Reader;', {
     '<init>(Ljava/io/Reader;)V': (v, s, [r]) => fromText(s, textOf(r)),
     '<init>(Ljava/io/Reader;I)V': (v, s, [r]) => fromText(s, textOf(r)),

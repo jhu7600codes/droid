@@ -30,7 +30,7 @@ SOURCES = [  # (repo, path in repo, where it goes)
     ('libcore', 'xml/src/main/java', 'libcore'),
 ]
 # from libcore only these packages: java.* / javax.* are droid's own
-LIBCORE_KEEP = ['libcore', 'dalvik', 'org/apache/harmony', 'org/xmlpull', 'org/kxml2']
+LIBCORE_KEEP = ['libcore', 'dalvik', 'org/apache/harmony', 'org/xmlpull', 'org/kxml2', 'org/xml/sax']
 EXCLUDE = [r'^sym_def_app_icon', r'android_logo', r'^ic_launcher_android', r'robot', r'google', r'market', r'you_?tube', r'platlogo', r'_android(\.|_|$)']
 # what the framework build starts from; javac pulls in everything they reach
 SEEDS = ['android/view/View', 'android/view/ViewGroup', 'android/view/LayoutInflater', 'android/view/WindowManagerGlobal',
