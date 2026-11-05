@@ -131,7 +131,7 @@
         var body = init.body
         return Promise.resolve(body instanceof Blob ? body.arrayBuffer() : body).then(function (b) {
           return call('net.fetch', [String(url), { method: init.method || 'GET', headers: init.headers || {}, body: b }])
-        }).then(function (r) { return new Response(r.body, { status: r.status, statusText: r.statusText, headers: r.headers }) })
+        }).then(function (r) { var nb = r.status === 101 || r.status === 204 || r.status === 205 || r.status === 304; return new Response(nb ? null : r.body, { status: r.status < 200 || r.status > 599 ? 200 : r.status, statusText: r.statusText, headers: r.headers }) })
       },
       websocket: function (url, protocols) { return new BridgeSocket(url, protocols) },
       state: function () { return call('net.state', []) },

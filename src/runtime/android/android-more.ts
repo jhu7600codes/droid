@@ -131,8 +131,8 @@ export function registerMore(vm: VM, env: Env, h: MoreHelpers) {
     root.addEventListener('pointerdown', (ev) => send(ev, 'down'))
     root.addEventListener('pointermove', (ev) => { if (pointers.has(ev.pointerId)) send(ev, 'move') })
     // a finger can end outside the root: listen on the window for the ends
-    addEventListener('pointerup', (ev) => send(ev, 'up'))
-    addEventListener('pointercancel', (ev) => send(ev, 'cancel'))
+    globalThis.addEventListener?.('pointerup', (ev: Event) => send(ev as PointerEvent, 'up'))
+    globalThis.addEventListener?.('pointercancel', (ev: Event) => send(ev as PointerEvent, 'cancel'))
   }
   // older callers: the root listener covers every view now
   const bindTouch = (s: JObject) => { void s; installTouch() }
@@ -168,6 +168,7 @@ export function registerMore(vm: VM, env: Env, h: MoreHelpers) {
     const len = (x: number) => (x === -1 ? '100%' : x === -2 ? 'auto' : x / dp + 'px')
     if (p.f.w != null) e.style.width = len(p.f.w)
     if (p.f.h != null) e.style.height = len(p.f.h)
+    if (p.f.weight > 0) { e.style.flex = `${p.f.weight} 1 0`; e.style.minWidth = e.style.minHeight = '0'; const row = e.parentElement?.style.flexDirection === 'row'; e.style[row ? 'width' : 'height'] = 'auto' }
     if (p.f.gravity != null && e.parentElement) { e.style.position = 'absolute'; const g = p.f.gravity; if ((g & 0x70) === 0x50) e.style.bottom = '0'; if ((g & 0x70) === 0x30) e.style.top = '0'; if ((g & 7) === 5) e.style.right = '0'; if ((g & 7) === 3) e.style.left = '0'; if ((g & 0x11) === 0x11) { e.style.left = '50%'; e.style.top = '50%'; e.style.transform = 'translate(-50%,-50%)' } }
   }
   // MotionEvent: pointer list, action, times
@@ -218,7 +219,7 @@ export function registerMore(vm: VM, env: Env, h: MoreHelpers) {
   const lp = (cls: string) => def(cls, 'Landroid/view/ViewGroup$LayoutParams;', {
     '<init>(II)V': (v, s, [w, hh]) => { s.f.w = w; s.f.h = hh },
     '<init>(III)V': (v, s, [w, hh, g]) => { s.f.w = w; s.f.h = hh; s.f.gravity = g },
-    '<init>(IIF)V': (v, s, [w, hh]) => { s.f.w = w; s.f.h = hh },
+    '<init>(IIF)V': (v, s, [w, hh, wt]) => { s.f.w = w; s.f.h = hh; s.f.weight = wt },
     '<init>(Landroid/view/ViewGroup$LayoutParams;)V': (v, s, [o]) => { s.f.w = o?.f.w; s.f.h = o?.f.h },
     'addRule(I)V': (v, s, [r]) => { (s.f.rules ||= []).push(r) }, 'addRule(II)V': (v, s, [r]) => { (s.f.rules ||= []).push(r) },
     'setMargins(IIII)V': noop,
@@ -377,7 +378,7 @@ export function registerMore(vm: VM, env: Env, h: MoreHelpers) {
     'onWindowFocusChanged(Z)V': noop, 'onTouchEvent(Landroid/view/MotionEvent;)Z': () => 0,
     // the content view first, then the activity's own onTouchEvent
     'dispatchTouchEvent(Landroid/view/MotionEvent;)Z': (v, s, [e]) => {
-      const content = (env.root.querySelector(':scope > .an-root') as any)?.__view as JObject | undefined
+      const content = (env.root.querySelector(':scope > .an-content') as any)?.__view as JObject | undefined
       if (content && dispatchTo(content, e)) return 1
       return vm.callVirtual(s, 'onTouchEvent(Landroid/view/MotionEvent;)Z', [e]) ? 1 : 0
     },
@@ -829,6 +830,64 @@ export function registerMore(vm: VM, env: Env, h: MoreHelpers) {
   def('Ljava/lang/AssertionError;', 'Ljava/lang/Error;', { '<init>()V': noop, '<init>(Ljava/lang/Object;)V': (v, s, [m]) => { s.f.message = jstr(vm, m) } })
   def('Ljava/lang/Double;', 'Ljava/lang/Number;', { 'isInfinite(D)Z': (v, s, [x]) => (x === Infinity || x === -Infinity ? 1 : 0) })
   def('Ljava/lang/Class;', OBJ, { 'asSubclass(Ljava/lang/Class;)Ljava/lang/Class;': (v, s) => s })
+  // java.util.Locale: language / country / variant; the default is the device's
+  const NAMES: Record<string, string> = { en: 'English', ru: 'русский', de: 'Deutsch', fr: 'français', es: 'español', it: 'italiano', ja: '日本語', ko: '한국어', zh: '中文', pt: 'português', uk: 'українська', pl: 'polski', tr: 'Türkçe', nl: 'Nederlands' }
+  const locale = (lang: string, country = '', variant = '') => obj('Ljava/util/Locale;', { lang: lang.toLowerCase(), country: country.toUpperCase(), variant })
+  const deviceCountry = (() => { const m = /-([A-Za-z]{2})$/.exec((globalThis as any).navigator?.language || ''); return m ? m[1].toUpperCase() : env.lang === 'en' ? 'US' : '' })()
+  let defaultLocale: JObject | null = null
+  const localeStr = (s: JObject) => [s.f.lang, s.f.country, s.f.variant].filter((x, i) => x || i === 0).join('_').replace(/_+$/, '')
+  def('Ljava/util/Locale;', OBJ, {
+    '<init>(Ljava/lang/String;)V': (v, s, [l]) => { Object.assign(s.f, { lang: String(l).toLowerCase(), country: '', variant: '' }) },
+    '<init>(Ljava/lang/String;Ljava/lang/String;)V': (v, s, [l, c]) => { Object.assign(s.f, { lang: String(l).toLowerCase(), country: String(c).toUpperCase(), variant: '' }) },
+    '<init>(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V': (v, s, [l, c, x]) => { Object.assign(s.f, { lang: String(l).toLowerCase(), country: String(c).toUpperCase(), variant: String(x) }) },
+    'getDefault()Ljava/util/Locale;': () => (defaultLocale ??= locale(env.lang || 'en', deviceCountry)),
+    'setDefault(Ljava/util/Locale;)V': (v, s, [l]) => { defaultLocale = l },
+    'getLanguage()Ljava/lang/String;': (v, s) => s.f.lang, 'getCountry()Ljava/lang/String;': (v, s) => s.f.country, 'getVariant()Ljava/lang/String;': (v, s) => s.f.variant,
+    'getISO3Language()Ljava/lang/String;': (v, s) => ({ en: 'eng', ru: 'rus', de: 'deu', fr: 'fra', es: 'spa', it: 'ita', ja: 'jpn', zh: 'zho', pt: 'por', uk: 'ukr' } as Record<string, string>)[s.f.lang] ?? s.f.lang,
+    'getISO3Country()Ljava/lang/String;': (v, s) => ({ US: 'USA', GB: 'GBR', RU: 'RUS', DE: 'DEU', FR: 'FRA', UA: 'UKR' } as Record<string, string>)[s.f.country] ?? s.f.country,
+    'getDisplayLanguage()Ljava/lang/String;': (v, s) => NAMES[s.f.lang] ?? s.f.lang,
+    'getDisplayLanguage(Ljava/util/Locale;)Ljava/lang/String;': (v, s) => NAMES[s.f.lang] ?? s.f.lang,
+    'getDisplayCountry()Ljava/lang/String;': (v, s) => s.f.country, 'getDisplayName()Ljava/lang/String;': (v, s) => NAMES[s.f.lang] ?? localeStr(s),
+    'toString()Ljava/lang/String;': (v, s) => localeStr(s),
+    'toLanguageTag()Ljava/lang/String;': (v, s) => [s.f.lang, s.f.country].filter(Boolean).join('-'),
+    'hashCode()I': (v, s) => [...localeStr(s)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) | 0, 0),
+    'equals(Ljava/lang/Object;)Z': (v, s, [o]) => (o instanceof JObject && o.f.lang === s.f.lang && o.f.country === s.f.country && o.f.variant === s.f.variant ? 1 : 0),
+    'getAvailableLocales()[Ljava/util/Locale;': () => { const a = vm.newArray('[Ljava/util/Locale;', 2); a.data[0] = locale('en', 'US'); a.data[1] = locale(env.lang || 'en', deviceCountry); return a },
+  })
+  const lc = vm.cls('Ljava/util/Locale;')
+  Object.assign(lc.staticValues, { ENGLISH: locale('en'), US: locale('en', 'US'), UK: locale('en', 'GB'), ROOT: locale(''), GERMAN: locale('de'), GERMANY: locale('de', 'DE'), FRENCH: locale('fr'), FRANCE: locale('fr', 'FR'), ITALIAN: locale('it'), JAPANESE: locale('ja'), JAPAN: locale('ja', 'JP'), KOREAN: locale('ko'), CHINESE: locale('zh'), CHINA: locale('zh', 'CN'), CANADA: locale('en', 'CA') })
+
+  // java.util.UUID: two 64-bit halves
+  const uuid = (hi: bigint, lo: bigint) => obj('Ljava/util/UUID;', { hi: BigInt.asIntN(64, hi), lo: BigInt.asIntN(64, lo) })
+  const u64 = (b: Uint8Array, o: number) => Array.from(b.slice(o, o + 8)).reduce((x: bigint, y: number) => (x << 8n) | BigInt(y), 0n)
+  const uuidStr = (s: JObject) => { const h = (BigInt.asUintN(64, s.f.hi).toString(16).padStart(16, '0') + BigInt.asUintN(64, s.f.lo).toString(16).padStart(16, '0')); return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}` }
+  def('Ljava/util/UUID;', OBJ, {
+    '<init>(JJ)V': (v, s, [hi, lo]) => { s.f.hi = BigInt.asIntN(64, hi); s.f.lo = BigInt.asIntN(64, lo) },
+    'randomUUID()Ljava/util/UUID;': () => {
+      const b = crypto.getRandomValues(new Uint8Array(16))
+      b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80 // version 4, ietf variant
+      return uuid(u64(b, 0), u64(b, 8))
+    },
+    'nameUUIDFromBytes([B)Ljava/util/UUID;': (v, s, [arr]) => {
+      // version 3 wants md5; a sha-256 based stand-in keeps names stable on this device
+      const src = new Uint8Array(arr.data.buffer, arr.data.byteOffset, arr.data.length)
+      let h1 = 0x811c9dc5n, h2 = 0xcbf29ce484222325n
+      for (const x of src) { h1 = BigInt.asUintN(64, (h1 ^ BigInt(x)) * 0x100000001b3n); h2 = BigInt.asUintN(64, (h2 ^ BigInt(x)) * 0x100000001b3n + 7n) }
+      const hi = (h1 & ~0xf000n) | 0x3000n, lo = (h2 & 0x3fffffffffffffffn) | 0x8000000000000000n
+      return uuid(hi, lo)
+    },
+    'fromString(Ljava/lang/String;)Ljava/util/UUID;': (v, s, [str]) => {
+      const h = String(str).replace(/-/g, '')
+      if (!/^[0-9a-fA-F]{32}$/.test(h)) throw vm.error('Ljava/lang/IllegalArgumentException;', 'Invalid UUID string: ' + str)
+      return uuid(BigInt('0x' + h.slice(0, 16)), BigInt('0x' + h.slice(16)))
+    },
+    'toString()Ljava/lang/String;': (v, s) => uuidStr(s),
+    'getMostSignificantBits()J': (v, s) => s.f.hi, 'getLeastSignificantBits()J': (v, s) => s.f.lo,
+    'version()I': (v, s) => Number((BigInt.asUintN(64, s.f.hi) >> 12n) & 0xfn),
+    'hashCode()I': (v, s) => { const x = BigInt.asUintN(64, BigInt(s.f.hi) ^ BigInt(s.f.lo)); return Number(BigInt.asIntN(32, (x >> 32n) ^ x)) },
+    'equals(Ljava/lang/Object;)Z': (v, s, [o]) => (o instanceof JObject && o.f.hi === s.f.hi && o.f.lo === s.f.lo ? 1 : 0),
+    'compareTo(Ljava/util/UUID;)I': (v, s, [o]) => (s.f.hi !== o.f.hi ? (s.f.hi < o.f.hi ? -1 : 1) : s.f.lo !== o.f.lo ? (s.f.lo < o.f.lo ? -1 : 1) : 0),
+  })
 
   // shared preferences extras
   const sp = h.prefsFor('__probe')

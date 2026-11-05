@@ -4,6 +4,7 @@
 // jumps to addresses in the trap area call js host functions (libc, liblog, jni).
 
 import { armDsp } from './dsp.ts'
+import type { Jit } from './jit.ts'
 import { execThumb } from './thumb.ts'
 import { FP, execVfp } from './vfp.ts'
 
@@ -126,6 +127,8 @@ export class CPU {
   mem: Memory
   host: { name: string; fn: HostFn }[] = []
   steps = 0
+  private nextCheck = 4096
+  private nextSample = 0x800000
   // set by run() when a host function asked to wait
   waiting: { block: import('../threads.ts').Block; lr: number } | null = null
   // when the current thread must wait inside a nested call (js -> arm), the runtime pumps other threads
@@ -209,6 +212,7 @@ export class CPU {
     this.fp.fpscr = f.fpscr
   }
   private loop(deadline: number): number {
+    let atTarget = true // the pc was jumped to (only branch targets start compiled blocks)
     for (;;) {
       const pc = this.r[15]
       if (pc >= TRAP_BASE) {
@@ -239,23 +243,33 @@ export class CPU {
         this.r[15] = lr & ~1
         continue
       }
-      if ((++this.steps & 4095) === 0) {
-        if ((this.steps & 0x7fffff) === 0) (globalThis as any).__armSample?.(this, pc) // see ARM_SAMPLE in native.ts
+      if (++this.steps >= this.nextCheck) {
+        this.nextCheck = this.steps + 4096
+        if (this.steps >= this.nextSample) { this.nextSample = this.steps + 0x800000; (globalThis as any).__armSample?.(this, pc) } // see ARM_SAMPLE in native.ts
         if (deadline !== Infinity) { if (performance.now() > deadline) return STOP.YIELD }
         else if (this.slowAt && performance.now() > this.slowAt) { this.slowAt += 3000; this.onSlow?.(pc | (this.thumb ? 1 : 0), this.r[14]) }
       }
+      let inBlock = false
       try {
-        if (this.thumb) { execThumb(this, pc); continue }
+        if (this.thumb) { execThumb(this, pc); atTarget = true; continue }
+        // compiled code for this address (hot blocks; see jit.ts)
+        if (this.jit && atTarget) {
+          const b = this.jit.get(pc)
+          if (b) { inBlock = true; this.steps += b.n * (1 + b.fn(this, this.r, this.mem.dv)) - 1; continue }
+        }
         const insn = this.mem.r32(pc)
         this.r[15] = pc + 4
         if (this.cond(insn >>> 28)) this.exec(insn, pc)
+        atTarget = this.r[15] !== pc + 4
       } catch (e) {
+        const at = inBlock ? this.r[15] : pc // a compiled block left the faulting instruction's address in r15
         const past = e instanceof RangeError && /bounds|offset/i.test(e.message)
         if (!(e instanceof MemFault) && !past) throw e
         const addr = e instanceof MemFault ? e.addr : 0xffffffff, write = e instanceof MemFault && e.write
-        this.r[15] = pc
-        if (this.onFault?.(addr, write, pc)) continue
-        throw new Error(`arm: segmentation fault, ${write ? 'write to' : 'read of'} 0x${addr.toString(16)} at pc 0x${pc.toString(16)}`)
+        this.r[15] = at
+        atTarget = true
+        if (this.onFault?.(addr, write, at)) continue
+        throw new Error(`arm: segmentation fault, ${write ? 'write to' : 'read of'} 0x${addr.toString(16)} at pc 0x${at.toString(16)}`)
       }
     }
   }
@@ -337,6 +351,10 @@ export class CPU {
     return res
   }
 
+  // one instruction with its condition (the jit hands it the ones it does not compile itself)
+  execOne(insn: number, pc: number) { if (this.cond(insn >>> 28)) this.exec(insn, pc) }
+  jit: Jit | null = null
+  jitIters = 0
   private exec(insn: number, pc: number) {
     const m = this.mem
     if ((insn & 0x0fff0fff) === 0x0e1d0f70) { this.r[(insn >>> 12) & 0xf] = this.tls; return } // mrc p15 c13: the tls pointer

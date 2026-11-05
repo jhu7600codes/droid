@@ -589,7 +589,7 @@ export function installLibc(nat: Native) {
   // ---------- syscall(n, ...) ----------
   def('syscall', () => {
     const n = R(0)
-    if (n === 0xf0002) return 0 // cacheflush: code is read fresh every time
+    if (n === 0xf0002) { c.jit?.invalidate(R(1), R(2)); return 0 } // cacheflush(start, end): compiled blocks there are stale
     if (n === 224) return nat.threads.tid() // gettid
     if (n === 158) return 0 // sched_yield
     if (n === 240) return 0 // futex: bionic's own locks are not used through here
@@ -598,8 +598,8 @@ export function installLibc(nat: Native) {
     nat.setErrno(38)
     return -1
   })
-  def('cacheflush', () => 0)
-  def('__clear_cache', () => 0)
+  def('cacheflush', () => { c.jit?.invalidate(R(0), R(1)); return 0 })
+  def('__clear_cache', () => { c.jit?.invalidate(R(0), R(1)); return 0 })
 
   // ---------- zlib: streaming inflate (inflate.ts), deflate as stored blocks ----------
   // z_stream: next_in 0, avail_in 4, total_in 8, next_out 12, avail_out 16, total_out 20, msg 24, state 28, ... adler 48

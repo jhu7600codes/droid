@@ -277,6 +277,7 @@ export function registerConcurrent(vm: VM) {
     try { f.f.value = f.f.callable ? vm.callVirtual(f.f.task, 'call()Ljava/lang/Object;') : (vm.callVirtual(f.f.task, 'run()V'), f.f.result ?? null) }
     catch (e) { if (e instanceof JavaThrow) f.f.error = e.obj; else throw e }
     f.f.done = true
+    f.f.onDone?.(f)
     scheduler.wake()
   }
   def('Ljava/util/concurrent/Future;', OBJ, {})
@@ -318,43 +319,45 @@ export function registerConcurrent(vm: VM) {
   def('Ljava/util/concurrent/Executor;', OBJ, {})
   def('Ljava/util/concurrent/ExecutorService;', OBJ, {}, { interfaces: ['Ljava/util/concurrent/Executor;'] })
   def('Ljava/util/concurrent/ScheduledExecutorService;', OBJ, {}, { interfaces: ['Ljava/util/concurrent/ExecutorService;'] })
+  // each task runs on its own green java thread (at most pool.f.max at once, in order), so a task
+  // can block on anything (locks, futures, network) like on a real worker thread
   const submit = (pool: JObject, f: JObject, delay = 0) => {
     if (pool.f.shutdown) throw vm.error('Ljava/util/concurrent/RejectedExecutionException;', 'shut down')
-    if (delay > 0) { setTimeout(() => { pool.f.queue.push(f); scheduler.wake() }, delay) } else pool.f.queue.push(f)
-    if (!pool.f.worker) startWorker(pool)
-    scheduler.wake()
+    if (delay > 0) setTimeout(() => { pool.f.queue.push(f); drain(pool) }, delay)
+    else { pool.f.queue.push(f); drain(pool) }
     return f
   }
-  const startWorker = (pool: JObject) => {
-    // a tiny java method whose body is js: loop forever taking tasks
-    const m = { cls: vm.cls('Ljava/util/concurrent/ThreadPoolExecutor;'), name: 'worker', key: 'worker()V', desc: '()V', ret: 'V', params: [], flags: 1, code: null,
-      native: () => { for (;;) { try { workerRun(pool); return } catch (e) { if (e === again) continue; throw e } } } } as any
-    const t = new JThread(vm, 'pool-' + (++pools) + '-thread-1')
-    pool.f.worker = t
-    // run the js loop inside the thread's own context: a one-frame "native" body that blocks via Block
-    t.frames = []
-    ;(t as any).jsBody = m
-    t.step = (msBudget: number) => stepJsThread(t, () => m.native(), msBudget)
-    scheduler.add(t)
+  const drain = (pool: JObject) => {
+    while (pool.f.active < pool.f.max && pool.f.queue.length) {
+      const f = pool.f.queue.shift() as JObject
+      if (f.f.cancelled) continue
+      launch(pool, f)
+    }
+    scheduler.wake()
+  }
+  const launch = (pool: JObject, f: JObject) => {
+    // a FutureTask the app made itself: run what it wraps, and finish that future
+    let target = f, task = f.f.task
+    if (task instanceof JObject && task.cls.name === 'Ljava/util/concurrent/FutureTask;' && !vm.findDexClass(task.cls.name)) { target = task; task = task.f.task }
+    const callable = target.f.callable
+    const m = vm.findMethod(vm.classOf(task), callable ? 'call()Ljava/lang/Object;' : 'run()V')
+    if (!m) { target.f.done = true; f.f.done = true; return }
+    pool.f.active++
+    const t = vm.startThread(`pool-${pool.f.n}-thread-${++pool.f.tn}`, m, task, [])
+    t.onDone = (err) => {
+      if (err) { if (err instanceof JavaThrow) target.f.error = err.obj; else console.warn('pool task', err) }
+      else target.f.value = callable ? t.lastValue ?? null : target.f.result ?? null
+      for (const x of new Set([target, f])) { if (x !== target) { x.f.value = target.f.value; x.f.error = target.f.error } x.f.done = true; x.f.onDone?.(x) }
+      pool.f.active--
+      drain(pool)
+    }
   }
   let pools = 0
-  // a green thread whose body is js (executor workers): runs until it blocks or ends
-  const stepJsThread = (t: JThread, body: () => void, msBudget: number) => {
-    void msBudget
-    const prev = vm.current
-    vm.current = t
-    t.busy = true
-    try {
-      if (t.block) { const b = t.block; t.block = null; try { b.finish() } catch (e) { if (e !== again) throw e } }
-      body()
-      t.state = 'done'
-    } catch (e) {
-      if (e instanceof Block) { t.block = e; t.state = 'blocked' }
-      else { t.state = 'done'; console.warn(`thread "${t.name}" died`, e instanceof JavaThrow ? e.obj.f.message : e) }
-    } finally { t.busy = false; vm.current = prev }
-  }
   const pool: Record<string, NativeFn> = {
-    '<init>(IIJLjava/util/concurrent/TimeUnit;Ljava/util/concurrent/BlockingQueue;)V': (v, s) => initPool(s),
+    '<init>(IIJLjava/util/concurrent/TimeUnit;Ljava/util/concurrent/BlockingQueue;)V': (v, s, [core, max]) => initPool(s, Math.max(core, Math.min(max, 64))),
+    '<init>(IIJLjava/util/concurrent/TimeUnit;Ljava/util/concurrent/BlockingQueue;Ljava/util/concurrent/ThreadFactory;)V': (v, s, [core, max]) => initPool(s, Math.max(core, Math.min(max, 64))),
+    'getActiveCount()I': (v, s) => s.f.active, 'getQueue()Ljava/util/concurrent/BlockingQueue;': () => null, 'setCorePoolSize(I)V': (v, s, [n]) => { s.f.max = Math.max(1, n); drain(s) }, 'allowCoreThreadTimeOut(Z)V': () => {},
+    'invokeAll(Ljava/util/Collection;)Ljava/util/List;': (v, s, [c]) => { const l = vm.newObject('Ljava/util/ArrayList;'); const fs = [...(vm.callVirtual(c, 'toArray()[Ljava/lang/Object;') as any).data].map((x: any) => submit(s, future(x, true))); for (const f of fs) vm.callVirtual(l, 'add(Ljava/lang/Object;)Z', [f]); const done = () => fs.every((f) => f.f.done); if (done()) return l; throw new Block(done, Infinity, 'invokeAll').then(() => l) },
     'execute(Ljava/lang/Runnable;)V': (v, s, [r]) => { submit(s, future(r, false)) },
     'submit(Ljava/lang/Runnable;)Ljava/util/concurrent/Future;': (v, s, [r]) => submit(s, future(r, false)),
     'submit(Ljava/util/concurrent/Callable;)Ljava/util/concurrent/Future;': (v, s, [c]) => submit(s, future(c, true)),
@@ -374,26 +377,48 @@ export function registerConcurrent(vm: VM) {
       throw new Block(() => done() || now() >= until, until, 'await termination').then(() => (done() ? 1 : 0))
     },
   }
-  const initPool = (s: JObject) => { s.f.queue = []; s.f.active = 0; s.f.shutdown = false; return s }
+  const initPool = (s: JObject, max = 64) => { s.f.queue = []; s.f.active = 0; s.f.shutdown = false; s.f.max = Math.max(1, max); s.f.n = ++pools; s.f.tn = 0; return s }
   const repeat = (s: JObject, r: JObject, delay: number, period: number) => {
     const f = future(r, false)
-    const tick = () => { if (s.f.shutdown || f.f.cancelled) return; s.f.queue.push(future(r, false)); if (!s.f.worker) startWorker(s); scheduler.wake(); setTimeout(tick, Math.max(1, period)) }
+    const tick = () => { if (s.f.shutdown || f.f.cancelled) return; s.f.queue.push(future(r, false)); drain(s); setTimeout(tick, Math.max(1, period)) }
     setTimeout(tick, Math.max(0, delay))
     return f
   }
   def('Ljava/util/concurrent/ThreadPoolExecutor;', OBJ, pool, { interfaces: ['Ljava/util/concurrent/ScheduledExecutorService;'] })
-  def('Ljava/util/concurrent/ScheduledThreadPoolExecutor;', 'Ljava/util/concurrent/ThreadPoolExecutor;', { '<init>(I)V': (v, s) => initPool(s) })
-  const newPool = () => initPool(new JObject(vm.cls('Ljava/util/concurrent/ScheduledThreadPoolExecutor;')))
+  def('Ljava/util/concurrent/ScheduledThreadPoolExecutor;', 'Ljava/util/concurrent/ThreadPoolExecutor;', { '<init>(I)V': (v, s, [n]) => initPool(s, n) })
+  const newPool = (max: number) => initPool(new JObject(vm.cls('Ljava/util/concurrent/ScheduledThreadPoolExecutor;')), max)
   def('Ljava/util/concurrent/Executors;', OBJ, {
-    'newSingleThreadExecutor()Ljava/util/concurrent/ExecutorService;': newPool,
-    'newSingleThreadExecutor(Ljava/util/concurrent/ThreadFactory;)Ljava/util/concurrent/ExecutorService;': newPool,
-    'newFixedThreadPool(I)Ljava/util/concurrent/ExecutorService;': newPool,
-    'newFixedThreadPool(ILjava/util/concurrent/ThreadFactory;)Ljava/util/concurrent/ExecutorService;': newPool,
-    'newCachedThreadPool()Ljava/util/concurrent/ExecutorService;': newPool,
-    'newCachedThreadPool(Ljava/util/concurrent/ThreadFactory;)Ljava/util/concurrent/ExecutorService;': newPool,
-    'newScheduledThreadPool(I)Ljava/util/concurrent/ScheduledExecutorService;': newPool,
-    'newSingleThreadScheduledExecutor()Ljava/util/concurrent/ScheduledExecutorService;': newPool,
+    'newSingleThreadExecutor()Ljava/util/concurrent/ExecutorService;': () => newPool(1),
+    'newSingleThreadExecutor(Ljava/util/concurrent/ThreadFactory;)Ljava/util/concurrent/ExecutorService;': () => newPool(1),
+    'newFixedThreadPool(I)Ljava/util/concurrent/ExecutorService;': (v, s, [n]) => newPool(n),
+    'newFixedThreadPool(ILjava/util/concurrent/ThreadFactory;)Ljava/util/concurrent/ExecutorService;': (v, s, [n]) => newPool(n),
+    'newCachedThreadPool()Ljava/util/concurrent/ExecutorService;': () => newPool(64),
+    'newCachedThreadPool(Ljava/util/concurrent/ThreadFactory;)Ljava/util/concurrent/ExecutorService;': () => newPool(64),
+    'newScheduledThreadPool(I)Ljava/util/concurrent/ScheduledExecutorService;': (v, s, [n]) => newPool(n),
+    'newSingleThreadScheduledExecutor()Ljava/util/concurrent/ScheduledExecutorService;': () => newPool(1),
   })
+  // ExecutorCompletionService: futures land in a queue as they finish
+  def('Ljava/util/concurrent/ExecutorCompletionService;', OBJ, {
+    '<init>(Ljava/util/concurrent/Executor;)V': (v, s, [e]) => { s.f.ex = e; s.f.done = [] },
+    '<init>(Ljava/util/concurrent/Executor;Ljava/util/concurrent/BlockingQueue;)V': (v, s, [e]) => { s.f.ex = e; s.f.done = [] },
+    'submit(Ljava/util/concurrent/Callable;)Ljava/util/concurrent/Future;': (v, s, [c]) => completing(s, future(c, true)),
+    'submit(Ljava/lang/Runnable;Ljava/lang/Object;)Ljava/util/concurrent/Future;': (v, s, [r, x]) => { const f = future(r, false); f.f.result = x; return completing(s, f) },
+    'take()Ljava/util/concurrent/Future;': (v, s) => { if (s.f.done.length) return s.f.done.shift(); throw interruptible(vm.current, () => s.f.done.length > 0, Infinity, 'completion', () => s.f.done.shift()) },
+    'poll()Ljava/util/concurrent/Future;': (v, s) => s.f.done.shift() ?? null,
+    'poll(JLjava/util/concurrent/TimeUnit;)Ljava/util/concurrent/Future;': (v, s, [t, u]) => {
+      if (s.f.done.length) return s.f.done.shift()
+      const until = now() + toMs(t, u)
+      throw interruptible(vm.current, () => s.f.done.length > 0 || now() >= until, until, 'completion', () => s.f.done.shift() ?? null)
+    },
+  }, { interfaces: ['Ljava/util/concurrent/CompletionService;'] })
+  def('Ljava/util/concurrent/CompletionService;', OBJ, {})
+  const completing = (s: JObject, f: JObject) => {
+    f.f.onDone = (x: JObject) => { s.f.done.push(x); scheduler.wake() }
+    if (s.f.ex?.f?.queue) return submit(s.f.ex, f)
+    // somebody else's executor: hand it the future as a runnable
+    vm.callVirtual(s.f.ex, 'execute(Ljava/lang/Runnable;)V', [f])
+    return f
+  }
   def('Ljava/util/concurrent/ScheduledFuture;', OBJ, {}, { interfaces: ['Ljava/util/concurrent/Future;'] })
   def('Ljava/util/concurrent/Callable;', OBJ, {})
   def('Ljava/util/concurrent/ThreadFactory;', OBJ, {})
