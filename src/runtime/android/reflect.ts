@@ -1,6 +1,6 @@
 // framework shim, part 4: java reflection (Class.forName, getMethod / invoke, fields, constructors,
 // java.lang.reflect.Array). engines like unity look things up by name all the time.
-import { VM, JObject, JArray, JavaThrow, type JClass, type JMethod, type NativeFn } from './dalvik.ts'
+import { VM, JObject, JArray, JavaThrow, JavaCall, type JClass, type JMethod, type NativeFn } from './dalvik.ts'
 import { box, unbox } from './java.ts'
 
 const OBJ = 'Ljava/lang/Object;'
@@ -35,6 +35,7 @@ export function registerReflect(vm: VM) {
   }
   const wrap = (t: string, v: any) => (t === 'V' ? null : t in BOXES ? box(vm, BOXES[t], v) : v)
   const argsOf = (m: JMethod, arr: JArray | null) => m.params.map((p, i) => unwrap(p, arr?.data[i] ?? null))
+  const ite = (e: JavaThrow) => { const x = new JObject(vm.cls('Ljava/lang/reflect/InvocationTargetException;')); x.f.target = x.f.cause = e.obj; x.f.message = e.obj.f.message; return new JavaThrow(x) }
   const call = (m: JMethod, self: any, args: any[]) => {
     try { return vm.invoke(m, self, args) }
     catch (e) {
@@ -161,6 +162,8 @@ export function registerReflect(vm: VM) {
       if (!isStatic && o == null) throw vm.error('Ljava/lang/NullPointerException;', 'null receiver')
       const target = isStatic ? m : vm.findMethod(vm.classOf(o), m.key) ?? m
       if (isStatic) vm.init(m.cls)
+      // a java method runs as a frame of this thread (it may wait: locks, network); natives directly
+      if (target.code && !target.native) throw new JavaCall(target, isStatic ? null : o, argsOf(m, a), (r) => wrap(m.ret, r), ite)
       return wrap(m.ret, call(target, isStatic ? null : o, argsOf(m, a)))
     },
     'getName()Ljava/lang/String;': (v, s) => s.f.m.name,
@@ -244,8 +247,11 @@ export function registerReflect(vm: VM) {
       c.methods.set(m.key, { ...m, cls: c, flags: PUBLIC, code: null, native: (vm2: VM, self: JObject, args: any[]) => {
         const arr = m.params.length ? vm.newArray('[Ljava/lang/Object;', m.params.length) : null
         m.params.forEach((p, i) => (arr!.data[i] = wrap(p, args[i])))
-        const r = vm.callVirtual(self.f.h, 'invoke(Ljava/lang/Object;Ljava/lang/reflect/Method;[Ljava/lang/Object;)Ljava/lang/Object;', [self, methodObj(m), arr])
-        return m.ret === 'V' ? undefined : unwrap(m.ret, r)
+        const key = 'invoke(Ljava/lang/Object;Ljava/lang/reflect/Method;[Ljava/lang/Object;)Ljava/lang/Object;'
+        const im = vm.findMethod(vm.classOf(self.f.h), key)
+        if (!im) throw vm.error('Ljava/lang/AbstractMethodError;', 'InvocationHandler.invoke')
+        // the handler runs as a frame of this thread, so it can wait (network calls behind a proxy)
+        throw new JavaCall(im, self.f.h, [self, methodObj(m), arr], (r) => (m.ret === 'V' ? undefined : unwrap(m.ret, r)))
       } } as JMethod)
     }
     for (const i of ifaces) for (const m of allMethods(i)) add(m)
