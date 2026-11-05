@@ -467,6 +467,7 @@ export function registerAospRes(vm: VM) {
     'nativeGetStyle(II)[I': () => null,
     'nativeDestroy(I)V': (v, s, [h]) => { if (h !== 1) blocks.delete(h) },
   })
+  return { assetBytes: (h: number) => { const a = assets.get(h); return a ? a.b.subarray(a.pos) : undefined } }
 }
 // keep the JArray import used for readers of this file
 export type { JArray }

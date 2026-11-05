@@ -112,13 +112,17 @@ export class VM {
   findDexClass(name: string) { return this.dexIndex.get(name) ?? null }
   // js implementations of `native` methods in dex classes (the android framework's natives)
   dexNatives = new Map<string, NativeFn>()
+  // keys are full method keys ('name(desc)ret') or just the name: then every overload of that name
+  // gets the function (it tells them apart by its arguments)
   registerNatives(cls: string, fns: Record<string, NativeFn>) {
     for (const [k, f] of Object.entries(fns)) {
       this.dexNatives.set(cls + '->' + k, f)
-      const m = this.classes.get(cls)?.methods.get(k)
-      if (m) m.native = f
+      const built = this.classes.get(cls)
+      if (!built) continue
+      for (const m of built.methods.values()) if (m.key === k || (!k.includes('(') && m.name === k && m.flags & ACC.NATIVE)) m.native = f
     }
   }
+  private dexNative(cls: string, key: string) { return this.dexNatives.get(cls + '->' + key) ?? this.dexNatives.get(cls + '->' + key.slice(0, key.indexOf('('))) }
   cls(name: string): JClass {
     let c = this.classes.get(name)
     if (c) return c
@@ -134,7 +138,7 @@ export class VM {
       c.dex = fromDex.d
       c.interfaces = dc.interfaces.map((i) => this.cls(i))
       for (const m of [...dc.directMethods, ...dc.virtualMethods]) {
-        c.methods.set(m.ref.key, { cls: c, name: m.ref.name, key: m.ref.key, desc: m.ref.proto.desc, ret: m.ref.proto.ret, params: m.ref.proto.params, flags: m.flags, code: m.code, dex: fromDex.d, native: m.flags & ACC.NATIVE ? this.dexNatives.get(name + '->' + m.ref.key) : undefined })
+        c.methods.set(m.ref.key, { cls: c, name: m.ref.name, key: m.ref.key, desc: m.ref.proto.desc, ret: m.ref.proto.ret, params: m.ref.proto.params, flags: m.flags, code: m.code, dex: fromDex.d, native: m.flags & ACC.NATIVE ? this.dexNative(name, m.ref.key) : undefined })
       }
       dc.staticFields.forEach((f, i) => { c!.fieldTypes[f.ref.name] = f.ref.type; c!.staticValues[f.ref.name] = i < dc.staticValues.length ? this.fromEncoded(dc.staticValues[i], f.ref.type) : defaultFor(f.ref.type[0]) })
       for (const f of dc.instanceFields) c.fieldTypes[f.ref.name] = f.ref.type

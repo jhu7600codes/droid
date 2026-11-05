@@ -5,13 +5,15 @@ import type { VM } from '../dalvik.ts'
 import { jstr } from '../java.ts'
 import { registerParcel } from './parcel.ts'
 import { registerAospRes } from './res.ts'
+import { registerAospGraphics } from './graphics.ts'
 
 const LEVEL = ['', '', 'V', 'D', 'I', 'W', 'E', 'A']
 
-export function registerAospNatives(vm: VM) {
+export function registerAospNatives(vm: VM, opts: { redraw?: () => void } = {}) {
   const text = (x: any) => (x == null ? '' : jstr(vm, x))
   registerParcel(vm)
-  registerAospRes(vm)
+  const res = registerAospRes(vm)
+  const gfx = registerAospGraphics(vm, { assetBytes: res.assetBytes, redraw: opts.redraw })
   registerIcu(vm, text)
 
   vm.registerNatives('Landroid/util/Log;', {
@@ -57,6 +59,7 @@ export function registerAospNatives(vm: VM) {
     'native_set(Ljava/lang/String;Ljava/lang/String;)V': (v, s, [k, x]) => { PROPS[text(k)] = text(x) },
     'native_add_change_callback()V': () => {},
   })
+  return { gfx }
 }
 
 // libcore's ICU on the browser's Intl
@@ -114,6 +117,8 @@ function registerIcu(vm: VM, text: (x: any) => string) {
     },
   })
 }
+
+export type Aosp = { gfx: ReturnType<typeof registerAospGraphics> }
 
 const PROPS: Record<string, string> = {
   'ro.build.version.sdk': '19', 'ro.build.version.release': '4.4.4', 'ro.build.id': 'KTU84Q', 'ro.product.model': 'Droid',

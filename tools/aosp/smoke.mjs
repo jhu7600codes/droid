@@ -49,5 +49,10 @@ ok('obtainStyledAttributes(Holo, textAppearanceLarge)', () => {
   const ta = V(th, 'obtainStyledAttributes(I[I)Landroid/content/res/TypedArray;', [0x01030042, attrs]) // TextAppearance.Large
   return [V(ta, 'getDimension(IF)F', [0, -1]), V(ta, 'getColorStateList(I)Landroid/content/res/ColorStateList;', [1]) ? 'csl' : null]
 })
-ok('Drawable from resources', () => { const d = V(res(), 'getDrawable(I)Landroid/graphics/drawable/Drawable;', [0x01080000]); return d?.cls.name })
+ok('Drawable from resources', () => { const d = V(res(), 'getDrawable(I)Landroid/graphics/drawable/Drawable;', [0x01080000]); return [d?.cls.name, V(d, 'getIntrinsicWidth()I')] })
+ok('9-patch button background', () => {
+  const d = V(res(), 'getDrawable(I)Landroid/graphics/drawable/Drawable;', [0x01080004]) // btn_default
+  const pad = N('Landroid/graphics/Rect;', '<init>()V', []); V(d, 'getPadding(Landroid/graphics/Rect;)Z', [pad])
+  return [d?.cls.name, V(pad, 'toShortString()Ljava/lang/String;')]
+})
 console.log(fails ? `${fails} FAILED` : 'ALL OK', '| missing:', [...vm.missing].slice(0, 30).join(' '))
