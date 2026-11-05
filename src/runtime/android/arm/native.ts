@@ -1,5 +1,6 @@
 // native side of the android runtime: memory layout, libc / liblog host functions, and jni
 // (JNIEnv / JavaVM tables whose entries trap into js and talk to the dalvik vm).
+import { Jit } from './jit.ts'
 import { CPU, Memory, STOP, RETURN_TRAP, SIGRETURN_TRAP, newContext, type HostFn, type Context } from './cpu.ts'
 import type { Block } from '../threads.ts'
 import { Threads, PThread, installPthreads } from './pthread.ts'
@@ -65,6 +66,8 @@ export class Native {
     // a fault in guest code: SIGSEGV to the program's handler (mono: NullReferenceException), on a
     // linux-shaped frame (siginfo, ucontext with the registers at the fault). no handler: a crash
     this.cpu.onFault = (addr, write, pc) => this.deliverFault(addr, write, pc)
+    // hot arm blocks run as compiled javascript (jit.ts); off with ?nojit for comparisons
+    if (!(globalThis as any).location?.search?.includes('nojit') && !(globalThis as any).process?.env?.NOJIT) this.cpu.jit = new Jit(this.cpu)
     // ByteBuffer.allocateDirect takes native memory from here on
     ;(vm as any).directAlloc = { alloc: (n: number) => this.mem.memalign(16, n), bytes: () => this.mem.u8 }
     // a native call that runs for seconds without returning says where it is (finding hangs)

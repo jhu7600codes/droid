@@ -88,6 +88,13 @@ function three(f: FP, insn: number, U: number, Vd: number, Vn: number, Vm: numbe
   // floating point (32-bit lanes)
   if (A >= 13 || (A === 12 && B === 1)) {
     const op = (insn >>> 21) & 1, s = f.s, n = bytes / 4
+    // the common ones straight on the registers: vadd vsub vmul vmla vmls (lane i only reads lane i)
+    if (A === 13 && (!U || (B && !op) || (!B && !U))) {
+      const pn = Vn * 2, pm = Vm * 2, pd = Vd * 2
+      if (!B && !U) { for (let i = 0; i < n; i++) s[pd + i] = op ? s[pn + i] - s[pm + i] : s[pn + i] + s[pm + i]; return true }
+      if (B && !U) { for (let i = 0; i < n; i++) { const p = Math.fround(s[pn + i] * s[pm + i]); s[pd + i] = op ? s[pd + i] - p : s[pd + i] + p } return true }
+      if (B && U && !op) { for (let i = 0; i < n; i++) s[pd + i] = s[pn + i] * s[pm + i]; return true }
+    }
     const a = s.slice(Vn * 2, Vn * 2 + n), b = s.slice(Vm * 2, Vm * 2 + n), d = s.slice(Vd * 2, Vd * 2 + n)
     const out = new Float32Array(n)
     const pair = (fn: (x: number, y: number) => number) => { const h = n / 2; for (let i = 0; i < h; i++) { out[i] = fn(a[2 * i], a[2 * i + 1]); out[h + i] = fn(b[2 * i], b[2 * i + 1]) } }
@@ -141,15 +148,20 @@ function three(f: FP, insn: number, U: number, Vd: number, Vn: number, Vm: numbe
     out.forEach((x, i) => { f.i64[Vd + i] = BigInt.asIntN(64, x) })
     return true
   }
-  const v = view(f, es, sgn), uv = view(f, es, false), sv = view(f, es, true)
-  const a = Array.from(v.subarray(at(Vn, es), at(Vn, es) + n) as any) as number[]
-  const b = Array.from(v.subarray(at(Vm, es), at(Vm, es) + n) as any) as number[]
-  const shs = Array.from(sv.subarray(at(Vn, es), at(Vn, es) + n) as any) as number[] // shift amounts (vshl family: by vn)
-  const d = Array.from(v.subarray(at(Vd, es), at(Vd, es) + n) as any) as number[]
+  const v = view(f, es, sgn) as Int32Array, uv = view(f, es, false) as Uint32Array, sv = view(f, es, true) as Int32Array
+  const pn = at(Vn, es), pm = at(Vm, es), pd = at(Vd, es)
+  // lane i of the result needs only lane i of the inputs, so writing in place is safe; the
+  // common ones go straight through
+  const k2 = A * 2 + B
+  if (k2 === 16) { for (let i = 0; i < n; i++) v[pd + i] = U ? v[pn + i] - v[pm + i] : v[pn + i] + v[pm + i]; return true } // vadd / vsub
+  if (k2 === 17) { for (let i = 0; i < n; i++) uv[pd + i] = (U ? uv[pn + i] === uv[pm + i] : (uv[pn + i] & uv[pm + i]) !== 0) ? 0xffffffff : 0; return true } // vceq / vtst
+  if (k2 === 19 && !U) { for (let i = 0; i < n; i++) v[pd + i] = mulLow(v[pn + i], v[pm + i], es); return true } // vmul
+  if (k2 === 18) { for (let i = 0; i < n; i++) v[pd + i] = U ? v[pd + i] - mulLow(v[pn + i], v[pm + i], es) : v[pd + i] + mulLow(v[pn + i], v[pm + i], es); return true } // vmla / vmls
   const bits = es * 8
-  const out = new Array<number>(n)
+  const out = OUT
   for (let i = 0; i < n; i++) {
-    const x = a[i], y = b[i]
+    const x = v[pn + i], y = v[pm + i]
+    const a = { [i]: x } as any, b = { [i]: y } as any, d = { [i]: v[pd + i] } as any, shs = { [i]: sv[pn + i] } as any
     let r: number
     switch (A * 2 + B) {
       case 0: r = shr(x + y, 1); break // vhadd
@@ -187,10 +199,10 @@ function three(f: FP, insn: number, U: number, Vd: number, Vn: number, Vm: numbe
     }
     out[i] = r
   }
-  const dst = at(Vd, es)
-  for (let i = 0; i < n; i++) v[dst + i] = out[i] as any
+  for (let i = 0; i < n; i++) v[pd + i] = out[i]
   return true
 }
+const OUT = new Float64Array(16) // scratch lanes
 const mulLow = (x: number, y: number, es: number) => (es === 4 ? Math.imul(x, y) : x * y)
 function pmul(x: number, y: number) { let r = 0; for (let i = 0; i < 8; i++) if ((y >>> i) & 1) r ^= x << i; return r & 0xff }
 

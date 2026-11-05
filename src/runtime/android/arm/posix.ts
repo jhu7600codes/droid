@@ -244,7 +244,7 @@ export function installPosix(nat: Native) {
     return a
   })
   def('mmap64', () => { const len = R(1), flags = R(3), fdn = S(0) | 0; const off = S(2); const a = m.memalign(4096, len); m.u8.fill(0, a, a + len); if (!(flags & 0x20) && fdn >= 0) { const f = fd(fdn); if (f) m.u8.set(f.data.subarray(off, off + len), a) } mapped.set(a, len); return a })
-  def('munmap', () => { if (mapped.has(R(0))) { mapped.delete(R(0)); m.free(R(0)) } return 0 })
+  def('munmap', () => { if (mapped.has(R(0))) { mapped.delete(R(0)); nat.cpu.jit?.invalidate(R(0), R(0) + R(1)); m.free(R(0)) } return 0 })
   def('mremap', () => { const old = R(0), n = R(2); const a = m.memalign(4096, n); m.u8.fill(0, a, a + n); m.u8.copyWithin(a, old, old + Math.min(R(1), n)); if (mapped.has(old)) { mapped.delete(old); m.free(old) } mapped.set(a, n); return a })
   def('mprotect', () => 0); def('madvise', () => 0); def('mlock', () => 0); def('munlock', () => 0); def('msync', () => 0)
   void EACCES
