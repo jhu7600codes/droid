@@ -33,6 +33,7 @@ export class Gles {
       this.contexts.set(s.canvas, gl)
       gl.getExtension('EXT_color_buffer_float')
       gl.getExtension('OES_texture_float_linear')
+      gl.getExtension('EXT_texture_filter_anisotropic')
     }
     this.gl = gl
     this.resize(s.width, s.height)

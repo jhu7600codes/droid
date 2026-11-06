@@ -23,4 +23,9 @@ PATCHES = [
                 }
                 flushBytes();''', '''                flushBytes();
                 mOutputStream.write(new String(mText, 0, mPos).getBytes("UTF-8"));'''),
+    # no mount service: droid's storage is always there
+    ('android/os/Environment.java', '''    public static String getStorageState(File path) {
+        final String rawPath;''', '''    public static String getStorageState(File path) {
+        if (path != null) return Environment.MEDIA_MOUNTED;
+        final String rawPath;'''),
 ]

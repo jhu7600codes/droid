@@ -281,6 +281,60 @@ export function registerPlatform(vm: VM) {
     'newEncoder()Ljava/nio/charset/CharsetEncoder;': (v, s) => obj('Ljava/nio/charset/CharsetEncoder;', { cs: s }),
     'newDecoder()Ljava/nio/charset/CharsetDecoder;': (v, s) => obj('Ljava/nio/charset/CharsetDecoder;', { cs: s }),
   })
+  // encoders / decoders over nio buffers: a whole char (pair) at a time, OVERFLOW when the bytes do not fit
+  const CR = 'Ljava/nio/charset/CoderResult;'
+  const result = (k: 'UNDERFLOW' | 'OVERFLOW') => (vm.cls(CR).staticValues[k] ??= obj(CR, { kind: k }))
+  def(CR, OBJ, {
+    'isUnderflow()Z': (v, s) => (s.f.kind === 'UNDERFLOW' ? 1 : 0), 'isOverflow()Z': (v, s) => (s.f.kind === 'OVERFLOW' ? 1 : 0),
+    'isError()Z': () => 0, 'isMalformed()Z': () => 0, 'isUnmappable()Z': () => 0, 'length()I': () => 0, 'toString()Ljava/lang/String;': (v, s) => s.f.kind,
+    'throwException()V': noop,
+  })
+  def('Ljava/nio/charset/CodingErrorAction;', OBJ, {}, { statics: { IGNORE: obj(OBJ), REPLACE: obj(OBJ), REPORT: obj(OBJ) } })
+  const encodeChars = (name: string, t: string) => vm.callVirtual(t, 'getBytes(Ljava/lang/String;)[B', [name]) as JArray
+  const self: NativeFn = (v, s) => s
+  def('Ljava/nio/charset/CharsetEncoder;', OBJ, {
+    'charset()Ljava/nio/charset/Charset;': (v, s) => s.f.cs,
+    'onMalformedInput(Ljava/nio/charset/CodingErrorAction;)Ljava/nio/charset/CharsetEncoder;': self,
+    'onUnmappableCharacter(Ljava/nio/charset/CodingErrorAction;)Ljava/nio/charset/CharsetEncoder;': self,
+    'replaceWith([B)Ljava/nio/charset/CharsetEncoder;': self, 'reset()Ljava/nio/charset/CharsetEncoder;': self,
+    'maxBytesPerChar()F': () => 4, 'averageBytesPerChar()F': () => 1.1,
+    'canEncode(C)Z': () => 1, 'canEncode(Ljava/lang/CharSequence;)Z': () => 1,
+    'flush(Ljava/nio/ByteBuffer;)Ljava/nio/charset/CoderResult;': () => result('UNDERFLOW'),
+    'encode(Ljava/nio/CharBuffer;Ljava/nio/ByteBuffer;Z)Ljava/nio/charset/CoderResult;': (v, s, [cb, bb]) => {
+      const name = s.f.cs.f.name
+      for (;;) {
+        const n = vm.callVirtual(cb, 'remaining()I', []) as number
+        if (n <= 0) return result('UNDERFLOW')
+        const pos = vm.callVirtual(cb, 'position()I', []) as number
+        let t = String.fromCharCode(vm.callVirtual(cb, 'get()C', []) as number)
+        const c = t.charCodeAt(0)
+        if (c >= 0xd800 && c < 0xdc00 && n > 1) t += String.fromCharCode(vm.callVirtual(cb, 'get()C', []) as number)
+        const b = encodeChars(name, t)
+        if ((vm.callVirtual(bb, 'remaining()I', []) as number) < b.data.length) { vm.callVirtual(cb, 'position(I)Ljava/nio/Buffer;', [pos]); return result('OVERFLOW') }
+        vm.callVirtual(bb, 'put([B)Ljava/nio/ByteBuffer;', [b])
+      }
+    },
+    'encode(Ljava/nio/CharBuffer;)Ljava/nio/ByteBuffer;': (v, s, [cb]) => {
+      let t = ''
+      while ((vm.callVirtual(cb, 'remaining()I', []) as number) > 0) t += String.fromCharCode(vm.callVirtual(cb, 'get()C', []) as number)
+      return vm.callStatic('Ljava/nio/ByteBuffer;', 'wrap([B)Ljava/nio/ByteBuffer;', [encodeChars(s.f.cs.f.name, t)])
+    },
+  })
+  def('Ljava/nio/charset/CharsetDecoder;', OBJ, {
+    'charset()Ljava/nio/charset/Charset;': (v, s) => s.f.cs,
+    'onMalformedInput(Ljava/nio/charset/CodingErrorAction;)Ljava/nio/charset/CharsetDecoder;': self,
+    'onUnmappableCharacter(Ljava/nio/charset/CodingErrorAction;)Ljava/nio/charset/CharsetDecoder;': self,
+    'replaceWith(Ljava/lang/String;)Ljava/nio/charset/CharsetDecoder;': self, 'reset()Ljava/nio/charset/CharsetDecoder;': self,
+    'maxCharsPerByte()F': () => 1, 'averageCharsPerByte()F': () => 1,
+    'flush(Ljava/nio/CharBuffer;)Ljava/nio/charset/CoderResult;': () => result('UNDERFLOW'),
+    'decode(Ljava/nio/ByteBuffer;)Ljava/nio/CharBuffer;': (v, s, [bb]) => {
+      const n = vm.callVirtual(bb, 'remaining()I', []) as number, a = vm.newArray('[B', n)
+      vm.callVirtual(bb, 'get([B)Ljava/nio/ByteBuffer;', [a])
+      const u = new Uint8Array((a.data as Int8Array).buffer, (a.data as Int8Array).byteOffset, n), cs = String(s.f.cs.f.name)
+      const t = cs === 'ISO-8859-1' || cs === 'US-ASCII' ? String.fromCharCode(...u) : new TextDecoder(cs.startsWith('UTF-16') ? cs.toLowerCase() : 'utf-8').decode(u)
+      return vm.callStatic('Ljava/nio/CharBuffer;', 'wrap(Ljava/lang/CharSequence;)Ljava/nio/CharBuffer;', [t])
+    },
+  })
   exClass('Ljava/nio/charset/UnsupportedCharsetException;', 'Ljava/lang/IllegalArgumentException;')
   exClass('Ljava/nio/charset/IllegalCharsetNameException;', 'Ljava/lang/IllegalArgumentException;')
   def('Ljava/nio/charset/StandardCharsets;', OBJ, {}, { statics: { UTF_8: charset('UTF-8'), US_ASCII: charset('US-ASCII'), ISO_8859_1: charset('ISO-8859-1'), UTF_16: charset('UTF-16'), UTF_16BE: charset('UTF-16BE'), UTF_16LE: charset('UTF-16LE') } })
