@@ -72,6 +72,7 @@ export function registerAospSystem(vm: VM, gfx: Gfx, host: HostSide) {
   interface Win { id: number; frame: [number, number, number, number]; bmp: Bmp | null; canvas: number; rx: number }
   const wins = new Map<number, Win>()
   const surfaces = new Map<number, number>() // surface native object -> window
+  const refs = new Map<number, number>() // extra references (a locked canvas holds one)
   let lastAdded = 0
   const win = (id: number) => { let w = wins.get(id); if (!w) wins.set(id, (w = { id, frame: [0, 0, 0, 0], bmp: null, canvas: 0, rx: 0 })); return w }
   vm.registerNatives('Ldroid/system/Host;', {
@@ -95,7 +96,7 @@ export function registerAospSystem(vm: VM, gfx: Gfx, host: HostSide) {
   })
   vm.registerNatives('Landroid/view/Surface;', {
     nativeIsValid: (v, s, [o]) => (surfaces.has(o) ? 1 : 0),
-    nativeRelease: (v, s, [o]) => { surfaces.delete(o) },
+    nativeRelease: (v, s, [o]) => { const n = (refs.get(o) ?? 1) - 1; if (n > 0) refs.set(o, n); else { refs.delete(o); surfaces.delete(o) } },
     nativeIsConsumerRunningBehind: () => 0,
     nativeLockCanvas: (v, s, [o, canvas, dirty]) => {
       const w = wins.get(surfaces.get(o) ?? -1)
@@ -103,10 +104,9 @@ export function registerAospSystem(vm: VM, gfx: Gfx, host: HostSide) {
       gfx.resetCanvas(w.canvas, w.bmp)
       canvas.f.mNativeCanvas = w.canvas
       if (dirty) { dirty.f.left = 0; dirty.f.top = 0; dirty.f.right = w.bmp.w; dirty.f.bottom = w.bmp.h }
-      // the lock is its own reference: unlockCanvasAndPost releases it, not the surface
-      const lock = nextH++
-      surfaces.set(lock, surfaces.get(o)!)
-      return lock
+      // like android, the lock holds a reference: unlockCanvasAndPost releases that one, not the surface
+      refs.set(o, (refs.get(o) ?? 1) + 1)
+      return o
     },
     nativeUnlockCanvasAndPost: (v, s, [o]) => { const w = wins.get(surfaces.get(o) ?? -1); if (w?.bmp) host.present(w.id, w.bmp, w.frame) },
     nativeCreateFromSurfaceTexture: () => nextH++, nativeCreateFromSurfaceControl: () => nextH++,

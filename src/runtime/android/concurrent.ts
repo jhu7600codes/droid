@@ -1,7 +1,7 @@
 // framework shim, part 5: java threads and java.util.concurrent on the green threads (threads.ts).
 // Thread.start makes a real (green) thread; sleep, join, wait / notify, locks, semaphores, latches,
 // blocking queues and executors block properly instead of returning at once.
-import { VM, JObject, JThread, JavaThrow, type NativeFn } from './dalvik.ts'
+import { VM, JObject, JThread, JavaThrow, JavaCall, Handled, type NativeFn } from './dalvik.ts'
 import { Block, scheduler, waitOn, notify, tryEnter, enterBlock, exit, holds, monitorOf } from './threads.ts'
 import { box, unbox } from './java.ts'
 
@@ -284,7 +284,16 @@ export function registerConcurrent(vm: VM) {
   def('Ljava/util/concurrent/FutureTask;', OBJ, {
     '<init>(Ljava/util/concurrent/Callable;)V': (v, s, [c]) => { s.f.task = c; s.f.callable = true },
     '<init>(Ljava/lang/Runnable;Ljava/lang/Object;)V': (v, s, [r, x]) => { s.f.task = r; s.f.callable = false; s.f.result = x },
-    'run()V': (v, s) => runFuture(s),
+    'run()V': (v, s) => {
+      // a java task runs as a frame of this thread, so it can wait (network, locks) like any java code
+      if (s.f.cancelled || s.f.done) return
+      const key = s.f.callable ? 'call()Ljava/lang/Object;' : 'run()V'
+      const target = s.f.task ? vm.findMethod(vm.classOf(s.f.task), key) : null
+      if (!target?.code || target.native) return runFuture(s)
+      const finish = () => { s.f.done = true; s.f.onDone?.(s); scheduler.wake() }
+      throw new JavaCall(target, s.f.task, [], (r) => { s.f.value = s.f.callable ? r : (s.f.result ?? null); finish(); return undefined },
+        (e) => { s.f.error = e.obj; finish(); return new Handled(undefined) })
+    },
     'get()Ljava/lang/Object;': (v, s) => { if (s.f.done) return result(s); throw interruptible(vm.current, () => s.f.done || s.f.cancelled, Infinity, 'future', () => result(s)) },
     'get(JLjava/util/concurrent/TimeUnit;)Ljava/lang/Object;': (v, s, [t, u]) => {
       if (s.f.done) return result(s)

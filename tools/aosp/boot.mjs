@@ -14,6 +14,8 @@ import { registerAospSystem } from '../../src/runtime/android/aosp/system.ts'
 import { apks } from '../../src/runtime/android/aosp/res.ts'
 import { listZip, readEntry } from '../../src/runtime/zip.ts'
 import { Native } from '../../src/runtime/android/arm/native.ts'
+import { registerNet } from '../../src/runtime/android/audio.ts'
+import { registerHttp } from '../../src/runtime/android/net.ts'
 
 const apkFile = process.argv[2] || new URL('../apk2dpk/test.apk', import.meta.url).pathname
 const seconds = Number(process.argv[3] || 8)
@@ -21,6 +23,7 @@ const unzip = async (buf) => { const ab = buf.buffer.slice(buf.byteOffset, buf.b
 
 const vm = new VM()
 registerJava(vm); registerCollections(vm); const vfs = new Vfs(); registerJavaIo(vm, vfs); registerReflect(vm); registerConcurrent(vm)
+registerNet(vm); registerHttp(vm, { net: { fetch: (u, i) => { if (process.env.NET) console.log('fetch', i?.method || 'GET', u); return fetch(u, i) } } }, () => vm.current === vm.main)
 const { gfx } = registerAospNatives(vm, { vfs })
 const fw = fs.readFileSync(new URL('./.cache/dex/classes.dex', import.meta.url))
 vm.addDex(parseDex(new Uint8Array(fw.buffer, fw.byteOffset, fw.length)))

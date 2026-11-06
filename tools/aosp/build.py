@@ -46,6 +46,12 @@ SEEDS = ['android/view/View', 'android/view/ViewGroup', 'android/view/LayoutInfl
          'android/webkit/WebView', 'android/widget/VideoView',
          'com/android/internal/policy/impl/Policy', 'android/app/ActivityThread', 'android/content/pm/PackageParser',
          'android/os/ServiceManagerNative', 'android/view/Choreographer', 'android/view/ViewRootImpl']
+SEED_DIRS = ['android/app', 'android/widget', 'android/view', 'android/view/animation', 'android/view/inputmethod', 'android/content',
+             'android/content/res', 'android/content/pm', 'android/os', 'android/text', 'android/text/style', 'android/text/method',
+             'android/text/format', 'android/util', 'android/graphics', 'android/graphics/drawable', 'android/graphics/drawable/shapes',
+             'android/preference', 'android/webkit', 'android/database', 'android/database/sqlite', 'android/net', 'android/animation',
+             'android/provider', 'android/transition', 'android/media', 'android/hardware', 'android/location', 'android/gesture',
+             'com/android/internal/widget', 'com/android/internal/view', 'com/android/internal/view/menu', 'com/android/internal/app']
 # the system services droid provides: an implementation that does nothing is generated for each
 # (tools/aosp/gen/GenDefaults.java); tools/aosp/system overrides what apps need
 SERVICES = ['android.app.IActivityManager=android.app.ActivityManagerNative', 'android.os.IServiceManager=android.os.ServiceManagerNative',
@@ -196,6 +202,7 @@ REWRITES = [
     (r'\bSystem\.log([EWI])\(', r'droid.Compat.log\1('),
     (r'\bInetAddress\.parseNumericAddress\(', 'droid.Compat.parseNumericAddress('),
     (r'\bInetAddress\.clearDnsCache\(\)', 'droid.Compat.noop()'),
+    (r'\bInetAddress\.isNumeric\(', 'droid.Compat.isNumeric('),
     (r'\bIntegralToString\.', 'droid.Compat.'),
     (r'\bByte\.toHexString\(', 'droid.Compat.byteToHexString('),
     (r'\b([\w.]+)\.eldest\(\)', r'droid.Compat.eldest(\1)'),
@@ -231,10 +238,25 @@ def compile_java():
             if os.path.exists(os.path.join(b, s + '.java')): return os.path.join(b, s + '.java')
         sys.exit('seed missing: ' + s)
     seeds = [find(s) for s in SEEDS]
+    # the public api apps link against: every class of these packages (ones that do not build are dropped)
+    optional = set()
+    for d in SEED_DIRS:
+        root = os.path.join(W, 'src', d)
+        for f in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+            if f.endswith('.java') and f != 'package-info.java': optional.add(os.path.join(root, f))
+    seeds += sorted(optional)
     # overlay files always go in (they replace system-side pieces the seeds may not reach directly)
     seeds += [os.path.join(dp, f) for dp, _, fs in os.walk(os.path.join(HERE, 'overlay')) for f in fs if f.endswith('.java')]
-    code, out = sh(['javac', '--release', '8', '-nowarn', '-proc:none', '-implicit:class', '-encoding', 'UTF-8', '-Xmaxerrs', '100000', '-sourcepath', path, '-d', cls, *sorted(set(seeds))])
-    open(os.path.join(CACHE, 'javac.log'), 'w').write(out)
+    for attempt in range(6):
+        code, out = sh(['javac', '--release', '8', '-nowarn', '-proc:none', '-implicit:class', '-encoding', 'UTF-8', '-Xmaxerrs', '100000', '-sourcepath', path, '-d', cls, *sorted(set(seeds))])
+        open(os.path.join(CACHE, 'javac.log'), 'w').write(out)
+        if not code: break
+        bad = {l.split(':')[0] for l in out.splitlines() if ': error:' in l}
+        drop = bad & optional
+        if not drop: break
+        print(f'  dropping {len(drop)} classes that do not build here:', ' '.join(sorted(os.path.relpath(x, os.path.join(W, 'src')) for x in drop))[:600])
+        seeds = [x for x in seeds if x not in drop]; optional -= drop
+        shutil.rmtree(cls, ignore_errors=True); os.makedirs(cls)
     errs = out.count(': error:')
     if code:
         print(out[:6000]); sys.exit(f'javac: {errs} errors (all in tools/aosp/.cache/javac.log)')

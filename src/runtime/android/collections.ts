@@ -327,7 +327,11 @@ export function registerCollections(vm: VM) {
   def('Ljava/util/IdentityHashMap;', 'Ljava/util/AbstractMap;', { ...map, '<init>()V': (v, s) => { mapInit(s); s.f.identity = true }, '<init>(I)V': (v, s) => { mapInit(s); s.f.identity = true } }, { interfaces: ['Ljava/util/Map;'] })
   def('Ljava/util/concurrent/ConcurrentHashMap;', 'Ljava/util/AbstractMap;', map, { interfaces: ['Ljava/util/concurrent/ConcurrentMap;'] })
   def('Ljava/util/concurrent/ConcurrentSkipListMap;', 'Ljava/util/AbstractMap;', { ...map, '<init>()V': (v, s) => { mapInit(s); s.f.sorted = true } }, { interfaces: ['Ljava/util/concurrent/ConcurrentMap;', 'Ljava/util/NavigableMap;'] })
-  def('Ljava/util/EnumMap;', 'Ljava/util/AbstractMap;', { ...map, '<init>(Ljava/lang/Class;)V': (v, s) => { mapInit(s); s.f.sorted = true; s.f.cmp = null } }, { interfaces: ['Ljava/util/Map;'] })
+  def('Ljava/util/EnumMap;', 'Ljava/util/AbstractMap;', {
+    ...map, '<init>(Ljava/lang/Class;)V': (v, s) => { mapInit(s); s.f.sorted = true; s.f.cmp = null },
+    // javac's typed signature for EnumMap.put
+    'put(Ljava/lang/Enum;Ljava/lang/Object;)Ljava/lang/Object;': map['put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;'],
+  }, { interfaces: ['Ljava/util/Map;'] })
   // TreeMap: sorted by key (comparator or compareTo); navigation by sorting the keys
   const sortedKeys = (s: JObject) => entries(s).map((e) => e[0])
   const nav = (s: JObject, k: any, pick: (c: number) => boolean, from: 'first' | 'last') => { const c = cmpOf(s.f.cmp); const ks = sortedKeys(s).filter((x) => pick(c(x, k))); return ks.length ? (from === 'first' ? ks[0] : ks[ks.length - 1]) : null }
