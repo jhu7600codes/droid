@@ -516,14 +516,15 @@ export class VM {
               const o = obj(r[B])
               if (o == null) throw npe()
               const f = dex.fields[ins[pc + 1]]
-              const v = o.f[f.name]
+              const v = o.f[(f as any).k ?? this.fieldKey(f)]
               r[A] = v === undefined ? defaultFor(f.type[0]) : v
               pc += 2; break
             }
             case 0x59: case 0x5a: case 0x5b: case 0x5c: case 0x5d: case 0x5e: case 0x5f: {
               const o = obj(r[B])
               if (o == null) throw npe()
-              o.f[dex.fields[ins[pc + 1]].name] = op === 0x5b ? obj(r[A]) : r[A]
+              const f = dex.fields[ins[pc + 1]]
+              o.f[(f as any).k ?? this.fieldKey(f)] = op === 0x5b ? obj(r[A]) : r[A]
               pc += 2; break
             }
             case 0x60: case 0x61: case 0x62: case 0x63: case 0x64: case 0x65: case 0x66: {
@@ -642,6 +643,18 @@ export class VM {
         }
       }
     }
+  }
+  // where an instance field lives in o.f: its name, unless a superclass declares the same name
+  // (a subclass's field hides it in java, they are two fields): then name@DeclaringClass
+  fieldKey(f: { cls: string; name: string; type: string }): string {
+    let key = f.name
+    try {
+      let c: JClass | null = this.cls(f.cls)
+      while (c && !c.dexClass?.instanceFields.some((x) => x.ref.name === f.name)) c = c.super
+      if (c) for (let up = c.super; up; up = up.super) if (up.dexClass?.instanceFields.some((x) => x.ref.name === f.name)) { key = f.name + '@' + c.name; break }
+    } catch { /* unknown class: plain name */ }
+    ;(f as any).k = key
+    return key
   }
   // "pkg.Class.method" of the running frames, innermost first
   javaStack(t: JThread = this.current) { return t.frames.slice(-12).reverse().map((f) => `${f.m.cls.name.slice(1, -1).replace(/\//g, '.')}.${f.m.name}`) }

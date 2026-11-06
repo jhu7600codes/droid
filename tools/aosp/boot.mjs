@@ -51,6 +51,8 @@ const sys = registerAospSystem(vm, gfx, {
   present: (w, bmp, f) => { if (frames++ < 3 || process.env.FRAMES) console.log(`frame: window ${w} ${bmp.w}x${bmp.h} at ${f.join(',')}`) },
   event: (what, d) => console.log('host event:', what, d),
 })
+const { registerAospMedia } = await import('../../src/runtime/android/aosp/media.ts')
+registerAospMedia(vm, vfs, { later: sys.later, windowOf: sys.windowOf })
 if (process.env.TRACE) for (const k of process.env.TRACE.split(',')) { const f = vm.dexNatives.get(k); if (f) vm.dexNatives.set(k, (v, s, a) => { console.log('trace', k.split('->')[1], a.map((x) => (typeof x === 'object' && x ? x.cls?.name ?? '[]' : String(x))).join(' ')); return f(v, s, a) }) }
 if (process.env.JTRACE) { const re = new RegExp(process.env.JTRACE), from = process.env.JFROM && new RegExp(process.env.JFROM), max = Number(process.env.JMAX || 400); let n = 0, on = !from, skip = Number(process.env.JSKIP || 0); vm.onEnter = (m) => { const k = m.cls.name + '.' + m.name; if (!on && from.test(k) && skip-- <= 0) on = true; if (on && re.test(k) && n++ < max) console.log('call', k) } }
 const boot = vm.findMethod(vm.cls('Ldroid/system/Boot;'), 'main([Ljava/lang/String;)V')
@@ -59,7 +61,8 @@ vm.main = t
 const show = (o, depth = 0) => { if (!o || depth > 6) return ''; return `${o.cls.name}: ${o.f.message ?? ''}\n  at ${(o.f.jstack || []).slice(0, 8).join('\n  at ')}` + (o.f.cause && o.f.cause !== o ? '\ncaused by ' + show(o.f.cause, depth + 1) : '') }
 t.onDone = (e) => { console.log('main thread ended:', e?.obj ? show(e.obj) : e) }
 if (process.env.BACK) setTimeout(() => { console.log('-> back key'); sys.key(0, 4); sys.key(1, 4) }, Number(process.env.BACK) * 1000)
-if (process.env.TAP) setTimeout(() => { const [x, y] = process.env.TAP.split(',').map(Number); console.log('-> tap', x, y); const t = performance.now(); sys.touch(0, x, y, t); sys.touch(1, x, y, t) }, 5000)
+if (process.env.TAP2) setTimeout(() => { const [x, y] = process.env.TAP2.split(',').map(Number); console.log('-> tap2', x, y); const t = performance.now(); sys.touch(0, x, y, t); sys.touch(1, x, y, t) }, Number(process.env.TAP2_AT || 10) * 1000)
+if (process.env.TAP) setTimeout(() => { const [x, y] = process.env.TAP.split(',').map(Number); console.log('-> tap', x, y); const t = performance.now(); sys.touch(0, x, y, t); sys.touch(1, x, y, t) }, Number(process.env.TAP_AT || 5) * 1000)
 if (process.env.INSPECT) setTimeout(() => {
   const g = vm.callStatic('Landroid/view/WindowManagerGlobal;', 'getInstance()Landroid/view/WindowManagerGlobal;')
   for (const r of g.f.mRoots.f.a) { const ai = r.f.mAttachInfo, d = r.f.mDirty; console.log('root', { w: r.f.mWidth, h: r.f.mHeight, scale: ai.f.mApplicationScale, screenOn: ai.f.mScreenOn, valid: r.f.mSurface?.f.mNativeObject, dirty: [d.f.left, d.f.top, d.f.right, d.f.bottom], winFrame: [r.f.mWinFrame.f.left, r.f.mWinFrame.f.right], holder: r.f.mSurfaceHolder?.cls.name, hw: ai.f.mHardwareRenderer?.cls.name, anim: r.f.mIsAnimating, mView: r.f.mView?.cls.name, measured: r.f.mView?.f.mMeasuredWidth }) }

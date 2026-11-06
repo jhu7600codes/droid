@@ -129,6 +129,7 @@
       info: function () { return call('device.info', []) },
     },
     net: {
+      mediaUrl: function (url) { return call('net.mediaUrl', [String(url)]) },
       fetch: function (url, init) {
         init = init || {}
         var body = init.body
