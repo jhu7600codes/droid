@@ -104,7 +104,7 @@ export function parseDex(buf: Uint8Array): Dex {
       case 0x18: return { type: types[Number(readInt(false))] }
       case 0x1c: { const n = uleb(); const a = []; for (let i = 0; i < n; i++) a.push(encodedValue()); return a }
       case 0x1e: return null
-      case 0x1f: return arg !== 0
+      case 0x1f: return arg !== 0 ? 1 : 0 // booleans are ints in registers
       default: readInt(false); return null // field / method / enum / annotation refs: not needed for statics here
     }
   }

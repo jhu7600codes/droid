@@ -12,6 +12,7 @@ import { registerConcurrent } from './concurrent.ts'
 import { registerCollections } from './collections.ts'
 import { scheduler } from './threads.ts'
 import { Native } from './arm/native.ts'
+import { startAosp } from './aosp/start.ts'
 
 declare const droid: any
 interface Map_ { pkg: string; activities: Record<string, string>; libs: string[]; receivers?: { cls: string; actions: string[] }[]; services?: string[] }
@@ -39,6 +40,21 @@ droid.on('create', async (saved: any) => {
     const cls = map.activities[info.activity]
     const files = new Map<string, Uint8Array>()
     const list: string[] = await (await fetch('apk-files.json')).json()
+    // the real android framework (developer option): every file of the apk, android starts the app
+    const fw = info.activity !== '__bg' ? await droid.runtime?.aosp?.().catch(() => null) : null
+    if (fw) {
+      await Promise.all(list.map(async (p) => files.set(p, await bytes('apk/' + norm(p)))))
+      const parts = (map as any).original | 0
+      let apk: Uint8Array | null = null
+      if (parts) {
+        const chunks = await Promise.all(Array.from({ length: parts }, (_, i) => bytes(`original/apk.${i}`)))
+        apk = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0)); let o = 0
+        for (const c of chunks) { apk.set(c, o); o += c.length }
+      }
+      const cls = map.activities[info.activity]
+      await startAosp({ droid, root, pkg: map.pkg, files, apk, fw, activity: cls ? cls.slice(1, -1).replace(/\//g, '.') : undefined })
+      return
+    }
     await Promise.all(list.filter((p) => /^(res\/|resources\.arsc|classes\d*\.dex|AndroidManifest\.xml)/.test(p)).map(async (p) => files.set(p, await bytes('apk/' + norm(p)))))
     // preload prefs so SharedPreferences can be synchronous
     const prefs = new Map<string, any>()

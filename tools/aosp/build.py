@@ -25,6 +25,7 @@ SOURCES = [  # (repo, path in repo, where it goes)
     ('frameworks/base', 'media/java', 'src'), ('frameworks/base', 'telephony/java', 'src'),
     ('frameworks/base', 'location/java', 'src'), ('frameworks/base', 'opengl/java', 'src'),
     ('frameworks/base', 'wifi/java', 'src'), ('frameworks/base', 'core/res', 'res'),
+    ('frameworks/base', 'policy/src', 'src'),
     ('external/apache-http', 'src', 'src'), ('external/tagsoup', 'src', 'src'), ('external/libphonenumber', 'java/src', 'src'),
     ('libcore', 'luni/src/main/java', 'libcore'), ('libcore', 'dalvik/src/main/java', 'libcore'),
     ('libcore', 'xml/src/main/java', 'libcore'),
@@ -42,7 +43,20 @@ SEEDS = ['android/view/View', 'android/view/ViewGroup', 'android/view/LayoutInfl
          'android/widget/Toast', 'android/widget/PopupWindow', 'android/widget/ArrayAdapter', 'android/widget/SimpleAdapter',
          'android/app/Activity', 'android/app/Dialog', 'android/app/AlertDialog', 'android/app/ProgressDialog', 'android/app/FragmentManager',
          'android/app/LoaderManager', 'android/app/ListActivity', 'android/app/TabActivity', 'android/preference/PreferenceActivity',
-         'android/webkit/WebView', 'android/widget/VideoView']
+         'android/webkit/WebView', 'android/widget/VideoView',
+         'com/android/internal/policy/impl/Policy', 'android/app/ActivityThread', 'android/content/pm/PackageParser',
+         'android/os/ServiceManagerNative', 'android/view/Choreographer', 'android/view/ViewRootImpl']
+# the system services droid provides: an implementation that does nothing is generated for each
+# (tools/aosp/gen/GenDefaults.java); tools/aosp/system overrides what apps need
+SERVICES = ['android.app.IActivityManager=android.app.ActivityManagerNative', 'android.os.IServiceManager=android.os.ServiceManagerNative',
+            'android.content.pm.IPackageManager', 'android.view.IWindowManager', 'android.view.IWindowSession',
+            'com.android.internal.view.IInputMethodManager', 'android.os.IPowerManager', 'android.hardware.display.IDisplayManager',
+            'android.view.accessibility.IAccessibilityManager', 'android.app.IAlarmManager', 'android.app.INotificationManager',
+            'android.media.IAudioService', 'android.content.IClipboard', 'android.net.IConnectivityManager',
+            'com.android.internal.statusbar.IStatusBarService', 'android.location.ILocationManager', 'com.android.internal.app.IAppOpsService',
+            'android.content.IContentService', 'android.accounts.IAccountManager', 'android.os.IUserManager', 'android.os.IVibratorService',
+            'android.app.IUiModeManager', 'android.hardware.input.IInputManager', 'android.app.IWallpaperManager',
+            'com.android.internal.textservice.ITextServicesManager', 'android.app.ISearchManager', 'android.os.storage.IMountService']
 
 def sh(cmd, **kw):
     r = subprocess.run(cmd, capture_output=True, text=True, **kw)
@@ -226,6 +240,20 @@ def compile_java():
         print(out[:6000]); sys.exit(f'javac: {errs} errors (all in tools/aosp/.cache/javac.log)')
     return cls
 
+def system(cls):
+    # pass 2: generate the do-nothing services, then compile droid's own on top of the framework
+    gen = os.path.join(CACHE, 'gen-defaults'); shutil.rmtree(gen, ignore_errors=True); os.makedirs(gen)
+    tool = os.path.join(CACHE, 'gen-tool'); shutil.rmtree(tool, ignore_errors=True); os.makedirs(tool)
+    code, out = sh(['javac', '-nowarn', '-d', tool, '-cp', cls, os.path.join(HERE, 'gen', 'GenDefaults.java')])
+    if code: sys.exit('GenDefaults: ' + out[-2000:])
+    code, out = sh(['java', '-cp', tool + ':' + cls, 'GenDefaults', gen, *SERVICES])
+    if code: sys.exit('GenDefaults run: ' + out[-3000:])
+    files = [os.path.join(dp, f) for root in (gen, os.path.join(HERE, 'system')) for dp, _, fs in os.walk(root) for f in fs if f.endswith('.java')]
+    code, out = sh(['javac', '--release', '8', '-nowarn', '-proc:none', '-encoding', 'UTF-8', '-Xmaxerrs', '1000', '-cp', cls, '-d', cls, *files])
+    open(os.path.join(CACHE, 'javac-system.log'), 'w').write(out)
+    if code: print(out[:6000]); sys.exit(f'system javac: {out.count(": error:")} errors (tools/aosp/.cache/javac-system.log)')
+    return cls
+
 def dex(cls):
     os.makedirs(OUT, exist_ok=True)
     files = [os.path.join(dp, f) for dp, _, fs in os.walk(cls) for f in fs if f.endswith('.class')]
@@ -239,9 +267,13 @@ def dex(cls):
 
 if __name__ == '__main__':
     fetch()
+    if '--system-only' in sys.argv and os.path.isdir(os.path.join(CACHE, 'classes', 'android')):
+        dex(system(os.path.join(CACHE, 'classes'))); sys.exit(0)
     if '--skip-res' not in sys.argv or not os.path.exists(os.path.join(CACHE, 'framework-res.apk')): resources()
     generated()
     workcopy()
     patch()
     rewrite()
-    dex(compile_java())
+    # --system-only: the framework classes from the last build, only droid's system services again
+    if '--system-only' in sys.argv and os.path.isdir(os.path.join(CACHE, 'classes', 'android')): dex(system(os.path.join(CACHE, 'classes')))
+    else: dex(system(compile_java()))

@@ -2,6 +2,7 @@
 // and direct, with byte order, views (asFloatBuffer...), slices and bulk get / put. every buffer is a
 // window on bytes: a java array's bytes for heap buffers, and for direct buffers native memory when a
 // native library is loaded (so JNI's GetDirectBufferAddress gives code a real pointer), else js bytes.
+import { jstr } from './java.ts'
 import { VM, JObject, JArray, type NativeFn } from './dalvik.ts'
 
 const NIO = 'Ljava/nio/'
@@ -207,6 +208,17 @@ export function registerNio(vm: VM) {
         methods[`put${k}(I${t})Ljava/nio/ByteBuffer;`] = (v, s, [i, val]) => { const x = b(s); if (i < 0 || i + es > x.lim) throw vm.error('Ljava/lang/IndexOutOfBoundsException;', String(i)); write(x, k, x.base + i, k === 'Char' ? val & 0xffff : val); return s }
         methods[`as${k}Buffer()L${NIO.slice(1)}${k}Buffer;`] = (v, s) => { const x = b(s); return view(x, k, x.pos, x.lim - x.pos, false) }
       }
+    }
+    if (kind === 'Char') {
+      // a CharBuffer is a CharSequence of what is between position and limit
+      const str = (x: any, a: number, e: number) => { let t = ''; for (let i = a; i < e; i++) t += String.fromCharCode(Number(getAt(x, i))); return t }
+      Object.assign(methods, {
+        'charAt(I)C': (v: VM, s: JObject, [i]: any[]) => { const x = b(s); if (i < 0 || i >= x.lim - x.pos) throw vm.error('Ljava/lang/IndexOutOfBoundsException;', String(i)); return Number(getAt(x, x.pos + i)) },
+        'length()I': (v: VM, s: JObject) => { const x = b(s); return x.lim - x.pos },
+        'toString()Ljava/lang/String;': (v: VM, s: JObject) => { const x = b(s); return str(x, x.pos, x.lim) },
+        'subSequence(II)Ljava/lang/CharSequence;': (v: VM, s: JObject, [a, e]: any[]) => { const x = b(s); return str(x, x.pos + a, x.pos + e) },
+      })
+      staticMethods['wrap(Ljava/lang/CharSequence;)Ljava/nio/CharBuffer;'] = (v, s, [cs]) => { const t = jstr(vm, cs); const arr = vm.newArray('[C', t.length); for (let i = 0; i < t.length; i++) (arr.data as any)[i] = t.charCodeAt(i); return wrap('Char', arr, 0, t.length) }
     }
     vm.shim(name, { super: NIO + 'Buffer;', interfaces: kind === 'Char' ? ['Ljava/lang/CharSequence;'] : [], methods: { ...methods, ...staticMethods }, statics })
   }

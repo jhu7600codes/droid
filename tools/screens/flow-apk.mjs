@@ -4,8 +4,9 @@ export default async ({ page, shot, base }) => {
   const apk = process.env.APK || 'test.apk'
   page.on('console', (m) => { const t = m.text(); if (/missing|crash|stopped|exception|error|java stack|stack:|died|warn/i.test(t) && !/GL Driver|favicon/.test(t)) console.log('console:', t.slice(0, 600)) })
   page.on('pageerror', (e) => console.log('pageerror', e.message.slice(0, 300)))
+  if (process.env.AOSP) await page.addInitScript(() => { window.__aosp = true })
   await page.goto(base + 'index.html?fastboot')
-  await page.evaluate(() => localStorage.setItem('droid.settings', JSON.stringify({ 'setup.done': true, 'lock.type': 'none' })))
+  await page.evaluate(() => localStorage.setItem('droid.settings', JSON.stringify({ 'setup.done': true, 'lock.type': 'none', ...(window.__aosp ? { 'android.aosp': true, 'dev.enabled': true } : {}) })))
   await page.reload(); await page.waitForTimeout(2500)
   await page.evaluate((a) => { window.droid_shell.wm.start({ action: 'install', data: 'apk-test/' + a, type: 'application/vnd.android.package-archive' }) }, apk)
   await page.waitForSelector('.window.visible .pi-buttons', { timeout: 120000 })

@@ -40,6 +40,9 @@ export function javaRegex(src: string, flags = 0): RegExp {
       if (n === 'z' || n === 'Z') { out += '$(?![\\s\\S])'; i++; continue }
       if (n === 'A') { out += '(?<![\\s\\S])'; i++; continue }
       if (n === 'h') { out += '[ \\t\\xA0\\u1680\\u180e\\u2000-\\u200a\\u202f\\u205f\\u3000]'; i++; continue }
+      // java lets any punctuation be escaped; js unicode regexes only allow syntax characters
+      // (and '-' inside a class)
+      if (n !== undefined && !/[A-Za-z0-9]/.test(n) && !'^$\\.*+?()[]{}|/'.includes(n) && !(inClass && n === '-')) { out += n === '-' && inClass ? '\\-' : /[\s\S]/.test(n) ? n.replace(/[-]/, '\\x2d') : n; i++; continue }
       out += c + (n ?? ''); i++; continue
     }
     if (inClass) {
@@ -276,6 +279,66 @@ export function registerJavaMore(vm: VM) {
   const bytes = (a: JArray, off = 0, len = a.data.length - off) => { const d = a.data as Int8Array; return new Uint8Array(d.buffer, d.byteOffset + off, len) }
   const byteArray = (u: Uint8Array) => { const r = vm.newArray('[B', u.length); (r.data as Int8Array).set(new Int8Array(u.buffer, u.byteOffset, u.length)); return r }
   const ex = (cls: string, msg: string) => vm.error(cls, msg)
+  const deviceLang = (((globalThis as any).navigator?.language || 'en') as string).slice(0, 2).toLowerCase()
+  // java.util.Locale: language / country / variant; the default is the device's
+  const NAMES: Record<string, string> = { en: 'English', ru: 'русский', de: 'Deutsch', fr: 'français', es: 'español', it: 'italiano', ja: '日本語', ko: '한국어', zh: '中文', pt: 'português', uk: 'українська', pl: 'polski', tr: 'Türkçe', nl: 'Nederlands' }
+  const locale = (lang: string, country = '', variant = '') => obj('Ljava/util/Locale;', { lang: lang.toLowerCase(), country: country.toUpperCase(), variant })
+  const deviceCountry = (() => { const m = /-([A-Za-z]{2})$/.exec((globalThis as any).navigator?.language || ''); return m ? m[1].toUpperCase() : deviceLang === 'en' ? 'US' : '' })()
+  let defaultLocale: JObject | null = null
+  const localeStr = (s: JObject) => [s.f.lang, s.f.country, s.f.variant].filter((x, i) => x || i === 0).join('_').replace(/_+$/, '')
+  def('Ljava/util/Locale;', OBJ, {
+    '<init>(Ljava/lang/String;)V': (v, s, [l]) => { Object.assign(s.f, { lang: String(l).toLowerCase(), country: '', variant: '' }) },
+    '<init>(Ljava/lang/String;Ljava/lang/String;)V': (v, s, [l, c]) => { Object.assign(s.f, { lang: String(l).toLowerCase(), country: String(c).toUpperCase(), variant: '' }) },
+    '<init>(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V': (v, s, [l, c, x]) => { Object.assign(s.f, { lang: String(l).toLowerCase(), country: String(c).toUpperCase(), variant: String(x) }) },
+    'getDefault()Ljava/util/Locale;': () => (defaultLocale ??= locale(deviceLang || 'en', deviceCountry)),
+    'setDefault(Ljava/util/Locale;)V': (v, s, [l]) => { defaultLocale = l },
+    'getLanguage()Ljava/lang/String;': (v, s) => s.f.lang, 'getCountry()Ljava/lang/String;': (v, s) => s.f.country, 'getVariant()Ljava/lang/String;': (v, s) => s.f.variant,
+    'getISO3Language()Ljava/lang/String;': (v, s) => ({ en: 'eng', ru: 'rus', de: 'deu', fr: 'fra', es: 'spa', it: 'ita', ja: 'jpn', zh: 'zho', pt: 'por', uk: 'ukr' } as Record<string, string>)[s.f.lang] ?? s.f.lang,
+    'getISO3Country()Ljava/lang/String;': (v, s) => ({ US: 'USA', GB: 'GBR', RU: 'RUS', DE: 'DEU', FR: 'FRA', UA: 'UKR' } as Record<string, string>)[s.f.country] ?? s.f.country,
+    'getDisplayLanguage()Ljava/lang/String;': (v, s) => NAMES[s.f.lang] ?? s.f.lang,
+    'getDisplayLanguage(Ljava/util/Locale;)Ljava/lang/String;': (v, s) => NAMES[s.f.lang] ?? s.f.lang,
+    'getDisplayCountry()Ljava/lang/String;': (v, s) => s.f.country, 'getDisplayName()Ljava/lang/String;': (v, s) => NAMES[s.f.lang] ?? localeStr(s),
+    'toString()Ljava/lang/String;': (v, s) => localeStr(s),
+    'toLanguageTag()Ljava/lang/String;': (v, s) => [s.f.lang, s.f.country].filter(Boolean).join('-'),
+    'hashCode()I': (v, s) => [...localeStr(s)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) | 0, 0),
+    'equals(Ljava/lang/Object;)Z': (v, s, [o]) => (o instanceof JObject && o.f.lang === s.f.lang && o.f.country === s.f.country && o.f.variant === s.f.variant ? 1 : 0),
+    'getAvailableLocales()[Ljava/util/Locale;': () => { const a = vm.newArray('[Ljava/util/Locale;', 2); a.data[0] = locale('en', 'US'); a.data[1] = locale(deviceLang || 'en', deviceCountry); return a },
+  })
+  const lc = vm.cls('Ljava/util/Locale;')
+  Object.assign(lc.staticValues, { ENGLISH: locale('en'), US: locale('en', 'US'), UK: locale('en', 'GB'), ROOT: locale(''), GERMAN: locale('de'), GERMANY: locale('de', 'DE'), FRENCH: locale('fr'), FRANCE: locale('fr', 'FR'), ITALIAN: locale('it'), JAPANESE: locale('ja'), JAPAN: locale('ja', 'JP'), KOREAN: locale('ko'), CHINESE: locale('zh'), CHINA: locale('zh', 'CN'), CANADA: locale('en', 'CA') })
+
+  // java.util.UUID: two 64-bit halves
+  const uuid = (hi: bigint, lo: bigint) => obj('Ljava/util/UUID;', { hi: BigInt.asIntN(64, hi), lo: BigInt.asIntN(64, lo) })
+  const u64 = (b: Uint8Array, o: number) => Array.from(b.slice(o, o + 8)).reduce((x: bigint, y: number) => (x << 8n) | BigInt(y), 0n)
+  const uuidStr = (s: JObject) => { const h = (BigInt.asUintN(64, s.f.hi).toString(16).padStart(16, '0') + BigInt.asUintN(64, s.f.lo).toString(16).padStart(16, '0')); return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}` }
+  def('Ljava/util/UUID;', OBJ, {
+    '<init>(JJ)V': (v, s, [hi, lo]) => { s.f.hi = BigInt.asIntN(64, hi); s.f.lo = BigInt.asIntN(64, lo) },
+    'randomUUID()Ljava/util/UUID;': () => {
+      const b = crypto.getRandomValues(new Uint8Array(16))
+      b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80 // version 4, ietf variant
+      return uuid(u64(b, 0), u64(b, 8))
+    },
+    'nameUUIDFromBytes([B)Ljava/util/UUID;': (v, s, [arr]) => {
+      // version 3 wants md5; a sha-256 based stand-in keeps names stable on this device
+      const src = new Uint8Array(arr.data.buffer, arr.data.byteOffset, arr.data.length)
+      let h1 = 0x811c9dc5n, h2 = 0xcbf29ce484222325n
+      for (const x of src) { h1 = BigInt.asUintN(64, (h1 ^ BigInt(x)) * 0x100000001b3n); h2 = BigInt.asUintN(64, (h2 ^ BigInt(x)) * 0x100000001b3n + 7n) }
+      const hi = (h1 & ~0xf000n) | 0x3000n, lo = (h2 & 0x3fffffffffffffffn) | 0x8000000000000000n
+      return uuid(hi, lo)
+    },
+    'fromString(Ljava/lang/String;)Ljava/util/UUID;': (v, s, [str]) => {
+      const h = String(str).replace(/-/g, '')
+      if (!/^[0-9a-fA-F]{32}$/.test(h)) throw vm.error('Ljava/lang/IllegalArgumentException;', 'Invalid UUID string: ' + str)
+      return uuid(BigInt('0x' + h.slice(0, 16)), BigInt('0x' + h.slice(16)))
+    },
+    'toString()Ljava/lang/String;': (v, s) => uuidStr(s),
+    'getMostSignificantBits()J': (v, s) => s.f.hi, 'getLeastSignificantBits()J': (v, s) => s.f.lo,
+    'version()I': (v, s) => Number((BigInt.asUintN(64, s.f.hi) >> 12n) & 0xfn),
+    'hashCode()I': (v, s) => { const x = BigInt.asUintN(64, BigInt(s.f.hi) ^ BigInt(s.f.lo)); return Number(BigInt.asIntN(32, (x >> 32n) ^ x)) },
+    'equals(Ljava/lang/Object;)Z': (v, s, [o]) => (o instanceof JObject && o.f.hi === s.f.hi && o.f.lo === s.f.lo ? 1 : 0),
+    'compareTo(Ljava/util/UUID;)I': (v, s, [o]) => (s.f.hi !== o.f.hi ? (s.f.hi < o.f.hi ? -1 : 1) : s.f.lo !== o.f.lo ? (s.f.lo < o.f.lo ? -1 : 1) : 0),
+  })
+
   for (const [e, sup] of [['Ljava/util/regex/PatternSyntaxException;', 'Ljava/lang/IllegalArgumentException;'], ['Ljava/text/ParseException;', 'Ljava/lang/Exception;'], ['Ljava/security/NoSuchAlgorithmException;', 'Ljava/security/GeneralSecurityException;'], ['Ljava/security/GeneralSecurityException;', 'Ljava/lang/Exception;'], ['Ljava/io/UnsupportedEncodingException;', 'Ljava/io/IOException;']] as const)
     if (!vm.shims.has(e)) def(e, sup, { '<init>(Ljava/lang/String;)V': (v, s, [m]) => { s.f.message = m }, '<init>()V': () => {}, '<init>(Ljava/lang/String;I)V': (v, s, [m]) => { s.f.message = m } })
   const compile = (re: string, flags = 0) => { try { return javaRegex(re, flags) } catch (e) { throw ex('Ljava/util/regex/PatternSyntaxException;', `${(e as Error).message}: ${re}`) } }

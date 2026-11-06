@@ -112,13 +112,17 @@ export class VM {
   findDexClass(name: string) { return this.dexIndex.get(name) ?? null }
   // js implementations of `native` methods in dex classes (the android framework's natives)
   dexNatives = new Map<string, NativeFn>()
+  // keys are full method keys ('name(desc)ret') or just the name: then every overload of that name
+  // gets the function (it tells them apart by its arguments)
   registerNatives(cls: string, fns: Record<string, NativeFn>) {
     for (const [k, f] of Object.entries(fns)) {
       this.dexNatives.set(cls + '->' + k, f)
-      const m = this.classes.get(cls)?.methods.get(k)
-      if (m) m.native = f
+      const built = this.classes.get(cls)
+      if (!built) continue
+      for (const m of built.methods.values()) if (m.key === k || (!k.includes('(') && m.name === k && m.flags & ACC.NATIVE)) m.native = f
     }
   }
+  private dexNative(cls: string, key: string) { return this.dexNatives.get(cls + '->' + key) ?? this.dexNatives.get(cls + '->' + key.slice(0, key.indexOf('('))) }
   cls(name: string): JClass {
     let c = this.classes.get(name)
     if (c) return c
@@ -134,7 +138,7 @@ export class VM {
       c.dex = fromDex.d
       c.interfaces = dc.interfaces.map((i) => this.cls(i))
       for (const m of [...dc.directMethods, ...dc.virtualMethods]) {
-        c.methods.set(m.ref.key, { cls: c, name: m.ref.name, key: m.ref.key, desc: m.ref.proto.desc, ret: m.ref.proto.ret, params: m.ref.proto.params, flags: m.flags, code: m.code, dex: fromDex.d, native: m.flags & ACC.NATIVE ? this.dexNatives.get(name + '->' + m.ref.key) : undefined })
+        c.methods.set(m.ref.key, { cls: c, name: m.ref.name, key: m.ref.key, desc: m.ref.proto.desc, ret: m.ref.proto.ret, params: m.ref.proto.params, flags: m.flags, code: m.code, dex: fromDex.d, native: m.flags & ACC.NATIVE ? this.dexNative(name, m.ref.key) : undefined })
       }
       dc.staticFields.forEach((f, i) => { c!.fieldTypes[f.ref.name] = f.ref.type; c!.staticValues[f.ref.name] = i < dc.staticValues.length ? this.fromEncoded(dc.staticValues[i], f.ref.type) : defaultFor(f.ref.type[0]) })
       for (const f of dc.instanceFields) c.fieldTypes[f.ref.name] = f.ref.type
@@ -351,7 +355,10 @@ export class VM {
 
   // queue a java call on a thread (driver threads run one call after another)
   pushCall(t: JThread, m: JMethod, self: any, args: any[]) { this.pushFrame(t, m, self, args) }
+  // debugging: called for every java method entered (tools/aosp/boot.mjs JTRACE=...)
+  onEnter: ((m: JMethod) => void) | null = null
   private pushFrame(t: JThread, m: JMethod, self: any, args: any[]) {
+    if (this.onEnter) this.onEnter(m)
     if (t.frames.length > 3000) throw this.error('Ljava/lang/StackOverflowError;', 'stack size ' + t.frames.length)
     const code = m.code!
     const r: any[] = new Array(code.registers).fill(0)
@@ -426,7 +433,7 @@ export class VM {
             }
             case 0x1e: { const o = obj(r[AA]); if (o == null) throw npe(); exit(o, t); pc += 1; break }
             case 0x1f: {
-              const v = r[AA], c = this.cls(dex.types[ins[pc + 1]])
+              const v = obj(r[AA]), c = this.cls(dex.types[ins[pc + 1]])
               if (v != null && !this.instanceOf(v, c)) throw this.error('Ljava/lang/ClassCastException;', `${this.classOf(v).name} cannot be cast to ${c.name}`)
               pc += 2; break
             }
@@ -485,7 +492,7 @@ export class VM {
             }
             case 0x38: case 0x39: case 0x3a: case 0x3b: case 0x3c: case 0x3d: {
               const x = r[AA]
-              const z = x == null || x === 0 || x === 0n
+              const z = x == null || x === 0 || x === 0n || x === false
               const t = op === 0x38 ? z : op === 0x39 ? !z : op === 0x3a ? x < 0 : op === 0x3b ? x >= 0 || z : op === 0x3c ? x > 0 : x <= 0 || z
               pc += t ? s16(ins[pc + 1]) : 2; break
             }
