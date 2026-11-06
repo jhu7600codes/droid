@@ -40,6 +40,11 @@ public class SessionImpl extends droid.defaults.DefaultIWindowSession {
         int ww = attrs != null && attrs.width == WindowManager.LayoutParams.WRAP_CONTENT && requestedWidth > 0 ? Math.min(requestedWidth, w) : w;
         int wh = attrs != null && attrs.height == WindowManager.LayoutParams.WRAP_CONTENT && requestedHeight > 0 ? Math.min(requestedHeight, h) : h;
         int x = (w - ww) / 2, y = (h - wh) / 2;
+        // sub-windows (a SurfaceView's video, panels) sit where their view is in the parent window
+        if (attrs != null && attrs.type >= WindowManager.LayoutParams.FIRST_SUB_WINDOW && attrs.type <= WindowManager.LayoutParams.LAST_SUB_WINDOW) {
+            ww = requestedWidth > 0 ? requestedWidth : ww; wh = requestedHeight > 0 ? requestedHeight : wh;
+            x = attrs.x; y = attrs.y;
+        }
         outFrame.set(x, y, x + ww, y + wh);
         if (outOverscanInsets != null) outOverscanInsets.setEmpty();
         if (outContentInsets != null) outContentInsets.setEmpty();

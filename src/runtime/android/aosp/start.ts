@@ -13,6 +13,7 @@ import { listZip, readEntry } from '../../zip.ts'
 import { Native } from '../arm/native.ts'
 import { registerAospNatives } from './natives.ts'
 import { registerAospSystem } from './system.ts'
+import { registerAospMedia } from './media.ts'
 import { apks, device } from './res.ts'
 import { registerNet } from '../audio.ts'
 import { registerHttp } from '../net.ts'
@@ -86,10 +87,23 @@ export async function startAosp(o: { droid: any; root: HTMLElement; pkg: string;
       ctx.clearRect(0, 0, c.width, c.height)
       if (bmp.canvas) ctx.drawImage(bmp.canvas as CanvasImageSource, 0, 0)
     },
-    windowGone: (id) => { shown.get(id)?.remove(); shown.delete(id) },
+    windowGone: (id) => { shown.get(id)?.remove(); shown.delete(id); for (const [el, w] of videos) if (w === id) { el.style.display = 'none'; videos.set(el, null) } },
+    windowFrame: (id) => { for (const [el, w] of videos) if (w === id) place(el, id) },
     event: (what) => { if (what === 'finished') droid.app.finish() },
   })
   droid.actionbar?.hide?.()
+
+  // video: a <video> over the window of the SurfaceView it plays into
+  const videos = new Map<HTMLVideoElement, number | null>()
+  const place = (el: HTMLVideoElement, id: number) => {
+    const f = sys.frameOf(id)
+    if (!f) return
+    Object.assign(el.style, { display: 'block', left: f[0] / dpr + 'px', top: f[1] / dpr + 'px', width: (f[2] - f[0]) / dpr + 'px', height: (f[3] - f[1]) / dpr + 'px' })
+  }
+  registerAospMedia(vm, vfs, {
+    later: sys.later, windowOf: sys.windowOf, mediaUrl: droid.net?.mediaUrl,
+    show: (el, id) => { if (!el.isConnected) root.append(el); videos.set(el, id); if (id == null) el.style.display = 'none'; else place(el, id) },
+  })
 
   // touches: device pixels, down time kept per gesture
   let downAt = 0, down = false

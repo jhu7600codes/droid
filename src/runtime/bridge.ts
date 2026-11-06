@@ -11,7 +11,7 @@ import { state as netState } from '../shell/net'
 import { DpkError, permName, LIMITS } from './manifest'
 import * as store from './db'
 import { getPackage, setGrant, mimeOf } from './packages'
-import { proxiedFetch } from './netclient'
+import { proxiedFetch, proxyConfig, ensureProxyToken } from './netclient'
 import type { Host } from './host'
 
 const PERM_TEXT: Record<string, string> = {
@@ -170,6 +170,14 @@ export function makeBridge(pkg: string, ctx: ActivityContext, host: Host) {
     'runtime.aosp': async () => (settings.get('android.aosp') ? aospFiles() : null),
 
     'net.state': () => netState(),
+    // a url a <video>/<audio> can load: plain http from an https page goes through the proxy
+    'net.mediaUrl': async (url: string) => {
+      await ensure(pkg, 'network')
+      if (!(location.protocol === 'https:' && /^http:/i.test(url))) return url
+      await ensureProxyToken()
+      const p = proxyConfig()
+      return p ? `${p.url}/fetch?url=${encodeURIComponent(url)}&token=${encodeURIComponent(p.token)}` : url
+    },
     'net.fetch': async (url: string, init: { method: string; headers: Record<string, string>; body?: ArrayBuffer | string }) => {
       await ensure(pkg, 'network')
       if (!/^https?:/i.test(url)) throw err('invalid', 'only http and https')

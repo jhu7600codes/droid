@@ -14,6 +14,8 @@ export interface HostSide {
   // a window's frame was drawn: show it
   present: (window: number, bmp: Bmp, frame: [number, number, number, number]) => void
   windowGone?: (window: number) => void
+  // a window got a (new) frame: video shown in it moves along
+  windowFrame?: (window: number, frame: [number, number, number, number]) => void
   event?: (what: string, detail: string) => void
 }
 interface Gfx { newBmp: (w: number, h: number) => Bmp; canvasFor: (bm: Bmp) => number; resetCanvas: (h: number, bm: Bmp) => void; get: <T>(h: number) => T }
@@ -24,7 +26,7 @@ export function registerAospSystem(vm: VM, gfx: Gfx, host: HostSide) {
   let nextH = 1
 
   // ---------- the looper ----------
-  interface Q { wake: boolean; pending: { m: JMethod; self: JObject; args: any[] }[] }
+  interface Q { wake: boolean; pending: { m: JMethod; self: JObject | null; args: any[] }[] }
   const queues = new Map<number, Q>()
   const Qp = (p: number) => queues.get(p)
   const post = (qp: number, self: JObject, key: string, args: any[]) => {
@@ -33,8 +35,11 @@ export function registerAospSystem(vm: VM, gfx: Gfx, host: HostSide) {
     q.pending.push({ m, self, args })
     scheduler.wake()
   }
+  // a java call to run on the main looper (media events and other native callbacks)
+  let mainQ = 0
+  const later = (m: JMethod, self: JObject | null, args: any[]) => { const q = Qp(mainQ); if (!q) return; q.pending.push({ m, self, args }); scheduler.wake() }
   vm.registerNatives('Landroid/os/MessageQueue;', {
-    nativeInit: () => { const p = nextH++; queues.set(p, { wake: false, pending: [] }); return p },
+    nativeInit: () => { const p = nextH++; queues.set(p, { wake: false, pending: [] }); mainQ ||= p; return p },
     nativeDestroy: (v, s, [p]) => { queues.delete(p) },
     nativeWake: (v, s, [p]) => { const q = Qp(p); if (q) { q.wake = true; scheduler.wake() } },
     nativeIsIdling: (v, s, [p]) => { const q = Qp(p); return q && !q.pending.length && !q.wake ? 1 : 0 },
@@ -91,6 +96,7 @@ export function registerAospSystem(vm: VM, gfx: Gfx, host: HostSide) {
       surfaces.set(obj, id)
       surface.f.mNativeObject = obj
       surface.f.mGenerationId = (surface.f.mGenerationId | 0) + 1
+      host.windowFrame?.(id, w.frame)
     },
     event: (v, s, [what, detail]) => host.event?.(text(what), text(detail)),
   })
@@ -258,7 +264,7 @@ export function registerAospSystem(vm: VM, gfx: Gfx, host: HostSide) {
     const ev = vm.newObject('Landroid/view/KeyEvent;', '<init>(JJIIIIIIII)V', [t, t, action, code, 0, 0, -1, 0, 8, 0x101])
     post(rx.queue, rx.self, 'dispatchInputEvent(ILandroid/view/InputEvent;)V', [seq++, ev])
   }
-  return { touch, key }
+  return { touch, key, later, windowOf: (surfaceObj: number) => surfaces.get(surfaceObj) ?? null, frameOf: (id: number) => wins.get(id)?.frame ?? null }
 }
 
 const KEYS: Record<number, string> = { 62: ' ', 66: '\n', 55: ',', 56: '.', 76: '/', 69: '-', 70: '=' }
