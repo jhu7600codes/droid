@@ -42,6 +42,25 @@ export function registerAospNatives(vm: VM, opts: { redraw?: () => void; vfs?: V
     nCallTwoFloatMethod: pvhCall, nCallFourFloatMethod: pvhCall, nCallMultipleFloatMethod: () => {},
   })
   const f32 = Math.fround
+  // bidi: strong right-to-left letters (hebrew, arabic and friends) get level 1, the rest follow the paragraph
+  const rtl = (c: number) => (c >= 0x0590 && c <= 0x08ff) || (c >= 0xfb1d && c <= 0xfdff) || (c >= 0xfe70 && c <= 0xfefc)
+  const ltr = (c: number) => (c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a) || (c >= 0xc0 && c < 0x590) || (c >= 0x900 && c < 0xfb1d)
+  vm.registerNatives('Landroid/text/AndroidBidi;', {
+    runBidi: (v, s, [dir, chs, levels, n]) => {
+      let para = dir === -1 ? 1 : dir === 1 ? 0 : -1
+      if (para < 0) { para = dir === -2 ? 1 : 0; for (let i = 0; i < n; i++) { const c = chs.data[i]; if (rtl(c)) { para = 1; break } if (ltr(c)) { para = 0; break } } }
+      for (let i = 0; i < n; i++) { const c = chs.data[i]; levels.data[i] = rtl(c) ? 1 : para === 1 && ltr(c) ? 2 : para }
+      return para
+    },
+  })
+  // plurals (getQuantityString) from the browser's own rules
+  const plural = new Map<bigint, Intl.PluralRules>()
+  const QTY: Record<string, number> = { zero: 0, one: 1, two: 2, few: 3, many: 4, other: 5 }
+  vm.registerNatives('Llibcore/icu/NativePluralRules;', {
+    forLocaleImpl: (v, s, [name]) => { const h = BigInt(plural.size + 1); let r: Intl.PluralRules; try { r = new Intl.PluralRules(jstr(vm, name).replace(/_/g, '-') || 'en') } catch { r = new Intl.PluralRules('en') } plural.set(h, r); return h },
+    quantityForIntImpl: (v, s, [h, n]) => QTY[plural.get(BigInt(h))?.select(n) ?? 'other'] ?? 5,
+    finalizeImpl: (v, s, [h]) => { plural.delete(BigInt(h)) },
+  })
   vm.registerNatives('Landroid/util/FloatMath;', {
     floor: (v, s, [x]) => f32(Math.floor(x)), ceil: (v, s, [x]) => f32(Math.ceil(x)), sin: (v, s, [x]) => f32(Math.sin(x)), cos: (v, s, [x]) => f32(Math.cos(x)),
     sqrt: (v, s, [x]) => f32(Math.sqrt(x)), exp: (v, s, [x]) => f32(Math.exp(x)), pow: (v, s, [x, y]) => f32(Math.pow(x, y)), hypot: (v, s, [x, y]) => f32(Math.hypot(x, y)),

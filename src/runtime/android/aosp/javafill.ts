@@ -59,6 +59,13 @@ export function registerJavaFill(vm: VM) {
   })
   def('Ljava/lang/AssertionError;', 'Ljava/lang/Error;', { '<init>()V': noop, '<init>(Ljava/lang/Object;)V': (v, s, [m]) => { s.f.message = text(m) } })
   def('Ljava/io/FileDescriptor;', 'Ljava/lang/Object;', { '<init>()V': (v, s) => { s.f.descriptor = -1 }, 'valid()Z': (v, s) => (s.f.descriptor !== -1 ? 1 : 0), 'sync()V': noop }, { in: null, out: null, err: null })
+  // file streams hand out a descriptor (FileUtils.sync, sockets): a fake fd per stream
+  let nextFd = 3
+  const getFD: NativeFn = (v, s) => (s.f.$fd ??= Object.assign(vm.newObject('Ljava/io/FileDescriptor;'), {}), s.f.$fd.f.descriptor === -1 || s.f.$fd.f.descriptor == null ? (s.f.$fd.f.descriptor = nextFd++) : 0, s.f.$fd)
+  for (const c of ['Ljava/io/FileInputStream;', 'Ljava/io/FileOutputStream;', 'Ljava/io/RandomAccessFile;']) if (vm.shims.has(c)) def(c, undefined, { 'getFD()Ljava/io/FileDescriptor;': getFD })
+  // interfaces apps implement (trust-all managers, verifiers, proxies): no methods of their own here
+  for (const i of ['Ljavax/net/ssl/TrustManager;', 'Ljavax/net/ssl/KeyManager;', 'Ljavax/net/ssl/HostnameVerifier;', 'Ljava/lang/reflect/InvocationHandler;'])
+    if (!vm.shims.has(i)) vm.shim(i, { super: 'Ljava/lang/Object;', methods: {}, flags: 0x0601 } as any)
   // proxies: none (droid's own proxy sits under the network layer)
   const noProxy = { p: null as any }
   def('Ljava/net/Proxy;', 'Ljava/lang/Object;', {

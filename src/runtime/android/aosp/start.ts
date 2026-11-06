@@ -14,6 +14,8 @@ import { Native } from '../arm/native.ts'
 import { registerAospNatives } from './natives.ts'
 import { registerAospSystem } from './system.ts'
 import { apks, device } from './res.ts'
+import { registerNet } from '../audio.ts'
+import { registerHttp } from '../net.ts'
 
 // libraries the framework itself loads: their natives are droid's own
 const SYSTEM_LIBS = new Set(['rs_jni', 'RS', 'media_jni', 'exif_jni', 'jnigraphics', 'android_runtime', 'android', 'webviewchromium', 'webviewchromium_loader', 'webcore', 'chromium_net', 'javacore', 'nativehelper', 'icu_jni', 'mtp', 'soundpool', 'camera2_jni'])
@@ -43,6 +45,8 @@ export async function startAosp(o: { droid: any; root: HTMLElement; pkg: string;
     }, 30) as unknown as number
   }
   const { gfx } = registerAospNatives(vm, { vfs, redraw })
+  // java.net through droid's network (no permission prompt; the proxy fills in for cors)
+  registerNet(vm); registerHttp(vm, droid, () => vm.current === vm.main)
 
   const unzip = async (buf: ArrayBuffer) => { const m = new Map<string, Uint8Array>(); for (const e of listZip(buf)) m.set(e.path, await readEntry(buf, e)); return m }
   apks.set('/system/framework/framework-res.apk', await unzip(o.fw.res))

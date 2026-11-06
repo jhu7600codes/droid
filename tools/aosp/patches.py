@@ -8,4 +8,19 @@ PATCHES = [
                         return FORWARD;'''),
     # the ticker layouts are not in kitkat's res (status bar only)
     ('android/app/Notification.java', '? R.layout.status_bar_latest_event_ticker\n                            : R.layout.status_bar_latest_event_ticker_large_icon', '? R.layout.notification_template_base\n                            : R.layout.notification_template_base'),
+    # droid's nio has no CharsetEncoder.encode(CharBuffer, ByteBuffer, boolean): shared prefs are utf-8 anyway
+    ('com/android/internal/util/FastXmlSerializer.java', '''                CharBuffer charBuffer = CharBuffer.wrap(mText, 0, mPos);
+                CoderResult result = mCharset.encode(charBuffer, mBytes, true);
+                while (true) {
+                    if (result.isError()) {
+                        throw new IOException(result.toString());
+                    } else if (result.isOverflow()) {
+                        flushBytes();
+                        result = mCharset.encode(charBuffer, mBytes, true);
+                        continue;
+                    }
+                    break;
+                }
+                flushBytes();''', '''                flushBytes();
+                mOutputStream.write(new String(mText, 0, mPos).getBytes("UTF-8"));'''),
 ]

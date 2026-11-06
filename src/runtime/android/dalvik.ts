@@ -12,14 +12,16 @@ export interface Frame {
   m: JMethod; r: any[]; pc: number; ipc: number; ins: Uint16Array; dex: Dex; code: Code; kinds: Map<number, string>
   result: any; exc: any
   post?: (v: any) => any // a JavaCall's frame: turns its return value into the calling native's
-  onThrow?: (e: JavaThrow) => JavaThrow // ... and its exceptions
+  onThrow?: (e: JavaThrow) => JavaThrow | Handled // ... and its exceptions (a Handled is the call's value instead)
 }
 // thrown by framework (js) code that wants to call a java method and return what it gives: the
 // interpreter runs it as an ordinary frame on the same thread (so it can wait on locks, network...)
 // instead of a nested js call. post turns the result into the native's return value.
+// an onThrow that dealt with the exception: the call returns this value
+export class Handled { value: any; constructor(value: any) { this.value = value } }
 export class JavaCall {
-  m: JMethod; self: any; args: any[]; post?: (v: any) => any; onThrow?: (e: JavaThrow) => JavaThrow
-  constructor(m: JMethod, self: any, args: any[], post?: (v: any) => any, onThrow?: (e: JavaThrow) => JavaThrow) { this.m = m; this.self = self; this.args = args; this.post = post; this.onThrow = onThrow }
+  m: JMethod; self: any; args: any[]; post?: (v: any) => any; onThrow?: (e: JavaThrow) => JavaThrow | Handled
+  constructor(m: JMethod, self: any, args: any[], post?: (v: any) => any, onThrow?: (e: JavaThrow) => JavaThrow | Handled) { this.m = m; this.self = self; this.args = args; this.post = post; this.onThrow = onThrow }
 }
 const YIELD = Symbol('yield'), BLOCKED = Symbol('blocked'), NO_CALL = Symbol('no call')
 // a java thread: its own frame stack, scheduled as a green thread
@@ -333,7 +335,7 @@ export class VM {
         if (isBlock(e)) return scheduler.pump(this.current, e)
         if (e instanceof JavaCall) {
           let v: any
-          try { v = this.invoke(e.m, e.self, e.args) } catch (er) { if (er instanceof JavaThrow && e.onThrow) throw e.onThrow(er); throw er }
+          try { v = this.invoke(e.m, e.self, e.args) } catch (er) { if (er instanceof JavaThrow && e.onThrow) { const h = e.onThrow(er); if (h instanceof Handled) return h.value; throw h } throw er }
           return e.post ? e.post(v) : v
         }
         throw e
@@ -572,7 +574,7 @@ export class VM {
                   nf.post = e.post; nf.onThrow = e.onThrow
                   continue outer
                 }
-                if (e instanceof JavaCall) { let x: any; try { x = this.invoke(e.m, e.self, e.args) } catch (er) { if (er instanceof JavaThrow && e.onThrow) throw e.onThrow(er); throw er } v = e.post ? e.post(x) : x; f.result = v; pc += 3; break }
+                if (e instanceof JavaCall) { let x: any, handled = false; try { x = this.invoke(e.m, e.self, e.args) } catch (er) { if (er instanceof JavaThrow && e.onThrow) { const h = e.onThrow(er); if (!(h instanceof Handled)) throw h; x = h.value; handled = true } else throw er } v = handled ? x : e.post ? e.post(x) : x; f.result = v; pc += 3; break }
                 if (!isBlock(e)) throw e
                 if (deadline === Infinity) v = scheduler.pump(t, e)
                 else { f.pc = pc + 3; t.block = e; t.blockValue = true; t.state = 'blocked'; return BLOCKED }
@@ -626,7 +628,15 @@ export class VM {
           const h = tr?.handlers.find((x) => x.type === null || this.isSubclass(err.obj.cls, this.cls(x.type)))
           if (h) { fr.exc = err.obj; fr.pc = h.addr; continue outer }
           t.frames.pop()
-          if (fr.onThrow) err = fr.onThrow(err)
+          if (fr.onThrow) {
+            const h = fr.onThrow(err)
+            if (h instanceof Handled) {
+              if (t.frames.length === stop) return h.value
+              t.frames[t.frames.length - 1].result = h.value
+              continue outer
+            }
+            err = h
+          }
           if (t.frames.length === stop) throw err
           at = t.frames[t.frames.length - 1].ipc
         }
@@ -647,7 +657,7 @@ export class VM {
       console.error('stack overflow in the runtime; repeating:', top, '| java:', this.javaStack().join(' < '))
       return this.error('Ljava/lang/StackOverflowError;', 'stack overflow')
     }
-    console.error('runtime error', (e as Error)?.stack?.split('\n').slice(0, 4).join(' / '))
+    console.error('runtime error', (e as Error)?.stack?.split('\n').slice(0, (globalThis as any).process?.env?.JSSTACK ? 40 : 4).join(' / '))
     return this.error('Ljava/lang/RuntimeException;', 'Droid runtime: ' + ((e as Error)?.message || String(e)))
   }
 

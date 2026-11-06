@@ -150,6 +150,8 @@ export function registerNet(vm: VM) {
     'getPort()I': (v, s) => s.f.port, 'getDefaultPort()I': (v, s) => (s.f.protocol === 'https' ? 443 : 80),
     'getPath()Ljava/lang/String;': (v, s) => s.f.path, 'getQuery()Ljava/lang/String;': (v, s) => s.f.query, 'getRef()Ljava/lang/String;': (v, s) => s.f.ref,
     'getFile()Ljava/lang/String;': (v, s) => s.f.path + (s.f.query ? '?' + s.f.query : ''),
+    'getAuthority()Ljava/lang/String;': (v, s) => s.f.host + (s.f.port >= 0 ? ':' + s.f.port : ''), 'getUserInfo()Ljava/lang/String;': () => null,
+    'sameFile(Ljava/net/URL;)Z': (v, s, [o]) => (String(o?.f?.url).split('#')[0] === String(s.f.url).split('#')[0] ? 1 : 0),
     'equals(Ljava/lang/Object;)Z': (v, s, [o]) => (o?.f?.url === s.f.url ? 1 : 0), 'hashCode()I': (v, s) => [...String(s.f.url)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) | 0, 0),
     'openConnection()Ljava/net/URLConnection;': (v, s) => { const c = new JObject(vm.cls(s.f.protocol === 'https' ? 'Ljavax/net/ssl/HttpsURLConnection;' : 'Ljava/net/HttpURLConnection;')); c.f.url = s; c.f.host = s.f.host; c.f.headers = new Map(); return c },
     'openStream()Ljava/io/InputStream;': (v, s) => offline(s),

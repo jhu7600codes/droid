@@ -808,7 +808,6 @@ export function registerMore(vm: VM, env: Env, h: MoreHelpers) {
   const toBytes = (s: string) => { const b = new TextEncoder().encode(s); const a = vm.newArray('[B', b.length); (a.data as Int8Array).set(new Int8Array(b.buffer)); return a }
   vm.shim('Ljava/lang/String;', { ...strShim, methods: { ...strShim.methods,
     'getBytes()[B': S((s) => toBytes(s)),
-    'getBytes(Ljava/lang/String;)[B': S((s) => toBytes(s)),
     'indexOf(II)I': S((s, [c, from]) => s.indexOf(String.fromCharCode(c), from)),
     'compareToIgnoreCase(Ljava/lang/String;)I': S((s, [o]) => { const a = s.toLowerCase(), b = String(o).toLowerCase(); return a < b ? -1 : a > b ? 1 : 0 }),
   } })

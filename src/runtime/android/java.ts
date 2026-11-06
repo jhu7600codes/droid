@@ -4,6 +4,7 @@ import { VM, JObject, JArray, JavaThrow, type NativeFn } from './dalvik.ts'
 import { registerNio } from './nio.ts'
 import { registerJavaMore } from './javamore.ts'
 import { registerPlatform } from './platform.ts'
+import { registerJavaExtra } from './javaextra.ts'
 
 const OBJ = 'Ljava/lang/Object;'
 export const jstr = (vm: VM, v: any): string => {
@@ -113,6 +114,15 @@ export function registerJava(vm: VM) {
     'compareTo(Ljava/lang/String;)I': S((s, [o]) => (s < o ? -1 : s > o ? 1 : 0)),
     'toCharArray()[C': S((s) => { const a = vm.newArray('[C', s.length); for (let i = 0; i < s.length; i++) (a.data as any)[i] = s.charCodeAt(i); return a }),
     'getBytes()[B': S((s) => { const b = new TextEncoder().encode(s); const a = vm.newArray('[B', b.length); (a.data as Int8Array).set(new Int8Array(b.buffer)); return a }),
+    'getBytes(Ljava/lang/String;)[B': S((s, [cs]) => {
+      const n = String(cs ?? 'UTF-8').toUpperCase().replace(/_/g, '-')
+      let b: Uint8Array
+      if (/^(ISO-8859-1|LATIN1|US-ASCII|ASCII|ISO8859-1|WINDOWS-1252|CP1252)$/.test(n)) b = Uint8Array.from(s, (c) => { const x = c.charCodeAt(0); return x < (n.includes('ASCII') ? 128 : 256) ? x : 63 })
+      else if (/^UTF-?16/.test(n)) { const le = n.endsWith('LE'), bom = n === 'UTF-16' || n === 'UTF16'; b = new Uint8Array(s.length * 2 + (bom ? 2 : 0)); let o = 0; if (bom) { b[0] = 0xfe; b[1] = 0xff; o = 2 } for (let i = 0; i < s.length; i++) { const x = s.charCodeAt(i); b[o++] = le ? x & 255 : x >> 8; b[o++] = le ? x >> 8 : x & 255 } }
+      else b = new TextEncoder().encode(s)
+      const a = vm.newArray('[B', b.length); (a.data as Int8Array).set(new Int8Array(b.buffer, b.byteOffset, b.length)); return a
+    }),
+    'compareToIgnoreCase(Ljava/lang/String;)I': S((s, [o]) => { const a = s.toLowerCase(), b = String(o).toLowerCase(); return a < b ? -1 : a > b ? 1 : 0 }),
     'matches(Ljava/lang/String;)Z': S((s, [re]) => (new RegExp('^(?:' + re + ')$').test(s) ? 1 : 0)),
   }, {
     interfaces: ['Ljava/lang/CharSequence;'],
@@ -151,7 +161,30 @@ export function registerJava(vm: VM) {
     if (name === 'ISO-8859-1' || name === 'US-ASCII' || name === 'LATIN1') return charsToString(u, 0, n)
     try { return new TextDecoder(name === 'UTF8' ? 'utf-8' : name).decode(u) } catch { return new TextDecoder().decode(u) }
   }
-  Object.assign(vm.shims.get('Ljava/lang/String;')!.methods!, strStatic)
+  // the rest of java.lang.String (instance methods get the js string as self)
+  const T = (x: any) => x as unknown as string
+  const more: Record<string, NativeFn> = {
+    'toUpperCase(Ljava/util/Locale;)Ljava/lang/String;': (v, s) => T(s).toUpperCase(),
+    'toLowerCase(Ljava/util/Locale;)Ljava/lang/String;': (v, s) => T(s).toLowerCase(),
+    'startsWith(Ljava/lang/String;I)Z': (v, s, [x, o]) => (o >= 0 && T(s).startsWith(x, o) ? 1 : 0),
+    'subSequence(II)Ljava/lang/CharSequence;': (v, s, [b, e]) => T(s).substring(b, e),
+    'codePointAt(I)I': (v, s, [i]) => T(s).codePointAt(i) ?? 0,
+    'codePointBefore(I)I': (v, s, [i]) => { const t = T(s), lo = t.charCodeAt(i - 1); return lo >= 0xdc00 && lo < 0xe000 && i >= 2 ? t.codePointAt(i - 2)! : lo },
+    'codePointCount(II)I': (v, s, [b, e]) => [...T(s).substring(b, e)].length,
+    'offsetByCodePoints(II)I': (v, s, [i, n]) => { const t = T(s); while (n > 0) { i += (t.codePointAt(i)! > 0xffff ? 2 : 1); n-- } while (n < 0) { i -= (i >= 2 && t.charCodeAt(i - 1) >= 0xdc00 && t.charCodeAt(i - 1) < 0xe000 ? 2 : 1); n++ } return i },
+    'contentEquals(Ljava/lang/CharSequence;)Z': (v, s, [x]) => (x != null && T(s) === jstr(vm, x) ? 1 : 0),
+    'contentEquals(Ljava/lang/StringBuffer;)Z': (v, s, [x]) => (x != null && T(s) === jstr(vm, x) ? 1 : 0),
+    'compareTo(Ljava/lang/Object;)I': (v, s, [o]) => { const a = T(s), b = jstr(vm, o); return a < b ? -1 : a > b ? 1 : 0 },
+    'toString()Ljava/lang/String;': (v, s) => s,
+    'valueOf([CII)Ljava/lang/String;': (v, s, [a, o, n]) => charsToString(a.data, o, n),
+    'copyValueOf([C)Ljava/lang/String;': (v, s, [a]) => charsToString(a.data, 0, a.data.length),
+    'copyValueOf([CII)Ljava/lang/String;': (v, s, [a, o, n]) => charsToString(a.data, o, n),
+    'format(Ljava/util/Locale;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;': (v, s, [, f, a]) => jformat(vm, f, a ? [...a.data] : []),
+    'getBytes(II[BI)V': (v, s, [b, e, dst, at]) => { const t = T(s); for (let i = b; i < e; i++) dst.data[at + i - b] = t.charCodeAt(i) << 24 >> 24 },
+  }
+  const strMethods = vm.shims.get('Ljava/lang/String;')!.methods!
+  for (const [k, f] of Object.entries(more)) if (!strMethods[k]) strMethods[k] = f
+  Object.assign(strMethods, strStatic)
   def('Ljava/lang/CharSequence;', OBJ, { 'toString()Ljava/lang/String;': (v, s) => jstr(vm, s), 'length()I': (v, s) => jstr(vm, s).length })
 
   // StringBuilder (and StringBuffer): the text lives in f.s
@@ -428,6 +461,7 @@ export function registerJava(vm: VM) {
   ;(vm as any).nio = registerNio(vm)
   registerJavaMore(vm)
   registerPlatform(vm)
+  registerJavaExtra(vm)
 }
 
 // java.util.Arrays for every element type: copyOf, copyOfRange, fill, sort, equals, hashCode, toString

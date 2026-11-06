@@ -380,12 +380,46 @@ export function registerJavaMore(vm: VM) {
     }),
   })
   // StringBuilder / StringBuffer extras (the text is in f.s)
+  const bounds = (s: any, a: number, b: number) => { if (a < 0 || a > b || b > s.f.s.length) throw vm.error('Ljava/lang/StringIndexOutOfBoundsException;', `start ${a}, end ${b}, length ${s.f.s.length}`) }
+  const sbEdit = (n: string): Record<string, NativeFn> => {
+    const R = n
+    const ins = (s: any, at: number, x: string) => { if (at < 0 || at > s.f.s.length) throw vm.error('Ljava/lang/StringIndexOutOfBoundsException;', 'offset ' + at); s.f.s = s.f.s.slice(0, at) + x + s.f.s.slice(at); return s }
+    const chars = (a: any, o = 0, len = a.data.length) => { let t = ''; for (let i = 0; i < len; i++) t += String.fromCharCode(a.data[o + i]); return t }
+    return {
+      [`insert(IC)${R}`]: (v, s, [at, c]) => ins(s, at, String.fromCharCode(c)),
+      [`insert(II)${R}`]: (v, s, [at, x]) => ins(s, at, String(x)),
+      [`insert(IJ)${R}`]: (v, s, [at, x]) => ins(s, at, String(x)),
+      [`insert(IZ)${R}`]: (v, s, [at, x]) => ins(s, at, x ? 'true' : 'false'),
+      [`insert(IF)${R}`]: (v, s, [at, x]) => ins(s, at, jstr(vm, vm.callStatic('Ljava/lang/String;', 'valueOf(F)Ljava/lang/String;', [x]))),
+      [`insert(ID)${R}`]: (v, s, [at, x]) => ins(s, at, jstr(vm, vm.callStatic('Ljava/lang/String;', 'valueOf(D)Ljava/lang/String;', [x]))),
+      [`insert(ILjava/lang/String;)${R}`]: (v, s, [at, x]) => ins(s, at, x == null ? 'null' : String(x)),
+      [`insert(ILjava/lang/Object;)${R}`]: (v, s, [at, x]) => ins(s, at, x == null ? 'null' : jstr(vm, x)),
+      [`insert(ILjava/lang/CharSequence;)${R}`]: (v, s, [at, x]) => ins(s, at, x == null ? 'null' : jstr(vm, x)),
+      [`insert(ILjava/lang/CharSequence;II)${R}`]: (v, s, [at, x, a, b]) => ins(s, at, (x == null ? 'null' : jstr(vm, x)).slice(a, b)),
+      [`insert(I[C)${R}`]: (v, s, [at, a]) => ins(s, at, chars(a)),
+      [`insert(I[CII)${R}`]: (v, s, [at, a, o, len]) => ins(s, at, chars(a, o, len)),
+      [`delete(II)${R}`]: (v, s, [a, b]) => { b = Math.min(b, s.f.s.length); if (a < 0 || a > b) throw vm.error('Ljava/lang/StringIndexOutOfBoundsException;', 'delete ' + a); s.f.s = s.f.s.slice(0, a) + s.f.s.slice(b); return s },
+      [`replace(IILjava/lang/String;)${R}`]: (v, s, [a, b, x]) => { b = Math.min(b, s.f.s.length); if (a < 0 || a > s.f.s.length || a > b) throw vm.error('Ljava/lang/StringIndexOutOfBoundsException;', 'replace ' + a); s.f.s = s.f.s.slice(0, a) + String(x) + s.f.s.slice(b); return s },
+      [`append([C)${R}`]: (v, s, [a]) => { s.f.s += chars(a); return s },
+      [`appendCodePoint(I)${R}`]: (v, s, [c]) => { s.f.s += String.fromCodePoint(c); return s },
+      'setCharAt(IC)V': (v, s, [i, c]) => { if (i < 0 || i >= s.f.s.length) throw vm.error('Ljava/lang/StringIndexOutOfBoundsException;', 'index ' + i); s.f.s = s.f.s.slice(0, i) + String.fromCharCode(c) + s.f.s.slice(i + 1) },
+      'substring(I)Ljava/lang/String;': (v, s, [a]) => { bounds(s, a, s.f.s.length); return s.f.s.slice(a) },
+      'substring(II)Ljava/lang/String;': (v, s, [a, b]) => { bounds(s, a, b); return s.f.s.slice(a, b) },
+      'subSequence(II)Ljava/lang/CharSequence;': (v, s, [a, b]) => { bounds(s, a, b); return s.f.s.slice(a, b) },
+      'indexOf(Ljava/lang/String;)I': (v, s, [x]) => s.f.s.indexOf(String(x)),
+      'lastIndexOf(Ljava/lang/String;)I': (v, s, [x]) => s.f.s.lastIndexOf(String(x)),
+      'codePointAt(I)I': (v, s, [i]) => s.f.s.codePointAt(i) ?? 0,
+      'capacity()I': (v, s) => Math.max(16, s.f.s.length), 'ensureCapacity(I)V': () => {}, 'trimToSize()V': () => {},
+    }
+  }
   for (const n of ['Ljava/lang/StringBuilder;', 'Ljava/lang/StringBuffer;']) def(n, OBJ, {
     [`append(Ljava/lang/CharSequence;II)${n}`]: (v, s, [x, a, b]) => { s.f.s += (x == null ? 'null' : jstr(vm, x)).slice(a, b); return s },
     [`append([CII)${n}`]: (v, s, [arr, off, len]) => { s.f.s += String.fromCharCode(...(arr.data as Uint16Array).subarray(off, off + len)); return s },
     'indexOf(Ljava/lang/String;I)I': (v, s, [x, from]) => s.f.s.indexOf(String(x), Math.max(0, from)),
     'lastIndexOf(Ljava/lang/String;I)I': (v, s, [x, from]) => s.f.s.lastIndexOf(String(x), from),
     'getChars(II[CI)V': (v, s, [a, b, dst, at]) => { for (let i = a; i < b; i++) (dst.data as Uint16Array)[at + i - a] = s.f.s.charCodeAt(i) },
+    // editing: insert / delete / replace / set
+    ...sbEdit(n),
   })
   def('Ljava/util/Vector;', 'Ljava/util/AbstractList;', { 'copyInto([Ljava/lang/Object;)V': (v, s, [arr]) => { s.f.a.forEach((x: any, i: number) => ((arr.data as any)[i] = x)) } })
 

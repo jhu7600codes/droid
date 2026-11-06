@@ -29,6 +29,9 @@ public final class Compat {
     public static InetAddress parseNumericAddress(String s) {
         try { return InetAddress.getByName(s); } catch (Exception e) { throw new IllegalArgumentException("Not a numeric address: " + s); }
     }
+    public static boolean isNumeric(String s) {
+        return s != null && (s.matches("\\d{1,3}(\\.\\d{1,3}){3}") || (s.indexOf(':') >= 0 && s.matches("[0-9a-fA-F:.]+")));
+    }
     private static final char[] HEX = "0123456789abcdef".toCharArray(), UHEX = "0123456789ABCDEF".toCharArray();
     public static String byteToHexString(byte b, boolean upper) { char[] d = upper ? UHEX : HEX; return new String(new char[] { d[(b >> 4) & 15], d[b & 15] }); }
     public static String bytesToHexString(byte[] bytes, boolean upper) { StringBuilder sb = new StringBuilder(); for (byte b : bytes) sb.append(byteToHexString(b, upper)); return sb.toString(); }

@@ -21,7 +21,7 @@ public final class Boot {
         ServiceRegistry.services.put("notification", new droid.defaults.DefaultINotificationManager());
         ServiceRegistry.services.put("audio", new droid.defaults.DefaultIAudioService());
         ServiceRegistry.services.put("clipboard", new droid.defaults.DefaultIClipboard());
-        ServiceRegistry.services.put("connectivity", new droid.defaults.DefaultIConnectivityManager());
+        ServiceRegistry.services.put("connectivity", new ConnectivityManagerImpl());
         ServiceRegistry.services.put("statusbar", new droid.defaults.DefaultIStatusBarService());
         ServiceRegistry.services.put("location", new droid.defaults.DefaultILocationManager());
         ServiceRegistry.services.put("appops", new droid.defaults.DefaultIAppOpsService());
