@@ -2,6 +2,7 @@ package droid.system;
 
 import android.app.ActivityManager;
 import android.app.IApplicationThread;
+import android.app.IActivityManager.ContentProviderHolder;
 import android.app.ResultInfo;
 import android.content.ComponentName;
 import android.content.Intent;
@@ -29,7 +30,7 @@ public class ActivityManagerImpl extends droid.defaults.DefaultIActivityManager 
     @Override public void attachApplication(IApplicationThread app) {
         thread = app;
         try {
-            thread.bindApplication(Pkg.app.packageName, Pkg.app, null, null, null, null, false, null, null, null, 0, false, false, false,
+            thread.bindApplication(Pkg.app.packageName, Pkg.app, Pkg.providers(), null, null, null, false, null, null, null, 0, false, false, false,
                     Pkg.config(), CompatibilityInfo.DEFAULT_COMPATIBILITY_INFO, null, new Bundle());
             ActivityInfo ai = Pkg.launcher();
             if (ai == null) { Host.event("finished", "no activity"); return; }
@@ -85,6 +86,30 @@ public class ActivityManagerImpl extends droid.defaults.DefaultIActivityManager 
         } catch (Exception e) { throw new RuntimeException(e); }
         return true;
     }
+
+    // content providers: android's settings, and the app's own ones (installed by ActivityThread at bind)
+    private SettingsProvider settings;
+    @Override public ContentProviderHolder getContentProvider(IApplicationThread caller, String name, int userId, boolean stable) {
+        if ("settings".equals(name)) {
+            if (settings == null) {
+                settings = new SettingsProvider();
+                android.content.pm.ProviderInfo pi = new android.content.pm.ProviderInfo();
+                pi.authority = "settings"; pi.name = SettingsProvider.class.getName(); pi.packageName = "android"; pi.applicationInfo = Pkg.app; pi.exported = true;
+                settings.attachInfo(null, pi);
+            }
+            android.content.pm.ProviderInfo pi = new android.content.pm.ProviderInfo();
+            pi.authority = "settings"; pi.name = SettingsProvider.class.getName(); pi.packageName = "android"; pi.applicationInfo = Pkg.app;
+            ContentProviderHolder h = new ContentProviderHolder(pi);
+            h.provider = settings.getIContentProvider();
+            h.noReleaseNeeded = true;
+            return h;
+        }
+        for (android.content.pm.PackageParser.Provider p : Pkg.pkg.providers)
+            for (String a : p.info.authority.split(";")) if (a.equals(name)) { ContentProviderHolder h = new ContentProviderHolder(p.info); h.noReleaseNeeded = true; return h; }
+        return null;
+    }
+    @Override public boolean refContentProvider(IBinder connection, int stableDelta, int unstableDelta) { return true; }
+    @Override public void removeContentProvider(IBinder connection, boolean stable) {}
 
     @Override public boolean moveActivityTaskToBack(IBinder token, boolean nonRoot) { Host.event("background", ""); return true; }
     @Override public Configuration getConfiguration() { return Pkg.config(); }

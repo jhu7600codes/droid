@@ -47,12 +47,12 @@ public class SessionImpl extends droid.defaults.DefaultIWindowSession {
         if (outConfig != null) outConfig.setTo(Pkg.config());
         Integer id = ids.get(window.asBinder());
         if (outSurface != null && viewVisibility == 0) Host.attachSurface(outSurface, id != null ? id : 0, outFrame.left, outFrame.top, outFrame.right, outFrame.bottom);
-        boolean first = Boolean.TRUE != firstDone.get(window.asBinder());
-        firstDone.put(window.asBinder(), Boolean.TRUE);
-        if (first) try { window.windowFocusChanged(true, true); } catch (Exception e) { /* no focus */ }
+        boolean first = firstDone.add(window.asBinder());
+        if (DEBUG) android.util.Log.d("droid", "relayout first=" + first);
+        if (first) try { window.windowFocusChanged(true, true); } catch (Exception e) { android.util.Log.w("droid", "focus: " + e); }
         return (first ? WindowManagerGlobal.RELAYOUT_RES_FIRST_TIME | WindowManagerGlobal.RELAYOUT_RES_SURFACE_CHANGED : 0) | WindowManagerGlobal.RELAYOUT_RES_IN_TOUCH_MODE;
     }
-    private static final HashMap<IBinder, Boolean> firstDone = new HashMap<IBinder, Boolean>();
+    private static final java.util.HashSet<IBinder> firstDone = new java.util.HashSet<IBinder>();
     @Override public boolean outOfMemory(IWindow window) { return false; }
     @Override public void setTransparentRegion(IWindow window, Region region) {}
     @Override public void setInsets(IWindow window, int touchableInsets, Rect contentInsets, Rect visibleInsets, Region touchableRegion) {}

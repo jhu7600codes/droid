@@ -103,7 +103,10 @@ export function registerAospSystem(vm: VM, gfx: Gfx, host: HostSide) {
       gfx.resetCanvas(w.canvas, w.bmp)
       canvas.f.mNativeCanvas = w.canvas
       if (dirty) { dirty.f.left = 0; dirty.f.top = 0; dirty.f.right = w.bmp.w; dirty.f.bottom = w.bmp.h }
-      return o
+      // the lock is its own reference: unlockCanvasAndPost releases it, not the surface
+      const lock = nextH++
+      surfaces.set(lock, surfaces.get(o)!)
+      return lock
     },
     nativeUnlockCanvasAndPost: (v, s, [o]) => { const w = wins.get(surfaces.get(o) ?? -1); if (w?.bmp) host.present(w.id, w.bmp, w.frame) },
     nativeCreateFromSurfaceTexture: () => nextH++, nativeCreateFromSurfaceControl: () => nextH++,
@@ -137,6 +140,45 @@ export function registerAospSystem(vm: VM, gfx: Gfx, host: HostSide) {
   const AX = ['x', 'y', 'pressure', 'size', 'touchMajor', 'touchMinor', 'toolMajor', 'toolMinor', 'orientation']
   const coordsOf = (pc: JObject) => AX.map((k) => pc.f[k] ?? 0)
   const sampleAt = (e: ME, pos: number) => (pos === -2147483648 || pos >= e.samples.length - 1 ? e.samples[e.samples.length - 1] : e.samples[Math.max(0, pos)])
+  // VelocityTracker: least squares over the last 100ms of each pointer
+  interface VT { pts: Map<number, { t: number; x: number; y: number }[]>; vel: Map<number, [number, number]> }
+  const vts = new Map<number, VT>()
+  vm.registerNatives('Landroid/view/VelocityTracker;', {
+    nativeInitialize: () => { const h = nextH++; vts.set(h, { pts: new Map(), vel: new Map() }); return h },
+    nativeDispose: (v, s, [h]) => { vts.delete(h) },
+    nativeClear: (v, s, [h]) => { const t = vts.get(h); t?.pts.clear(); t?.vel.clear() },
+    nativeAddMovement: (v, s, [h, ev]) => {
+      const t = vts.get(h), e = mes.get(ev?.f.mNativePtr)
+      if (!t || !e) return
+      const act = e.action & 0xff
+      if (act === 0) t.pts.clear()
+      if (act === 1 || act === 6 || act === 3) return // the up sample adds nothing to the speed
+      for (const smp of e.samples) {
+        const ms = Number(smp.t) / 1e6
+        e.ptrs.forEach((p, i) => {
+          const l = t.pts.get(p.id) ?? []
+          l.push({ t: ms, x: smp.c[i][0] + e.xo, y: smp.c[i][1] + e.yo })
+          while (l.length && ms - l[0].t > 100) l.shift()
+          t.pts.set(p.id, l)
+        })
+      }
+    },
+    nativeComputeCurrentVelocity: (v, s, [h, units, max]) => {
+      const t = vts.get(h)
+      if (!t) return
+      t.vel.clear()
+      for (const [id, l] of t.pts) {
+        if (l.length < 2) { t.vel.set(id, [0, 0]); continue }
+        const n = l.length, mt = l.reduce((a, p) => a + p.t, 0) / n
+        const slope = (k: 'x' | 'y') => { const m = l.reduce((a, p) => a + p[k], 0) / n; let num = 0, den = 0; for (const p of l) { num += (p.t - mt) * (p[k] - m); den += (p.t - mt) ** 2 } return den ? num / den : 0 }
+        const clamp = (x: number) => Math.max(-max, Math.min(max, x * units))
+        t.vel.set(id, [clamp(slope('x')), clamp(slope('y'))])
+      }
+    },
+    nativeGetXVelocity: (v, s, [h, id]) => { const t = vts.get(h); return (id === -1 ? [...(t?.vel.values() ?? [])][0] : t?.vel.get(id))?.[0] ?? 0 },
+    nativeGetYVelocity: (v, s, [h, id]) => { const t = vts.get(h); return (id === -1 ? [...(t?.vel.values() ?? [])][0] : t?.vel.get(id))?.[1] ?? 0 },
+    nativeGetEstimator: () => 0,
+  })
   vm.registerNatives('Landroid/view/MotionEvent;', {
     nativeInitialize: (v, s, [p, device, source, action, flags, edge, meta, buttons, xo, yo, xp, yp, down, t, n, props, coords]) => {
       const h = p || nextH++

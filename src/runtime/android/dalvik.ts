@@ -775,10 +775,20 @@ function constKinds(m: JMethod, dex: Dex): Map<number, string> {
     const op = ins[pc] & 0xff
     if (op < 0x12 || op > 0x19) return
     const reg = op === 0x12 ? (ins[pc] >> 8) & 0xf : ins[pc] >> 8
-    for (const q of pcs.slice(idx + 1, idx + 40)) {
+    void idx
+    // follow the code from here (through gotos: `c ? 1.0f : x` jumps over the other branch) to the
+    // first instruction that reads or overwrites the register
+    let q = pc + insnSize(ins, pc)
+    for (let n = 0; n < 48 && q < ins.length; n++) {
+      const qop = ins[q] & 0xff
+      if (qop === 0x28) { q += (ins[q] << 16) >> 24; continue } // goto +AA
+      if (qop === 0x29) { q += (ins[q + 1] << 16) >> 16; continue } // goto/16
+      if (qop === 0x2a) { q += ins[q + 1] | (ins[q + 2] << 16); continue } // goto/32
       const t = readType(ins, q, reg, m, dex)
       if (t === 'stop') return
       if (t) { if (t === 'F' || t === 'D') out!.set(pc, t); return }
+      if (qop === 0x0e || qop === 0x27) return // return-void / throw
+      q += insnSize(ins, q)
     }
   })
   cache.set(code, out)

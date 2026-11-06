@@ -970,7 +970,31 @@ export function registerAospGraphics(vm: VM, hooks: { assetBytes?: (h: number) =
     nativeEndRecording: () => {}, nativeDraw: () => {}, nativeCreateFromStream: () => put({}), nativeWriteToStream: () => 0,
     getWidth: () => 0, getHeight: () => 0,
   })
-  vm.registerNatives('Landroid/graphics/Interpolator;', { nativeConstructor: () => put({}), nativeDestructor: () => {}, nativeReset: () => {}, nativeSetKeyFrame: () => {}, nativeSetRepeatMirror: () => {}, nativeTimeToValues: () => 0 })
+  // SkInterpolator: key frames, linear between them; 0 normal, 1 freeze start, 2 freeze end
+  interface Ip { n: number; frames: { t: number; v: number[] }[]; repeat: number; mirror: boolean }
+  const ipNew = (n: number, count: number): Ip => ({ n, frames: new Array(count), repeat: 1, mirror: false })
+  vm.registerNatives('Landroid/graphics/Interpolator;', {
+    nativeConstructor: (v, s, [n, count]) => put(ipNew(n, count)), nativeDestructor: (v, s, [h]) => { H.delete(h) },
+    nativeReset: (v, s, [h, n, count]) => { Object.assign(get<Ip>(h), ipNew(n, count)) },
+    nativeSetKeyFrame: (v, s, [h, i, t, vals]) => { get<Ip>(h).frames[i] = { t, v: [...(vals?.data ?? [])] } },
+    nativeSetRepeatMirror: (v, s, [h, repeat, mirror]) => { const ip = get<Ip>(h); ip.repeat = repeat; ip.mirror = !!mirror },
+    nativeTimeToValues: (v, s, [h, t, out]) => {
+      const ip = get<Ip>(h), f = ip.frames.filter(Boolean)
+      if (!f.length) return 0
+      const put2 = (vals: number[]) => { if (out) for (let i = 0; i < ip.n && i < vals.length; i++) out.data[i] = vals[i] }
+      const t0 = f[0].t, t1 = f[f.length - 1].t, span = t1 - t0
+      if (t <= t0) { put2(f[0].v); return 1 }
+      if (t >= t0 + span * ip.repeat || span <= 0) { put2(f[f.length - 1].v); return 2 }
+      let x = (t - t0) % span, cycle = Math.floor((t - t0) / span)
+      if (ip.mirror && cycle & 1) x = span - x
+      x += t0
+      let k = 0
+      while (k < f.length - 2 && x >= f[k + 1].t) k++
+      const a = f[k], b = f[k + 1], u = b.t > a.t ? (x - a.t) / (b.t - a.t) : 1
+      put2(a.v.map((y, i) => y + ((b.v[i] ?? y) - y) * u))
+      return 0
+    },
+  })
 
   // for the window: a canvas drawing into a bitmap the runtime shows
   return {
