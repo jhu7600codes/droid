@@ -107,7 +107,7 @@ interface Face { family: string; weight: number; italic: boolean }
 interface Shader { kind: 'bitmap' | 'linear' | 'radial' | 'sweep' | 'compose'; args: any; local: M | null }
 interface ColorFilter { kind: 'pd' | 'lighting' | 'matrix'; color?: number; mode?: number; mul?: number; add?: number; m?: number[] }
 
-// ---------- bitmaps ----------
+// ---------- bitmaps (configs are kitkat's native numbers: ALPHA_8 1, RGB_565 3, ARGB_4444 4, ARGB_8888 5) ----------
 export interface Bmp { w: number; h: number; config: number; canvas: HTMLCanvasElement | OffscreenCanvas | null; ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null; mutable: boolean; alpha: boolean; gen: number }
 
 export function registerAospGraphics(vm: VM, hooks: { assetBytes?: (h: number) => Uint8Array | undefined; redraw?: () => void } = {}) {
@@ -122,10 +122,10 @@ export function registerAospGraphics(vm: VM, hooks: { assetBytes?: (h: number) =
     const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(Math.max(1, w), Math.max(1, h)) : Object.assign(document.createElement('canvas'), { width: Math.max(1, w), height: Math.max(1, h) })
     return c
   }
-  const newBmp = (w: number, h: number, config = 6, mutable = true): Bmp => {
+  const newBmp = (w: number, h: number, config = 5, mutable = true): Bmp => {
     const canvas = makeCanvas(w, h)
     const ctx = (canvas?.getContext('2d') ?? null) as Bmp['ctx']
-    return { w, h, config, canvas, ctx, mutable, alpha: config !== 4, gen: 1 }
+    return { w, h, config, canvas, ctx, mutable, alpha: config !== 3, gen: 1 }
   }
   const floatsOf = (a: JArray) => a.data as Float32Array
   const rectOf = (r: JObject) => [r.f.left, r.f.top, r.f.right, r.f.bottom] as [number, number, number, number]
@@ -435,7 +435,7 @@ export function registerAospGraphics(vm: VM, hooks: { assetBytes?: (h: number) =
     nativeReconfigure: (v, s, [h, w, hh, config]) => { const b = B(h); Object.assign(b, newBmp(w, hh, config, b.mutable)) },
     nativeCompress: () => 0,
     nativeErase: (v, s, [h, c]) => { const b = B(h); if (b.ctx) { b.ctx.save(); b.ctx.setTransform(1, 0, 0, 1, 0, 0); b.ctx.globalCompositeOperation = 'copy'; b.ctx.fillStyle = rgba(c); b.ctx.fillRect(0, 0, b.w, b.h); b.ctx.restore() } b.gen++ },
-    nativeRowBytes: (v, s, [h]) => B(h).w * (B(h).config === 6 ? 4 : B(h).config === 2 ? 1 : 2),
+    nativeRowBytes: (v, s, [h]) => B(h).w * (B(h).config === 5 ? 4 : B(h).config === 1 ? 1 : 2),
     nativeConfig: (v, s, [h]) => B(h).config,
     nativeGetPixel: (v, s, [h, x, y]) => argb(pixelsOf(B(h), x, y, 1, 1), 0),
     nativeGetPixels: (v, s, [h, out, off, stride, x, y, w, hh]) => { const d = pixelsOf(B(h), x, y, w, hh), o = out.data as Int32Array; for (let j = 0; j < hh; j++) for (let i = 0; i < w; i++) o[off + j * stride + i] = argb(d, (j * w + i) * 4) },
@@ -450,7 +450,7 @@ export function registerAospGraphics(vm: VM, hooks: { assetBytes?: (h: number) =
     nativeCopyPixelsFromBuffer: (v, s, [h, buf]) => { const b = B(h); const u8 = buf.f?.u8 as Uint8Array | undefined; if (!b.ctx || !u8) return; const img = b.ctx.createImageData(b.w, b.h); img.data.set(u8.subarray(0, img.data.length)); b.ctx.putImageData(img, 0, 0); b.gen++ },
     nativeGenerationId: (v, s, [h]) => B(h).gen,
     nativeCreateFromParcel: () => null, nativeWriteToParcel: () => 0,
-    nativeExtractAlpha: (v, s, [h]) => { const a = B(h), bm = newBmp(a.w, a.h, 2); if (a.canvas && bm.ctx) bm.ctx.drawImage(a.canvas as CanvasImageSource, 0, 0); return javaBitmap(bm) },
+    nativeExtractAlpha: (v, s, [h]) => { const a = B(h), bm = newBmp(a.w, a.h, 1); if (a.canvas && bm.ctx) bm.ctx.drawImage(a.canvas as CanvasImageSource, 0, 0); return javaBitmap(bm) },
     nativePrepareToDraw: () => {},
     nativeHasAlpha: (v, s, [h]) => (B(h).alpha ? 1 : 0),
     nativeSetAlphaAndPremultiplied: (v, s, [h, a]) => { B(h).alpha = !!a },
@@ -500,7 +500,7 @@ export function registerAospGraphics(vm: VM, hooks: { assetBytes?: (h: number) =
     if (chunk && scale !== 1) chunk = scaleChunk(chunk, scale)
     if (padding && chunk) { const [l, t, r, bt] = chunkPadding(chunk); setRect(padding, l, t, r, bt) }
     if (opts?.f.inJustDecodeBounds) return null
-    const bm = newBmp(w, h, 6, !!opts?.f.inMutable)
+    const bm = newBmp(w, h, 5, !!opts?.f.inMutable)
     // pixels arrive when the browser has decoded them; android draws the bitmap on its next frame
     if (bm.ctx && typeof createImageBitmap !== 'undefined') {
       const blob = new Blob([b.slice() as BlobPart], { type: inf.mime })
@@ -747,7 +747,7 @@ export function registerAospGraphics(vm: VM, hooks: { assetBytes?: (h: number) =
     freeCaches: () => { widthCache.clear() }, freeTextLayoutCaches: () => { widthCache.clear() },
     isOpaque: (v, s) => (CS(s).bm && !CS(s).bm!.alpha ? 1 : 0),
     getWidth: (v, s) => CS(s).bm?.w ?? 0, getHeight: (v, s) => CS(s).bm?.h ?? 0,
-    save: (v, s) => save(CS(s)) - 1,
+    save: (v, s) => save(CS(s)), // the count before this save (that is what restoreToCount takes)
     restore: (v, s) => { const cv = CS(s); if (!cv.stack.length) throw vm.error('Ljava/lang/IllegalStateException;', 'Underflow in restore'); restore(cv) },
     getSaveCount: (v, s) => CS(s).stack.length + 1,
     restoreToCount: (v, s, [n]) => { const cv = CS(s); if (n < 1) throw vm.error('Ljava/lang/IllegalArgumentException;', 'Underflow in restoreToCount'); while (cv.stack.length >= n) restore(cv) },
@@ -764,8 +764,8 @@ export function registerAospGraphics(vm: VM, hooks: { assetBytes?: (h: number) =
       return cv.clip[2] > cv.clip[0] && cv.clip[3] > cv.clip[1] ? 1 : 0
     },
     native_clipRegion: (v, s, [h, rh, op]) => { const rg = get<Rg>(rh); return rg ? clipShape(C(h), op, (ctx) => { for (const r of rg.rects) ctx.rect(r[0], r[1], r[2] - r[0], r[3] - r[1]) }, rg.bounds) : 1 },
-    native_saveLayer: (v, s, [h, a, b, c, d, paint]) => { const cv = C(h); const [l, t, r, bt] = typeof a === 'object' && a ? rectOf(a) : a == null ? [-1e5, -1e5, 1e5, 1e5] : [a, b, c, d]; const p = typeof a === 'object' ? paintOf(b) : paintOf(paint); const xf = p && get<{ mode: number }>(p.xfermode); return saveLayer(cv, l, t, r, bt, p ? (p.color >>> 24) / 255 : 1, xf ? PD[xf.mode] ?? 'source-over' : 'source-over') - 1 },
-    native_saveLayerAlpha: (v, s, [h, a, b, c, d, alpha]) => { const cv = C(h); const [l, t, r, bt] = typeof a === 'object' && a ? rectOf(a) : a == null ? [-1e5, -1e5, 1e5, 1e5] : [a, b, c, d]; const al = typeof a === 'object' ? b : alpha; return saveLayer(cv, l, t, r, bt, (al & 255) / 255, 'source-over') - 1 },
+    native_saveLayer: (v, s, [h, a, b, c, d, paint]) => { const cv = C(h); const [l, t, r, bt] = typeof a === 'object' && a ? rectOf(a) : a == null ? [-1e5, -1e5, 1e5, 1e5] : [a, b, c, d]; const p = typeof a === 'object' ? paintOf(b) : paintOf(paint); const xf = p && get<{ mode: number }>(p.xfermode); return saveLayer(cv, l, t, r, bt, p ? (p.color >>> 24) / 255 : 1, xf ? PD[xf.mode] ?? 'source-over' : 'source-over') },
+    native_saveLayerAlpha: (v, s, [h, a, b, c, d, alpha]) => { const cv = C(h); const [l, t, r, bt] = typeof a === 'object' && a ? rectOf(a) : a == null ? [-1e5, -1e5, 1e5, 1e5] : [a, b, c, d]; const al = typeof a === 'object' ? b : alpha; return saveLayer(cv, l, t, r, bt, (al & 255) / 255, 'source-over') },
     native_concat: (v, s, [h, m]) => { const cv = C(h); cv.m = mul(cv.m, Mx(m)) },
     native_setMatrix: (v, s, [h, m]) => { const cv = C(h); cv.m = m ? new Float64Array(Mx(m)) : ident() },
     nativeSetDrawFilter: (v, s, [h, f]) => { C(h).filter = f ? get(f) : null },

@@ -355,7 +355,10 @@ export class VM {
 
   // queue a java call on a thread (driver threads run one call after another)
   pushCall(t: JThread, m: JMethod, self: any, args: any[]) { this.pushFrame(t, m, self, args) }
+  // debugging: called for every java method entered (tools/aosp/boot.mjs JTRACE=...)
+  onEnter: ((m: JMethod) => void) | null = null
   private pushFrame(t: JThread, m: JMethod, self: any, args: any[]) {
+    if (this.onEnter) this.onEnter(m)
     if (t.frames.length > 3000) throw this.error('Ljava/lang/StackOverflowError;', 'stack size ' + t.frames.length)
     const code = m.code!
     const r: any[] = new Array(code.registers).fill(0)
@@ -430,7 +433,7 @@ export class VM {
             }
             case 0x1e: { const o = obj(r[AA]); if (o == null) throw npe(); exit(o, t); pc += 1; break }
             case 0x1f: {
-              const v = r[AA], c = this.cls(dex.types[ins[pc + 1]])
+              const v = obj(r[AA]), c = this.cls(dex.types[ins[pc + 1]])
               if (v != null && !this.instanceOf(v, c)) throw this.error('Ljava/lang/ClassCastException;', `${this.classOf(v).name} cannot be cast to ${c.name}`)
               pc += 2; break
             }
@@ -489,7 +492,7 @@ export class VM {
             }
             case 0x38: case 0x39: case 0x3a: case 0x3b: case 0x3c: case 0x3d: {
               const x = r[AA]
-              const z = x == null || x === 0 || x === 0n
+              const z = x == null || x === 0 || x === 0n || x === false
               const t = op === 0x38 ? z : op === 0x39 ? !z : op === 0x3a ? x < 0 : op === 0x3b ? x >= 0 || z : op === 0x3c ? x > 0 : x <= 0 || z
               pc += t ? s16(ins[pc + 1]) : 2; break
             }

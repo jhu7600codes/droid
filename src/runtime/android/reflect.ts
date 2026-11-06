@@ -225,7 +225,11 @@ export function registerReflect(vm: VM) {
 
   // one class loader for everything
   def('Ljava/lang/ClassLoader;', OBJ, {
+    '<init>()V': () => {}, '<init>(Ljava/lang/ClassLoader;)V': (v, s, [p]) => { s.f.parent = p },
     'loadClass(Ljava/lang/String;)Ljava/lang/Class;': (v, s, [n]) => { const d = descOf(n); if (!vm.hasClass(d)) throw cnf(n); return vm.classObject(vm.cls(d)) },
+    'loadClass(Ljava/lang/String;Z)Ljava/lang/Class;': (v, s, [n]) => { const d = descOf(n); if (!vm.hasClass(d)) throw cnf(n); return vm.classObject(vm.cls(d)) },
+    'findLoadedClass(Ljava/lang/String;)Ljava/lang/Class;': (v, s, [n]) => { const d = descOf(n); return vm.hasClass(d) ? vm.classObject(vm.cls(d)) : null },
+    'getResources(Ljava/lang/String;)Ljava/util/Enumeration;': () => vm.callStatic('Ljava/util/Collections;', 'enumeration(Ljava/util/Collection;)Ljava/util/Enumeration;', [vm.newObject('Ljava/util/ArrayList;')]),
     'getParent()Ljava/lang/ClassLoader;': () => null,
     'getSystemClassLoader()Ljava/lang/ClassLoader;': () => loader,
     'getResource(Ljava/lang/String;)Ljava/net/URL;': () => null,

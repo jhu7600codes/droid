@@ -122,6 +122,9 @@
       run: function (job) { return call('bg.run', [job]) },
       idle: function () { return call('bg.idle', []) },
     },
+    runtime: {
+      aosp: function () { return call('runtime.aosp', []) },
+    },
     device: {
       info: function () { return call('device.info', []) },
     },

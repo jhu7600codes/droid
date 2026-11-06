@@ -47,6 +47,8 @@ function settingsApp(ctx: ActivityContext): Activity {
   // developer options: unlocked by tapping the build number 7 times (like android)
   const developer = sub('Developer options', () => [
     { type: 'switch', title: 'Developer options', key: 'dev.enabled', summary: 'Turning this off hides the page again' },
+    { type: 'header', title: 'Android apps' },
+    { type: 'switch', title: 'Real Android framework (beta)', key: 'android.aosp', summary: 'Converted apps run on Android 4.4\'s own framework code. Slower for now; restart an app to switch' },
     { type: 'header', title: 'Droid proxy' },
     { type: 'item', title: 'Proxy address', summary: () => (settings.get('proxy.url') as string) || 'Not set', onclick: async () => {
       const r = await dialog({ title: 'Droid proxy', kind: 'input', value: settings.get('proxy.url') as string, placeholder: 'https://proxy.example.com' })

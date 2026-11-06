@@ -40,6 +40,9 @@ export function javaRegex(src: string, flags = 0): RegExp {
       if (n === 'z' || n === 'Z') { out += '$(?![\\s\\S])'; i++; continue }
       if (n === 'A') { out += '(?<![\\s\\S])'; i++; continue }
       if (n === 'h') { out += '[ \\t\\xA0\\u1680\\u180e\\u2000-\\u200a\\u202f\\u205f\\u3000]'; i++; continue }
+      // java lets any punctuation be escaped; js unicode regexes only allow syntax characters
+      // (and '-' inside a class)
+      if (n !== undefined && !/[A-Za-z0-9]/.test(n) && !'^$\\.*+?()[]{}|/'.includes(n) && !(inClass && n === '-')) { out += n === '-' && inClass ? '\\-' : /[\s\S]/.test(n) ? n.replace(/[-]/, '\\x2d') : n; i++; continue }
       out += c + (n ?? ''); i++; continue
     }
     if (inClass) {

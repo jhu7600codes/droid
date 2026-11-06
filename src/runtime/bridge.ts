@@ -31,6 +31,10 @@ export const permissionText = (p: string) => PERM_TEXT[p] || p
 
 const err = (code: string, msg?: string) => new DpkError(code, msg || code)
 
+// framework.dex and framework-res.apk (built by tools/aosp/build.py), fetched once per page
+let aosp: Promise<{ dex: ArrayBuffer; res: ArrayBuffer } | null> | null = null
+const aospFiles = () => (aosp ||= Promise.all(['runtime/aosp/framework.dex', 'runtime/aosp/framework-res.apk'].map((u) => fetch(u).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(u)))))).then(([dex, res]) => ({ dex, res })).catch(() => { aosp = null; return null }))
+
 // asks once per app and permission, remembers the answer (holo dialog)
 export async function ensure(pkg: string, perm: string) {
   const app = kernel.get(pkg)
@@ -162,6 +166,8 @@ export function makeBridge(pkg: string, ctx: ActivityContext, host: Host) {
     'ui.statusbar': (visible: boolean) => { host.iframe.closest('.window')?.classList.toggle('no-statusbar', !visible); wm.bars() },
     'system.fullscreen': async (on: boolean) => { await ensure(pkg, 'fullscreen'); screenEl.classList.toggle('immersive', on) },
     'device.info': deviceInfo,
+    // the real android framework for converted apps (developer option), null when it is off
+    'runtime.aosp': async () => (settings.get('android.aosp') ? aospFiles() : null),
 
     'net.state': () => netState(),
     'net.fetch': async (url: string, init: { method: string; headers: Record<string, string>; body?: ArrayBuffer | string }) => {

@@ -1,16 +1,21 @@
 // the android framework's native methods, written for the web platform. the framework itself is
 // the real android 4.4 code (tools/aosp/build.py builds it to framework.dex); what android does in
 // c++ (skia, the resource table, the log, the looper...) droid does here.
-import type { VM } from '../dalvik.ts'
+import type { VM, NativeFn } from '../dalvik.ts'
 import { jstr } from '../java.ts'
 import { registerParcel } from './parcel.ts'
 import { registerAospRes } from './res.ts'
 import { registerAospGraphics } from './graphics.ts'
+import { registerJavaFill } from './javafill.ts'
+import { registerPosix } from './posix.ts'
+import type { Vfs } from '../javaio.ts'
 
 const LEVEL = ['', '', 'V', 'D', 'I', 'W', 'E', 'A']
 
-export function registerAospNatives(vm: VM, opts: { redraw?: () => void } = {}) {
+export function registerAospNatives(vm: VM, opts: { redraw?: () => void; vfs?: Vfs } = {}) {
   const text = (x: any) => (x == null ? '' : jstr(vm, x))
+  registerJavaFill(vm)
+  if (opts.vfs) registerPosix(vm, opts.vfs)
   registerParcel(vm)
   const res = registerAospRes(vm)
   const gfx = registerAospGraphics(vm, { assetBytes: res.assetBytes, redraw: opts.redraw })
@@ -24,6 +29,30 @@ export function registerAospNatives(vm: VM, opts: { redraw?: () => void } = {}) 
       return line.length
     },
   })
+  vm.registerNatives('Lorg/apache/harmony/dalvik/ddmc/DdmServer;', { nativeSendChunk: () => {} })
+  // animators set properties through methods looked up by name (setAlpha(F)V ...)
+  const pvh: { name: string; desc: string }[] = [{ name: '', desc: '' }]
+  const pvhFind = (desc: string): NativeFn => (v, s, [cls, name]) => { const c = cls.f.of, n = text(name); if (!vm.findMethod(c, n + desc)) return 0; pvh.push({ name: n, desc }); return pvh.length - 1 }
+  const pvhCall: NativeFn = (v, s, [target, id, ...args]) => { const m = pvh[id]; if (m && target) vm.callVirtual(target, m.name + m.desc, args) }
+  vm.registerNatives('Landroid/animation/PropertyValuesHolder;', {
+    nGetIntMethod: pvhFind('(I)V'), nGetFloatMethod: pvhFind('(F)V'),
+    nGetMultipleIntMethod: () => 0, nGetMultipleFloatMethod: () => 0,
+    nCallIntMethod: pvhCall, nCallFloatMethod: pvhCall,
+    nCallTwoIntMethod: pvhCall, nCallFourIntMethod: pvhCall, nCallMultipleIntMethod: () => {},
+    nCallTwoFloatMethod: pvhCall, nCallFourFloatMethod: pvhCall, nCallMultipleFloatMethod: () => {},
+  })
+  const f32 = Math.fround
+  vm.registerNatives('Landroid/util/FloatMath;', {
+    floor: (v, s, [x]) => f32(Math.floor(x)), ceil: (v, s, [x]) => f32(Math.ceil(x)), sin: (v, s, [x]) => f32(Math.sin(x)), cos: (v, s, [x]) => f32(Math.cos(x)),
+    sqrt: (v, s, [x]) => f32(Math.sqrt(x)), exp: (v, s, [x]) => f32(Math.exp(x)), pow: (v, s, [x, y]) => f32(Math.pow(x, y)), hypot: (v, s, [x, y]) => f32(Math.hypot(x, y)),
+  })
+  vm.registerNatives('Landroid/emoji/EmojiFactory;', { newAvailableInstance: () => null, newInstance: () => null })
+  vm.registerNatives('Landroid/util/EventLog;', { writeEvent: () => 0, readEvents: () => {}, getTagCode: () => -1, getTagName: () => null })
+  // renderscript: there is none; the framework only sets up its cache directory at start
+  vm.registerNatives('Landroid/renderscript/RenderScript;', { _nInit: () => {}, nSystemGetPointerSize: () => 4 })
+  vm.registerNatives('Landroid/renderscript/RenderScriptCacheDir;', {})
+  vm.registerNatives('Ldalvik/system/VMDebug;', { isDebuggerConnected: () => 0, isDebuggingEnabled: () => 0, lastDebuggerActivity: () => -1n, threadCpuTimeNanos: () => BigInt(Math.round(performance.now() * 1e6)), startAllocCounting: () => {}, stopAllocCounting: () => {}, getAllocCount: () => 0, resetAllocCount: () => {}, countInstancesOfClass: () => 0n })
+  vm.registerNatives('Landroid/os/Debug;', { getPss: () => 0n, getNativeHeapSize: () => 0n, getNativeHeapAllocatedSize: () => 0n, getNativeHeapFreeSize: () => 0n, getMemoryInfo: () => {}, waitForDebugger: () => {}, isDebuggerConnected: () => 0 })
   vm.registerNatives('Landroid/os/Trace;', {
     'nativeGetEnabledTags()J': () => 0n, 'nativeTraceCounter(JLjava/lang/String;I)V': () => {},
     'nativeTraceBegin(JLjava/lang/String;)V': () => {}, 'nativeTraceEnd(J)V': () => {},
