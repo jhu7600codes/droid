@@ -16,6 +16,16 @@ export default async ({ page, shot, base }) => {
   await page.click('.window.visible .pi-buttons .h-btn-borderless:last-child').catch(() => {})
   await page.waitForTimeout(Number(process.env.RUN_MS || 15000))
   await shot('apk-01-run')
+  // STEPS='tap:32,356;wait:2000;back;shot' : taps (page px), waits, the back key, screenshots
+  let n = 2
+  for (const st of (process.env.STEPS || '').split(';').filter(Boolean)) {
+    const [k, a] = st.split(':')
+    if (k === 'tap') { const [x, y] = a.split(',').map(Number); await page.mouse.click(x, y); await page.waitForTimeout(1500) }
+    else if (k === 'drag') { const [x0, y0, x1, y1] = a.split(',').map(Number); await page.mouse.move(x0, y0); await page.mouse.down(); for (let i = 1; i <= 10; i++) { await page.mouse.move(x0 + ((x1 - x0) * i) / 10, y0 + ((y1 - y0) * i) / 10); await page.waitForTimeout(30) } await page.mouse.up(); await page.waitForTimeout(1500) }
+    else if (k === 'wait') await page.waitForTimeout(Number(a))
+    else if (k === 'back') { await page.evaluate(() => window.droid_shell.wm.back()); await page.waitForTimeout(2000) }
+    else if (k === 'shot') await shot('apk-' + String(n++).padStart(2, '0') + (a ? '-' + a : ''))
+  }
   if (process.env.DUMP) await dump(page)
   console.log('overlay:', (await page.locator('#overlay').innerText().catch(() => '')).slice(0, 600))
 }

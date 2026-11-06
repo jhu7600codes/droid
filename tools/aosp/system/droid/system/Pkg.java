@@ -32,6 +32,13 @@ public final class Pkg {
     }
     private static void fill(ActivityInfo ai) { ai.applicationInfo = app; if (ai.processName == null) ai.processName = app.packageName; }
 
+    /** the app's content providers, for ActivityThread to install at bind */
+    static java.util.List<android.content.pm.ProviderInfo> providers() {
+        java.util.List<android.content.pm.ProviderInfo> l = new java.util.ArrayList<android.content.pm.ProviderInfo>();
+        for (PackageParser.Provider p : pkg.providers) { p.info.applicationInfo = app; if (p.info.processName == null) p.info.processName = app.packageName; l.add(p.info); }
+        return l.isEmpty() ? null : l;
+    }
+
     static ActivityInfo activity(String className) {
         for (PackageParser.Activity a : pkg.activities) if (a.info.name.equals(className)) return a.info;
         for (PackageParser.Activity a : pkg.activities) if (a.info.name.endsWith("." + className) || a.info.name.equals(app.packageName + className)) return a.info;
