@@ -56,7 +56,7 @@ export function registerConcurrent(vm: VM) {
         if (!err) return
         const h = s.f.handler ?? defaultHandler
         if (h && err instanceof JavaThrow) { try { vm.callVirtual(h, 'uncaughtException(Ljava/lang/Thread;Ljava/lang/Throwable;)V', [s, err.obj]) } catch (e) { console.warn('uncaught handler', e) } }
-        else console.warn(`java thread "${t.name}" died:`, err instanceof JavaThrow ? (err.obj.cls.name + ': ' + (err.obj.f.message ?? '')) : err)
+        else console.warn(`java thread "${t.name}" died:`, err instanceof JavaThrow ? (err.obj.cls.name + ': ' + (err.obj.f.message ?? '') + ' at ' + (err.obj.f.jstack || []).slice(0, 8).join(' < ')) : err)
       }
     },
     'run()V': (v, s) => { if (s.f.target) vm.callVirtual(s.f.target, 'run()V') },

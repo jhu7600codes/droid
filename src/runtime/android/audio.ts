@@ -124,6 +124,28 @@ export function registerAudio(vm: VM) {
     'getProperty(Ljava/lang/String;)Ljava/lang/String;': (v, s, [k]) => (/SAMPLE_RATE/.test(k) ? String(audio()?.sampleRate ?? 44100) : /FRAMES_PER_BUFFER/.test(k) ? '256' : null),
   }, statics: am?.statics || {} })
   void JObject
+  // android's own AudioTrack (real framework): its natives on the same tracks
+  return (): Record<string, NativeFn> => {
+    const M = methods
+    return {
+      native_setup: (v, s, [, stream, rate, cfg, fmt, size, mode, session]) => { M['<init>(IIIIII)V'](v, s, [stream, rate, cfg, fmt, size, mode]); if (session?.data) session.data[0] = 1; return 0 },
+      native_start: (v, s) => M['play()V'](v, s, []), native_pause: (v, s) => M['pause()V'](v, s, []),
+      native_stop: (v, s) => M['stop()V'](v, s, []), native_flush: (v, s) => M['flush()V'](v, s, []),
+      native_release: (v, s) => M['release()V'](v, s, []), native_finalize: () => {},
+      native_write_byte: (v, s, [a, o, n]) => M['write([BII)I'](v, s, [a, o, n]),
+      native_write_short: (v, s, [a, o, n]) => M['write([SII)I'](v, s, [a, o, n]),
+      native_reload_static: () => 0,
+      native_get_native_frame_count: (v, s) => { const t = tr(s); return t ? Math.floor(t.bufBytes / (t.channels * bytesPer(t.format))) : 0 },
+      native_setVolume: (v, s, [l, r]) => M['setStereoVolume(FF)I'](v, s, [l, r]),
+      native_set_playback_rate: () => 0, native_get_playback_rate: (v, s) => tr(s)?.rate ?? 44100,
+      native_set_marker_pos: () => 0, native_get_marker_pos: () => 0, native_set_pos_update_period: () => 0, native_get_pos_update_period: () => 0,
+      native_set_position: () => 0, native_get_position: (v, s) => M['getPlaybackHeadPosition()I'](v, s, []),
+      native_get_latency: () => 50, native_get_timestamp: () => -1, native_set_loop: () => 0,
+      native_get_output_sample_rate: () => audio()?.sampleRate ?? 44100,
+      native_get_min_buff_size: (v, s, [rate, chans, fmt]) => Math.ceil(((rate || 44100) * Math.max(1, chans) * bytesPer(fmt) * 0.05) / 4) * 4,
+      native_attachAuxEffect: () => 0, native_setAuxEffectSendLevel: () => {},
+    }
+  }
 }
 function popcount(x: number) { let n = 0; while (x) { n += x & 1; x >>>= 1 } return n }
 

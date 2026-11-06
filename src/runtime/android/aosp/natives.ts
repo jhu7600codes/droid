@@ -61,6 +61,11 @@ export function registerAospNatives(vm: VM, opts: { redraw?: () => void; vfs?: V
     quantityForIntImpl: (v, s, [h, n]) => QTY[plural.get(BigInt(h))?.select(n) ?? 'other'] ?? 5,
     finalizeImpl: (v, s, [h]) => { plural.delete(BigInt(h)) },
   })
+  // sensors: none (the phone has no accelerometer here; apps fall back to touch)
+  vm.registerNatives('Landroid/hardware/SystemSensorManager;', { nativeClassInit: () => {}, nativeGetNextSensor: () => -1 })
+  vm.registerNatives('Landroid/hardware/SystemSensorManager$BaseEventQueue;', {
+    nativeInitBaseEventQueue: () => 1, nativeEnableSensor: () => -1, nativeDisableSensor: () => 0, nativeDestroySensorEventQueue: () => {}, nativeFlushSensor: () => -1,
+  })
   vm.registerNatives('Landroid/util/FloatMath;', {
     floor: (v, s, [x]) => f32(Math.floor(x)), ceil: (v, s, [x]) => f32(Math.ceil(x)), sin: (v, s, [x]) => f32(Math.sin(x)), cos: (v, s, [x]) => f32(Math.cos(x)),
     sqrt: (v, s, [x]) => f32(Math.sqrt(x)), exp: (v, s, [x]) => f32(Math.exp(x)), pow: (v, s, [x, y]) => f32(Math.pow(x, y)), hypot: (v, s, [x, y]) => f32(Math.hypot(x, y)),

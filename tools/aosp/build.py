@@ -51,7 +51,7 @@ SEED_DIRS = ['android/app', 'android/widget', 'android/view', 'android/view/anim
              'android/text/format', 'android/util', 'android/graphics', 'android/graphics/drawable', 'android/graphics/drawable/shapes',
              'android/preference', 'android/webkit', 'android/database', 'android/database/sqlite', 'android/net', 'android/animation',
              'android/provider', 'android/transition', 'android/media', 'android/hardware', 'android/location', 'android/gesture',
-             'com/android/internal/widget', 'com/android/internal/view', 'com/android/internal/view/menu', 'com/android/internal/app']
+             'android/opengl', 'com/google/android/gles_jni', 'com/android/internal/widget', 'com/android/internal/view', 'com/android/internal/view/menu', 'com/android/internal/app']
 # the system services droid provides: an implementation that does nothing is generated for each
 # (tools/aosp/gen/GenDefaults.java); tools/aosp/system overrides what apps need
 SERVICES = ['android.app.IActivityManager=android.app.ActivityManagerNative', 'android.os.IServiceManager=android.os.ServiceManagerNative',

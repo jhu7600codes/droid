@@ -53,6 +53,8 @@ const sys = registerAospSystem(vm, gfx, {
 })
 const { registerAospMedia } = await import('../../src/runtime/android/aosp/media.ts')
 registerAospMedia(vm, vfs, { later: sys.later, windowOf: sys.windowOf })
+const { registerAospEgl } = await import('../../src/runtime/android/aosp/egl.ts')
+registerAospEgl(vm, { windowOf: sys.windowOf, frameOf: sys.frameOf })
 if (process.env.TRACE) for (const k of process.env.TRACE.split(',')) { const f = vm.dexNatives.get(k); if (f) vm.dexNatives.set(k, (v, s, a) => { console.log('trace', k.split('->')[1], a.map((x) => (typeof x === 'object' && x ? x.cls?.name ?? '[]' : String(x))).join(' ')); return f(v, s, a) }) }
 if (process.env.JTRACE) { const re = new RegExp(process.env.JTRACE), from = process.env.JFROM && new RegExp(process.env.JFROM), max = Number(process.env.JMAX || 400); let n = 0, on = !from, skip = Number(process.env.JSKIP || 0); vm.onEnter = (m) => { const k = m.cls.name + '.' + m.name; if (!on && from.test(k) && skip-- <= 0) on = true; if (on && re.test(k) && n++ < max) console.log('call', k) } }
 const boot = vm.findMethod(vm.cls('Ldroid/system/Boot;'), 'main([Ljava/lang/String;)V')

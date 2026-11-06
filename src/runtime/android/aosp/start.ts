@@ -14,8 +14,9 @@ import { Native } from '../arm/native.ts'
 import { registerAospNatives } from './natives.ts'
 import { registerAospSystem } from './system.ts'
 import { registerAospMedia } from './media.ts'
+import { registerAospEgl } from './egl.ts'
 import { apks, device } from './res.ts'
-import { registerNet } from '../audio.ts'
+import { registerNet, registerAudio } from '../audio.ts'
 import { registerHttp } from '../net.ts'
 
 // libraries the framework itself loads: their natives are droid's own
@@ -48,9 +49,13 @@ export async function startAosp(o: { droid: any; root: HTMLElement; pkg: string;
   const { gfx } = registerAospNatives(vm, { vfs, redraw })
   // java.net through droid's network (no permission prompt; the proxy fills in for cors)
   registerNet(vm); registerHttp(vm, droid, () => vm.current === vm.main)
+  // sound: android's AudioTrack natives on web audio
+  vm.registerNatives('Landroid/media/AudioTrack;', registerAudio(vm)())
 
   const unzip = async (buf: ArrayBuffer) => { const m = new Map<string, Uint8Array>(); for (const e of listZip(buf)) m.set(e.path, await readEntry(buf, e)); return m }
   apks.set('/system/framework/framework-res.apk', await unzip(o.fw.res))
+  // apps with native code keep assets/ only inside the original apk: android's AssetManager reads them from there
+  if (o.apk) { const b = o.apk.buffer.slice(o.apk.byteOffset, o.apk.byteOffset + o.apk.byteLength) as ArrayBuffer; for (const e of listZip(b)) if (!files.has(e.path) && e.path.startsWith('assets/')) files.set(e.path, await readEntry(b, e)) }
   const apkPath = `/data/app/${o.pkg}-1.apk`
   apks.set(apkPath, files)
   vfs.write(apkPath, o.apk ?? new Uint8Array([0x50, 0x4b]))
@@ -94,8 +99,8 @@ export async function startAosp(o: { droid: any; root: HTMLElement; pkg: string;
   droid.actionbar?.hide?.()
 
   // video: a <video> over the window of the SurfaceView it plays into
-  const videos = new Map<HTMLVideoElement, number | null>()
-  const place = (el: HTMLVideoElement, id: number) => {
+  const videos = new Map<HTMLElement, number | null>()
+  const place = (el: HTMLElement, id: number) => {
     const f = sys.frameOf(id)
     if (!f) return
     Object.assign(el.style, { display: 'block', left: f[0] / dpr + 'px', top: f[1] / dpr + 'px', width: (f[2] - f[0]) / dpr + 'px', height: (f[3] - f[1]) / dpr + 'px' })
@@ -103,6 +108,16 @@ export async function startAosp(o: { droid: any; root: HTMLElement; pkg: string;
   registerAospMedia(vm, vfs, {
     later: sys.later, windowOf: sys.windowOf, mediaUrl: droid.net?.mediaUrl,
     show: (el, id) => { if (!el.isConnected) root.append(el); videos.set(el, id); if (id == null) el.style.display = 'none'; else place(el, id) },
+  })
+  // opengl: a webgl2 canvas over the GLSurfaceView's window (same placement as video)
+  registerAospEgl(vm, {
+    windowOf: sys.windowOf, frameOf: sys.frameOf,
+    glCanvas: (id) => {
+      const c = document.createElement('canvas')
+      c.style.cssText = 'position:absolute;pointer-events:none;display:none'
+      root.append(c); videos.set(c, id); place(c, id)
+      return c
+    },
   })
 
   // touches: device pixels, down time kept per gesture
