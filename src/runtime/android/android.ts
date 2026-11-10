@@ -779,7 +779,7 @@ export function registerAndroid(vm: VM, env: Env) {
     const P = vm.cls('Landroid/content/SharedPreferences;'), E = vm.cls('Landroid/content/SharedPreferences$Editor;')
     const key = (s: JObject, k: string) => `sp:${s.f.name}:${k}`
     const get = (s: JObject, k: string, d: any) => (env.prefs.has(key(s, k)) ? env.prefs.get(key(s, k)) : d)
-    const add = (k: string, fn: NativeFn, cls = P) => cls.methods.set(k, { cls, name: k.slice(0, k.indexOf('(')), key: k, desc: k.slice(k.indexOf('(')), ret: k.slice(k.indexOf(')') + 1), params: splitParams(k.slice(k.indexOf('('))), flags: 1, code: null, native: fn })
+    const add = (k: string, fn: NativeFn, cls = P) => (vm.epoch++, cls.methods.set(k, { cls, name: k.slice(0, k.indexOf('(')), key: k, desc: k.slice(k.indexOf('(')), ret: k.slice(k.indexOf(')') + 1), params: splitParams(k.slice(k.indexOf('('))), flags: 1, code: null, native: fn }))
     add('getInt(Ljava/lang/String;I)I', (v, s, [k, d]) => get(s, k, d))
     add('getLong(Ljava/lang/String;J)J', (v, s, [k, d]) => { const x = get(s, k, null); return x == null ? d : BigInt(x) })
     add('getBoolean(Ljava/lang/String;Z)Z', (v, s, [k, d]) => (get(s, k, d) ? 1 : 0))

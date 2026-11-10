@@ -375,7 +375,7 @@ export function registerWidgets(vm: VM, env: Env, w: WidgetHelpers) {
   // android-more puts no-op listeners on Button / EditText / ImageView themselves, which would hide these
   for (const c of ['Landroid/widget/Button;', 'Landroid/widget/EditText;']) {
     const sh = vm.shims.get(c)
-    for (const k of ['addTextChangedListener(Landroid/text/TextWatcher;)V', 'setOnEditorActionListener(Landroid/widget/TextView$OnEditorActionListener;)V', 'setInputType(I)V', 'setSingleLine(Z)V']) { delete sh?.methods?.[k]; vm.classes.get(c)?.methods.delete(k) }
+    for (const k of ['addTextChangedListener(Landroid/text/TextWatcher;)V', 'setOnEditorActionListener(Landroid/widget/TextView$OnEditorActionListener;)V', 'setInputType(I)V', 'setSingleLine(Z)V']) { delete sh?.methods?.[k]; vm.classes.get(c)?.methods.delete(k); vm.epoch++ }
   }
   def('Landroid/text/Layout;', OBJ, {
     'getLineCount()I': (v, s) => vm.callVirtual(s.f.view, 'getLineCount()I') as number,

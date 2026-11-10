@@ -49,7 +49,7 @@ const sys = registerAospSystem(vm, gfx, {
   pkg: 'app', apkPath,
   screen: () => ({ w: 720, h: 1280, dpi: 320 }),
   present: (w, bmp, f) => { if (frames++ < 3 || process.env.FRAMES) console.log(`frame: window ${w} ${bmp.w}x${bmp.h} at ${f.join(',')}`) },
-  event: (what, d) => console.log('host event:', what, d),
+  event: (what, d) => console.log('host event:', what, d, Math.round(performance.now()) + 'ms'),
 })
 const { registerAospMedia } = await import('../../src/runtime/android/aosp/media.ts')
 registerAospMedia(vm, vfs, { later: sys.later, windowOf: sys.windowOf })
@@ -69,4 +69,5 @@ if (process.env.INSPECT) setTimeout(() => {
   const g = vm.callStatic('Landroid/view/WindowManagerGlobal;', 'getInstance()Landroid/view/WindowManagerGlobal;')
   for (const r of g.f.mRoots.f.a) { const ai = r.f.mAttachInfo, d = r.f.mDirty; console.log('root', { w: r.f.mWidth, h: r.f.mHeight, scale: ai.f.mApplicationScale, screenOn: ai.f.mScreenOn, valid: r.f.mSurface?.f.mNativeObject, dirty: [d.f.left, d.f.top, d.f.right, d.f.bottom], winFrame: [r.f.mWinFrame.f.left, r.f.mWinFrame.f.right], holder: r.f.mSurfaceHolder?.cls.name, hw: ai.f.mHardwareRenderer?.cls.name, anim: r.f.mIsAnimating, mView: r.f.mView?.cls.name, measured: r.f.mView?.f.mMeasuredWidth }) }
 }, Number(process.env.INSPECT) * 1000)
-setTimeout(() => { console.log(`after ${seconds}s: ${frames} frames | missing:`, [...vm.missing].slice(0, 40).join(' ')); process.exit(0) }, seconds * 1000)
+setTimeout(() => { { let n = 0, no = 0; for (const c of vm.classes.values()) for (const m of c.methods.values()) { if (m.jit) n++; else if (m.jit === null) no++ } console.log('jit: compiled', n, 'not leaf', no) }
+  console.log(`after ${seconds}s: ${frames} frames | missing:`, [...vm.missing].slice(0, 40).join(' ')); process.exit(0) }, seconds * 1000)

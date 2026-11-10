@@ -6,6 +6,10 @@
 // wide values take two registers: the value sits in the first, the second is unused.
 import type { Dex, DexClass, Code, MethodRef } from './dex.ts'
 import { ACC } from './dex.ts'
+import { compile } from './jit.ts'
+// calls before a leaf method is compiled; DROID_JIT=0 (node) turns the jit off
+const JIT_AFTER = 50
+const JIT_OFF = (globalThis as any).process?.env?.DROID_JIT === '0'
 import { scheduler, isBlock, tryEnter, enterBlock, exit, taskId, type Block, type Task } from './threads.ts'
 
 export interface Frame {
@@ -50,6 +54,7 @@ export type NativeFn = (vm: VM, self: any, args: any[]) => any
 export interface JMethod {
   cls: JClass; name: string; key: string; desc: string; ret: string; params: string[]; flags: number
   code: Code | null; native?: NativeFn; dex?: Dex
+  calls?: number; jit?: ((H: any, self: any, args: any[]) => any) | null // hot leaf methods compiled to js (jit.ts)
 }
 export interface JClass {
   name: string; super: JClass | null; interfaces: JClass[]; methods: Map<string, JMethod>
@@ -93,8 +98,11 @@ export class VM {
 
   // class name -> where it is defined (the first dex that has it wins)
   private dexIndex = new Map<string, { c: DexClass; d: Dex }>()
-  addDex(d: Dex) { this.dexes.push(d); for (const c of d.classes) if (!this.dexIndex.has(c.name)) this.dexIndex.set(c.name, { c, d }) }
+  // bumped whenever classes can gain methods: findMethod's per-class caches start over
+  epoch = 0
+  addDex(d: Dex) { this.epoch++; this.dexes.push(d); for (const c of d.classes) if (!this.dexIndex.has(c.name)) this.dexIndex.set(c.name, { c, d }) }
   shim(name: string, c: ShimClass) {
+    this.epoch++
     this.shims.set(name, c)
     this.missing.delete(name)
     // a class already built from an older shim gets the new methods and statics too
@@ -210,6 +218,14 @@ export class VM {
 
   // ---------- methods ----------
   findMethod(c: JClass | null, key: string): JMethod | null {
+    if (!c) return null
+    const cc = c as JClass & { mc?: Map<string, JMethod | null>; mcEpoch?: number }
+    if (cc.mcEpoch !== this.epoch || !cc.mc) { cc.mc = new Map(); cc.mcEpoch = this.epoch }
+    let hit = cc.mc.get(key)
+    if (hit === undefined) { hit = this.findMethodSlow(c, key); cc.mc.set(key, hit) }
+    return hit
+  }
+  private findMethodSlow(c: JClass | null, key: string): JMethod | null {
     for (let x = c; x; x = x.super) {
       const m = x.methods.get(key)
       if (m && !(m.flags & ACC.ABSTRACT)) return m
@@ -359,6 +375,8 @@ export class VM {
   pushCall(t: JThread, m: JMethod, self: any, args: any[]) { this.pushFrame(t, m, self, args) }
   // debugging: called for every java method entered (tools/aosp/boot.mjs JTRACE=...)
   onEnter: ((m: JMethod) => void) | null = null
+  // the jit (off while tracing calls: compiled methods do not report their entry)
+  get jitOn() { return !this.onEnter && !JIT_OFF }
   private pushFrame(t: JThread, m: JMethod, self: any, args: any[]) {
     if (this.onEnter) this.onEnter(m)
     if (t.frames.length > 3000) throw this.error('Ljava/lang/StackOverflowError;', 'stack size ' + t.frames.length)
@@ -551,6 +569,11 @@ export class VM {
               if (c === NO_CALL) { f.result = undefined; pc += 3; break }
               const { target, self, args } = c
               if (target.code && !target.native && !(target.flags & ACC.NATIVE)) {
+                // hot leaf methods run as compiled js, right here
+                if (target.jit !== null && this.jitOn) {
+                  if (!target.jit && (target.calls = (target.calls ?? 0) + 1) >= JIT_AFTER) target.jit = compile(this, target, constKinds(target, target.dex!), JavaThrow)
+                  if (target.jit) { f.ipc = pc; f.result = target.jit(this, self, args); pc += 3; break }
+                }
                 // a java method: a new frame on this thread, the loop goes on there
                 f.ipc = pc; f.pc = pc + 3
                 this.pushFrame(t, target, self, args)
@@ -674,7 +697,7 @@ export class VM {
     return this.error('Ljava/lang/RuntimeException;', 'Droid runtime: ' + ((e as Error)?.message || String(e)))
   }
 
-  private staticOwner(cls: string, field: string): JClass {
+  staticOwner(cls: string, field: string): JClass {
     // static fields may be declared on a superclass or interface
     for (let c: JClass | null = this.cls(cls); c; c = c.super) if (field in c.staticValues || field in c.fieldTypes) return c
     return this.cls(cls)
@@ -717,7 +740,7 @@ export class VM {
   }
 
   // index: add sub mul div rem and or xor shl shr ushr for int (0-10), long (11-21); float (22-26), double (27-31)
-  private binop(i: number, x: any, y: any): any {
+  binop(i: number, x: any, y: any): any {
     if (i <= 10) {
       switch (i) {
         case 0: return (x + y) | 0
