@@ -16,9 +16,21 @@ export interface JitHost {
   newArray(type: string, n: number): any
   instanceOf(o: any, c: JClass): boolean
   classOf(o: any): JClass
+  resolveInvoke(kind: number, ref: any, raw: any[]): any
+  jcall(target: JMethod, self: any, args: any[]): any
+  init(c: JClass): void
+  noCall: symbol
 }
 
-type Fn = (H: JitHost, self: any, args: any[]) => any
+// a compiled call chain that has to wait (or reach code that is not compiled): every compiled frame on
+// the way out adds its state, and the interpreter rebuilds them as its own frames and goes on
+export class Deopt {
+  frames: { m: JMethod; pc: number; regs: any[]; res: any }[] = []
+  signal: any // what the innermost call threw (a Block or JavaCall), or null: run the call again
+  constructor(signal: any) { this.signal = signal }
+}
+
+type Fn = (H: JitHost, self: any, args: any[] | null, ePc?: number, eRegs?: any[], eRes?: any) => any
 
 // int binops inlined; the rest (division, long, float) go through the interpreter's own binop
 const INT: Record<number, (x: string, y: string) => string> = {
@@ -28,7 +40,7 @@ const INT: Record<number, (x: string, y: string) => string> = {
 }
 const bin = (i: number, x: string, y: string) => (INT[i] ? INT[i](x, y) : `H.binop(${i}, ${x}, ${y})`)
 
-export function compile(H: JitHost, m: JMethod, kinds: Map<number, string>, JT: any): Fn | null {
+export function compile(H: JitHost, m: JMethod, kinds: Map<number, string>, JT: any, JO: any): Fn | null {
   const code = m.code
   if (!code || code.tries.length || code.insns.length > 4000 || m.flags & 0x20) return null
   const ins = code.insns, dex = m.dex!
@@ -131,6 +143,21 @@ export function compile(H: JitHost, m: JMethod, kinds: Map<number, string>, JT: 
         s = op <= 0x66 ? `{ const v = ${sv}[${n}]; ${R(AA)} = v === undefined ? ${defaultFor(f.type[0])} : v }` : `${sv}[${n}] = ${op === 0x69 ? `(${R(AA)} === 0 ? null : ${R(AA)})` : R(AA)};`
         size = 2; break
       }
+      case 0x0a: case 0x0b: case 0x0c: s = `${R(AA)} = res;`; break
+      case 0x22: { const c = H.cls(dex.types[ins[pc + 1]]); s = `if (!${K(c)}.initialized) H.init(${K(c)}); ${R(AA)} = new JO(${K(c)});`; size = 2; break }
+      case 0x24: case 0x25: {
+        const regs = op === 0x24 ? regs35c(ins, pc) : regs3rc(ins, pc)
+        s = `{ const a = H.newArray(${JSON.stringify(dex.types[ins[pc + 1]])}, ${regs.length}); ${regs.map((x, i) => `a.data[${i}] = ${R(x)};`).join(' ')} res = a }`; size = 3; break
+      }
+      case 0x6e: case 0x6f: case 0x70: case 0x71: case 0x72: case 0x74: case 0x75: case 0x76: case 0x77: case 0x78: {
+        const range = op >= 0x74, kind = range ? op - 0x74 : op - 0x6e
+        const ref = dex.methods[ins[pc + 1]]
+        if (ref.cls === 'Ljava/lang/String;' && ref.name === '<init>') return null // string constructors replace registers
+        const regs = range ? regs3rc(ins, pc) : regs35c(ins, pc)
+        const all = Array.from({ length: code.registers }, (_, i) => R(i)).join(', ')
+        s = `{ const c = H.resolveInvoke(${kind}, ${K(ref)}, [${regs.map(R).join(', ')}]); if (c !== H.noCall) { try { res = H.jcall(c.target, c.self, c.args) } catch (e) { if (e instanceof DO) e.frames.push({ m: M, pc: ${pc}, regs: [${all}], res }); throw e } } else res = undefined }`
+        size = 3; break
+      }
       case 0x7b: s = `${R(A)} = (-${R(B)}) | 0;`; break
       case 0x7c: s = `${R(A)} = ~${R(B)};`; break
       case 0x7d: s = `${R(A)} = BigInt.asIntN(64, -${R(B)});`; break
@@ -163,18 +190,25 @@ export function compile(H: JitHost, m: JMethod, kinds: Map<number, string>, JT: 
   const init: string[] = []
   let a = regs - code.ins, ai = 0
   if (!(m.flags & 0x8)) init.push(`r${a++} = self;`)
-  for (const p of m.params) { init.push(`r${a} = args[${ai++}];`); a += p === 'J' || p === 'D' ? 2 : 1 }
-  const decl = regs ? `let ${Array.from({ length: regs }, (_, i) => `r${i} = 0`).join(', ')};` : ''
-  const src = `${decl}\n${init.join(' ')}\nlet pc = 0\nfor (;;) switch (pc) {\n${out.join('\n')}\ndefault: throw H.error('Ljava/lang/VerifyError;', 'jit: fell off at ' + pc)\n}`
+  for (const p of m.params) { init.push(`r${a} = args ? args[${ai++}] : 0;`); a += p === 'J' || p === 'D' ? 2 : 1 }
+  const decl = (regs ? `let ${Array.from({ length: regs }, (_, i) => `r${i} = 0`).join(', ')};` : '') + ' let res;'
+  // entering a running frame (on-stack replacement): its registers, pc and last call result
+  const osr = `if (eRegs) { ${Array.from({ length: regs }, (_, i) => `r${i} = eRegs[${i}];`).join(' ')} pc = ePc; res = eRes }`
+  const src = `${decl}\nlet pc = 0\n${init.join(' ')}\n${osr}\nfor (;;) switch (pc) {\n${out.join('\n')}\ndefault: throw H.error('Ljava/lang/VerifyError;', 'jit: fell off at ' + pc)\n}`
   try {
-    const make = new Function('K', 'JT', 'toInt', 'toLong', `return function jit(H, self, args) {\n${src}\n}`)
-    return make(consts, JT, toInt, toLong) as Fn
+    const make = new Function('K', 'JT', 'JO', 'DO', 'M', 'toInt', 'toLong', `return function jit(H, self, args, ePc, eRegs, eRes) {\n${src}\n}`)
+    return make(consts, JT, JO, Deopt, m, toInt, toLong) as Fn
   } catch (e) {
     console.warn('jit: could not build', m.cls.name, m.key, e)
     return null
   }
 }
 
+function regs35c(ins: Uint16Array, pc: number) {
+  const w = ins[pc], n = w >> 12, g = (w >> 8) & 0xf, cdef = ins[pc + 2]
+  return [cdef & 0xf, (cdef >> 4) & 0xf, (cdef >> 8) & 0xf, (cdef >> 12) & 0xf, g].slice(0, n)
+}
+function regs3rc(ins: Uint16Array, pc: number) { const n = ins[pc] >> 8, first = ins[pc + 2]; return Array.from({ length: n }, (_, i) => first + i) }
 function defaultFor(t: string) { return t === 'J' ? '0n' : 'ZBSCIFD'.includes(t) ? '0' : 'null' }
 const toInt = (x: number) => (isNaN(x) ? 0 : x >= 2147483647 ? 2147483647 : x <= -2147483648 ? -2147483648 : Math.trunc(x) | 0)
 const toLong = (x: number) => (isNaN(x) ? 0n : x >= 9.223372036854776e18 ? 9223372036854775807n : x <= -9.223372036854776e18 ? -9223372036854775808n : BigInt(Math.trunc(x)))
