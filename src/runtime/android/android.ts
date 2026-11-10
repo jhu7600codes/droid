@@ -699,6 +699,16 @@ export function registerAndroid(vm: VM, env: Env) {
       'containsKey(Ljava/lang/String;)Z': (v, s, [k]) => (k in g(s) ? 1 : 0),
       'remove(Ljava/lang/String;)V': (v, s, [k]) => { delete g(s)[k] },
       'keySet()Ljava/util/Set;': (v, s) => { const l = new JObject(vm.cls('Ljava/util/ArrayList;')); l.f.a = Object.keys(g(s)); return l },
+      // untyped access (values come back as they were put: boxes for numbers the app boxed)
+      'get(Ljava/lang/String;)Ljava/lang/Object;': (v, s, [k]) => { const x = g(s)[k]; return x === undefined ? null : typeof x === 'number' ? box(vm, Number.isInteger(x) ? 'Ljava/lang/Integer;' : 'Ljava/lang/Double;', x) : typeof x === 'bigint' ? box(vm, 'Ljava/lang/Long;', x) : x },
+      'size()I': (v, s) => Object.keys(g(s)).length,
+      'isEmpty()Z': (v, s) => (Object.keys(g(s)).length ? 0 : 1),
+      'clear()V': (v, s) => { s.f[field] = {} },
+      'putAll(Landroid/os/Bundle;)V': (v, s, [o]) => { if (o) Object.assign(g(s), o.f[field] || {}) },
+      '<init>(Landroid/os/Bundle;)V': (v, s, [o]) => { s.f[field] = { ...(o?.f[field] || {}) } },
+      '<init>(I)V': (v, s) => { s.f[field] = {} },
+      '<init>(Ljava/lang/ClassLoader;)V': (v, s) => { s.f[field] = {} },
+      'setClassLoader(Ljava/lang/ClassLoader;)V': () => {},
     }
     for (const [t, sig, def0] of [['Int', 'I', 0], ['Long', 'J', 0n], ['Boolean', 'Z', 0], ['Float', 'F', 0], ['Double', 'D', 0], ['String', 'Ljava/lang/String;', null], ['CharSequence', 'Ljava/lang/CharSequence;', null]] as const) {
       m[`put${t}(Ljava/lang/String;${sig})V`] = (v, s, [k, x]) => { g(s)[k] = x }
