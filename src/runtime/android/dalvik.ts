@@ -6,10 +6,10 @@
 // wide values take two registers: the value sits in the first, the second is unused.
 import type { Dex, DexClass, Code, MethodRef } from './dex.ts'
 import { ACC } from './dex.ts'
-import { compile } from './jit.ts'
+import { compile, Deopt } from './jit.ts'
 // calls before a leaf method is compiled; DROID_JIT=0 (node) turns the jit off
 const JIT_AFTER = 50
-const JIT_OFF = (globalThis as any).process?.env?.DROID_JIT === '0'
+const JIT_OFF = (globalThis as any).process?.env?.DROID_JIT === '0' || !!(globalThis as any).__nojit
 import { scheduler, isBlock, tryEnter, enterBlock, exit, taskId, type Block, type Task } from './threads.ts'
 
 export interface Frame {
@@ -40,6 +40,7 @@ export class JThread implements Task {
   interrupted = false
   nativeCall = false // stopped inside a native method (resumes there)
   pendingThrow: JavaThrow | null = null // an exception from a resumed native call, raised at the call
+  resumeSignal: any = null // a wait (Block / JavaCall) a compiled method met: the interpreter's call takes it over
   lastValue: any = undefined // what the last finished top-level call returned
   onDone?: (err: unknown) => void
   vm: VM
@@ -54,7 +55,7 @@ export type NativeFn = (vm: VM, self: any, args: any[]) => any
 export interface JMethod {
   cls: JClass; name: string; key: string; desc: string; ret: string; params: string[]; flags: number
   code: Code | null; native?: NativeFn; dex?: Dex
-  calls?: number; jit?: ((H: any, self: any, args: any[]) => any) | null // hot leaf methods compiled to js (jit.ts)
+  calls?: number; hot?: number; jit?: ((H: any, self: any, args: any[] | null, ePc?: number, eRegs?: any[], eRes?: any) => any) | null // hot leaf methods compiled to js (jit.ts)
 }
 export interface JClass {
   name: string; super: JClass | null; interfaces: JClass[]; methods: Map<string, JMethod>
@@ -409,7 +410,25 @@ export class VM {
       try {
         if (t.pendingThrow) { const e = t.pendingThrow; t.pendingThrow = null; pc = f.ipc; throw e }
         for (;;) {
-          if ((++this.steps & 2047) === 0 && deadline !== Infinity && performance.now() > deadline) { f.pc = pc; return YIELD }
+          if ((++this.steps & 2047) === 0) {
+            if (deadline !== Infinity && performance.now() > deadline) { f.pc = pc; return YIELD }
+            // a frame that keeps looping: compile its method and go on in the compiled code from here
+            const m = f.m
+            if (m.jit !== null && !f.post && !f.onThrow && this.jitOn && (m.hot = (m.hot ?? 0) + 1) >= 2) {
+              if (!m.jit) m.jit = this.compileJit(m)
+              if (m.jit) {
+                f.pc = pc
+                let value: any
+                const d0 = this.jitDepth
+                try { value = m.jit(this, null, null, pc, r, f.result) }
+                catch (e) { this.jitDepth = d0; if (!(e instanceof Deopt)) throw e; t.frames.pop(); this.rebuild(t, e); continue outer }
+                t.frames.pop()
+                if (t.frames.length === stop) return value
+                t.frames[t.frames.length - 1].result = value
+                continue outer
+              }
+            }
+          }
           const w = ins[pc]
           const op = w & 0xff
           const AA = w >> 8, A = (w >> 8) & 0xf, B = w >> 12
@@ -571,8 +590,20 @@ export class VM {
               if (target.code && !target.native && !(target.flags & ACC.NATIVE)) {
                 // hot leaf methods run as compiled js, right here
                 if (target.jit !== null && this.jitOn) {
-                  if (!target.jit && (target.calls = (target.calls ?? 0) + 1) >= JIT_AFTER) target.jit = compile(this, target, constKinds(target, target.dex!), JavaThrow)
-                  if (target.jit) { f.ipc = pc; f.result = target.jit(this, self, args); pc += 3; break }
+                  if (!target.jit && (target.calls = (target.calls ?? 0) + 1) >= JIT_AFTER) target.jit = this.compileJit(target)
+                  if (target.jit) {
+                    f.ipc = pc
+                    const d0 = this.jitDepth
+                    try { f.result = target.jit(this, self, args); pc += 3; break }
+                    catch (e) {
+                      this.jitDepth = d0
+                      if (!(e instanceof Deopt)) throw e
+                      // the compiled frames become interpreter frames (outermost first); the innermost runs its call again
+                      f.pc = pc + 3
+                      this.rebuild(t, e)
+                      continue outer
+                    }
+                  }
                 }
                 // a java method: a new frame on this thread, the loop goes on there
                 f.ipc = pc; f.pc = pc + 3
@@ -589,7 +620,10 @@ export class VM {
               }
               // framework (js) or native code: runs to completion here, or asks to wait
               let v: any
-              try { v = target.native ? target.native(this, self, args) : this.natives(target, self, args) }
+              try {
+                if (t.resumeSignal) { const sig = t.resumeSignal; t.resumeSignal = null; throw sig }
+                v = target.native ? target.native(this, self, args) : this.natives(target, self, args)
+              }
               catch (e) {
                 if (e instanceof JavaCall && e.m.code && !e.m.native) {
                   f.pc = pc + 3
@@ -679,6 +713,37 @@ export class VM {
     ;(f as any).k = key
     return key
   }
+  // ---------- jit (jit.ts) ----------
+  noCall = NO_CALL
+  jitDepth = 0
+  private compileJit(m: JMethod) { return compile(this, m, constKinds(m, m.dex!), JavaThrow, JObject) }
+  // a call from compiled code: compiled targets and plain natives run here; anything that has to wait,
+  // or java code that is not compiled, sends the chain back to the interpreter (Deopt)
+  jcall(target: JMethod, self: any, args: any[]): any {
+    // the app's own native code (arm) can stop mid-call: the interpreter runs it
+    if (!target.native && target.flags & ACC.NATIVE) throw new Deopt(null)
+    if (target.native) {
+      try { return target.native(this, self, args) }
+      catch (e) { if (isBlock(e) || e instanceof JavaCall) throw new Deopt(e); throw e }
+    }
+    if (target.code && target.jit !== null && this.jitOn && this.jitDepth < 120) {
+      if (!target.jit && (target.calls = (target.calls ?? 0) + 1) >= JIT_AFTER) target.jit = this.compileJit(target)
+      if (target.jit) { this.jitDepth++; try { return target.jit(this, self, args) } finally { this.jitDepth-- } }
+    }
+    throw new Deopt(null)
+  }
+  private rebuild(t: JThread, d: Deopt) {
+    for (let i = d.frames.length - 1; i >= 0; i--) {
+      const x = d.frames[i], m = x.m, code = m.code!
+      const r: any[] = new Array(code.registers).fill(0)
+      for (let k = 0; k < x.regs.length; k++) r[k] = x.regs[k]
+      const inner = i === 0
+      t.frames.push({ m, r, pc: inner ? x.pc : x.pc + 3, ipc: x.pc, ins: code.insns, dex: m.dex!, code, kinds: constKinds(m, m.dex!), result: x.res, exc: null })
+      // a method that keeps falling back is left to the interpreter
+      if (inner && ((m as any).deopts = ((m as any).deopts | 0) + 1) > 30) m.jit = null
+    }
+    t.resumeSignal = d.signal
+  }
   // "pkg.Class.method" of the running frames, innermost first
   javaStack(t: JThread = this.current) { return t.frames.slice(-12).reverse().map((f) => `${f.m.cls.name.slice(1, -1).replace(/\//g, '.')}.${f.m.name}`) }
 
@@ -712,7 +777,7 @@ export class VM {
     return Array.from({ length: n }, (_, i) => first + i)
   }
 
-  private resolveInvoke(kind: number, ref: MethodRef, raw: any[]): typeof NO_CALL | { target: JMethod; self: any; args: any[] } {
+  resolveInvoke(kind: number, ref: MethodRef, raw: any[]): typeof NO_CALL | { target: JMethod; self: any; args: any[] } {
     // registers -> arguments: wide values take two registers, keep only the first
     const isStatic = kind === 3
     const args: any[] = []

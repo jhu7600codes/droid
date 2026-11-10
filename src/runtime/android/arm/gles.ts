@@ -57,7 +57,11 @@ export class Gles {
     gl.viewport(0, 0, w, h)
   }
   // eglSwapBuffers: show the finished frame
+  private fpsAt = 0
+  private fpsN = 0
   swap() {
+    // frame rate, for testing (window.__glfps = true logs it every 5 s)
+    if ((globalThis as any).__glfps) { this.fpsN++; const t = performance.now(); if (!this.fpsAt) this.fpsAt = t; if (t - this.fpsAt > 5000) { console.log('gl fps', (this.fpsN * 1000 / (t - this.fpsAt)).toFixed(1)); this.fpsAt = t; this.fpsN = 0 } }
     const gl = this.gl, s = this.surface
     if (!gl || !s || !this.fbo) return
     const read = gl.getParameter(gl.READ_FRAMEBUFFER_BINDING), draw = gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING)
@@ -79,7 +83,18 @@ export function installGles(nat: Native) {
   const R = (i: number) => c.r[i]
   const S = (i: number) => m.r32(c.r[13] + i * 4)
   const G = nat.gles
-  const def = (name: string, fn: (cpu: CPU) => any) => nat.def(name, fn)
+  // window.__glfps also counts gl calls per kind (every 5 s, the busiest ones)
+  const counts = new Map<string, number>(); let countAt = 0
+  const counting = () => !!((globalThis as any).__glfps)
+  const def = (name: string, fn: (cpu: CPU) => any) => nat.def(name, (cpu: CPU) => {
+    if (counting()) {
+      counts.set(name, (counts.get(name) || 0) + 1)
+      const t = performance.now()
+      if (!countAt) countAt = t
+      if (t - countAt > 5000) { console.log('gl calls/s', [...counts].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, v]) => k + ' ' + Math.round(v * 1000 / (t - countAt))).join(', ')); counts.clear(); countAt = t }
+    }
+    return fn(cpu)
+  })
   const gl = () => { if (!G.gl) throw new Error('gl call with no current context'); return G.gl }
   // copies out of guest memory (webgl refuses views of a resizable buffer)
   const bytes = (p: number, n: number) => m.u8.slice(p, p + n)
