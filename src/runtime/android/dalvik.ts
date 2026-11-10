@@ -220,11 +220,15 @@ export class VM {
   // ---------- methods ----------
   findMethod(c: JClass | null, key: string): JMethod | null {
     if (!c) return null
-    const cc = c as JClass & { mc?: Map<string, JMethod | null>; mcEpoch?: number }
+    const cc = c as JClass & { mc?: Map<string, JMethod>; mcEpoch?: number }
     if (cc.mcEpoch !== this.epoch || !cc.mc) { cc.mc = new Map(); cc.mcEpoch = this.epoch }
+    // only hits are kept: a miss is looked up again (a method can be added later in ways that do
+    // not touch the epoch, and misses are rare: they end in an error anyway)
     let hit = cc.mc.get(key)
-    if (hit === undefined) { hit = this.findMethodSlow(c, key); cc.mc.set(key, hit) }
-    return hit
+    if (hit) return hit
+    const found = this.findMethodSlow(c, key)
+    if (found) cc.mc.set(key, found)
+    return found
   }
   private findMethodSlow(c: JClass | null, key: string): JMethod | null {
     for (let x = c; x; x = x.super) {
