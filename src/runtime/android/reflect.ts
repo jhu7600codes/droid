@@ -248,7 +248,7 @@ export function registerReflect(vm: VM) {
     const c: JClass = { name, super: vm.cls('Ljava/lang/reflect/Proxy;'), interfaces: ifaces, methods: new Map(), staticValues: {}, fieldTypes: {}, initialized: true, flags: PUBLIC | 0x10 }
     const add = (m: JMethod) => {
       if (c.methods.has(m.key) || m.name.startsWith('<') || m.flags & STATIC) return
-      c.methods.set(m.key, { ...m, cls: c, flags: PUBLIC, code: null, native: (vm2: VM, self: JObject, args: any[]) => {
+      vm.epoch++; c.methods.set(m.key, { ...m, cls: c, flags: PUBLIC, code: null, native: (vm2: VM, self: JObject, args: any[]) => {
         const arr = m.params.length ? vm.newArray('[Ljava/lang/Object;', m.params.length) : null
         m.params.forEach((p, i) => (arr!.data[i] = wrap(p, args[i])))
         const key = 'invoke(Ljava/lang/Object;Ljava/lang/reflect/Method;[Ljava/lang/Object;)Ljava/lang/Object;'
