@@ -497,7 +497,7 @@ export function registerAospGraphics(vm: VM, hooks: { assetBytes?: (h: number) =
     const w = Math.max(1, Math.round((inf.w / sample) * scale)), h = Math.max(1, Math.round((inf.h / sample) * scale))
     if (opts) { opts.f.outWidth = w; opts.f.outHeight = h; opts.f.outMimeType = inf.mime }
     let chunk = inf.chunk
-    if (chunk && scale !== 1) chunk = scaleChunk(chunk, scale)
+    if (chunk && scale !== 1) chunk = scaleChunk(chunk, scale, w, h)
     if (padding && chunk) { const [l, t, r, bt] = chunkPadding(chunk); setRect(padding, l, t, r, bt) }
     if (opts?.f.inJustDecodeBounds) return null
     const bm = newBmp(w, h, 5, !!opts?.f.inMutable)
@@ -508,11 +508,19 @@ export function registerAospGraphics(vm: VM, hooks: { assetBytes?: (h: number) =
     }
     return javaBitmap(bm, -1, chunk, inf.layout)
   }
-  const scaleChunk = (c: Uint8Array, k: number) => {
+  // like android's scaleNinePatchChunk: a stretch range never collapses to nothing (a 1 px range scaled
+  // down would leave nothing to stretch, and the image would keep its own size inside the bounds)
+  const scaleChunk = (c: Uint8Array, k: number, w: number, h: number) => {
     const o = c.slice(), dv = new DataView(o.buffer)
     const nx = o[1], ny = o[2]
     for (let i = 12; i < 28; i += 4) dv.setInt32(i, Math.round(dv.getInt32(i) * k))
-    for (let i = 0; i < nx + ny; i++) dv.setInt32(32 + i * 4, Math.round(dv.getInt32(32 + i * 4) * k))
+    const divs = (at: number, n: number, max: number) => {
+      const d: number[] = []
+      for (let i = 0; i < n; i++) { let x = Math.floor(dv.getInt32(at + i * 4) * k + 0.5); if (i > 0 && x === d[i - 1]) x++; d.push(x) }
+      if (n && d[n - 1] > max) { let top = max; for (let i = n - 1; i >= 0; i--) { d[i] = top; if (i > 0 && d[i] <= d[i - 1]) top = d[i] - 1; else break } }
+      d.forEach((x, i) => dv.setInt32(at + i * 4, x))
+    }
+    divs(32, nx, w); divs(32 + nx * 4, ny, h)
     return o
   }
   const drainStream = (is: JObject, storage: JArray | null) => {
