@@ -97,7 +97,7 @@ droid.on('create', async (saved: any) => {
     sys.methods.get('loadLibrary(Ljava/lang/String;)V')!.native = (v, s, [name]) => {
       const file = `lib${name}.so`
       const b = libBytes.get(file)
-      if (!b) throw vm.error('Ljava/lang/UnsatisfiedLinkError;', `dlopen failed: library "${file}" not found (only armeabi-v7a libraries run in Droid)`)
+      if (!b) throw vm.error('Ljava/lang/UnsatisfiedLinkError;', `dlopen failed: library "${file}" not found (Droid runs armeabi-v7a and armeabi libraries)`)
       native ||= new Native(vm, vfs, map.pkg)
       native.load(file, b)
     }
