@@ -47,9 +47,12 @@ export async function convertApk(apk: ArrayBuffer, runtimeJs: string): Promise<C
   })
   if (!main) throw new Error('the APK has no launcher activity')
   const dexes = [...files.keys()].filter((p) => /^classes\d*\.dex$/.test(p))
-  const libs = [...files.keys()].filter((p) => p.startsWith('lib/armeabi-v7a/') && p.endsWith('.so'))
-  const otherAbis = [...new Set([...files.keys()].filter((p) => p.startsWith('lib/') && !p.startsWith('lib/armeabi-v7a/')).map((p) => p.split('/')[1]))]
-  if (otherAbis.length && !libs.length) report.push(`native code only for ${otherAbis.join(', ')}: Droid runs armeabi-v7a`)
+  // native code: armeabi-v7a, else plain armeabi (armv5 / armv6 code runs on the same arm cpu)
+  const abiOf = (a: string) => [...files.keys()].filter((p) => p.startsWith(`lib/${a}/`) && p.endsWith('.so'))
+  const abi = abiOf('armeabi-v7a').length ? 'armeabi-v7a' : abiOf('armeabi').length ? 'armeabi' : 'armeabi-v7a'
+  const libs = abiOf(abi)
+  const otherAbis = [...new Set([...files.keys()].filter((p) => p.startsWith('lib/') && !p.startsWith(`lib/${abi}/`)).map((p) => p.split('/')[1]))]
+  if (otherAbis.length && !libs.length) report.push(`native code only for ${otherAbis.join(', ')}: Droid runs armeabi-v7a and armeabi`)
   if (dexes.length > 1) report.push('multidex app')
   // icon: the highest density png we can find
   let icon: string | undefined
@@ -86,7 +89,7 @@ export async function convertApk(apk: ArrayBuffer, runtimeJs: string): Promise<C
   ;(manifest as any)['android-receivers'] = [...new Set(receivers.flatMap((r) => r.actions))]
   out.set('manifest.json', enc.encode(JSON.stringify(manifest, null, 1)))
   // apps that keep the original apk read assets/ from it, so those are not unpacked twice
-  const kept = [...files.keys()].filter((p) => !p.startsWith('META-INF/') && !(p.startsWith('lib/') && !p.startsWith('lib/armeabi-v7a/')) && !(libs.length && p.startsWith('assets/')))
+  const kept = [...files.keys()].filter((p) => !p.startsWith('META-INF/') && !(p.startsWith('lib/') && !p.startsWith(`lib/${abi}/`)) && !(libs.length && p.startsWith('assets/')))
   out.set('apk-files.json', enc.encode(JSON.stringify(kept)))
   for (const p of kept) out.set('apk/' + p.toLowerCase().replace(/[^a-z0-9/._-]/g, '_'), files.get(p)!)
   // native code (game engines like unity) often reads its assets straight out of the apk file,

@@ -68,7 +68,7 @@ export async function startAosp(o: { droid: any; root: HTMLElement; pkg: string;
     const n = jstr(vm, name), file = `lib${n}.so`
     const b = files.get('lib/armeabi-v7a/' + file) ?? files.get('lib/armeabi/' + file)
     if (!b && SYSTEM_LIBS.has(n)) return
-    if (!b) throw vm.error('Ljava/lang/UnsatisfiedLinkError;', `dlopen failed: library "${file}" not found (only armeabi-v7a libraries run in Droid)`)
+    if (!b) throw vm.error('Ljava/lang/UnsatisfiedLinkError;', `dlopen failed: library "${file}" not found (Droid runs armeabi-v7a and armeabi libraries)`)
     native ||= new Native(vm, vfs, o.pkg)
     native.load(file, b)
   }
