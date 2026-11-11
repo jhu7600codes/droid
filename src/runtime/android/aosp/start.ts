@@ -95,6 +95,11 @@ export async function startAosp(o: { droid: any; root: HTMLElement; pkg: string;
     windowGone: (id) => { shown.get(id)?.remove(); shown.delete(id); for (const [el, w] of videos) if (w === id) { el.style.display = 'none'; videos.set(el, null) } },
     windowFrame: (id) => { for (const [el, w] of videos) if (w === id) place(el, id) },
     event: (what) => { if (what === 'finished') droid.app.finish() },
+    // droid's keyboard: forced on, the app draws on a canvas and has no other keyboard
+    ime: {
+      show: (o) => { typed = ''; droid.ime?.show({ ...o, force: true }); droid.ime?.text('') },
+      hide: () => droid.ime?.hide(),
+    },
   })
   droid.actionbar?.hide?.()
 
@@ -127,6 +132,13 @@ export async function startAosp(o: { droid: any; root: HTMLElement; pkg: string;
   root.addEventListener('pointermove', (e) => { if (!down) return; const [x, y] = at(e); sys.touch(2, x, y, downAt) })
   root.addEventListener('pointerup', (e) => { if (!down) return; down = false; const [x, y] = at(e); sys.touch(1, x, y, downAt) })
   root.addEventListener('pointercancel', (e) => { if (!down) return; down = false; const [x, y] = at(e); sys.touch(3, x, y, downAt) })
+  // keys from droid's keyboard; what was typed since it opened tells it when to capitalise
+  let typed = ''
+  droid.on('ime', (k: { text?: string; del?: boolean; enter?: boolean }) => {
+    sys.imeKey(k)
+    typed = k.del ? typed.slice(0, -1) : k.enter ? typed + '\n' : typed + (k.text ?? '')
+    droid.ime?.text(typed)
+  })
   droid.on('back', () => { sys.key(0, 4); sys.key(1, 4); return true })
   droid.on('menu', () => { sys.key(0, 82); sys.key(1, 82) })
 

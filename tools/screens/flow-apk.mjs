@@ -25,6 +25,7 @@ export default async ({ page, shot, base }) => {
     if (k === 'tap') { const [x, y] = a.split(',').map(Number); await page.mouse.click(x, y); await page.waitForTimeout(1500) }
     else if (k === 'drag') { const [x0, y0, x1, y1] = a.split(',').map(Number); await page.mouse.move(x0, y0); await page.mouse.down(); for (let i = 1; i <= 10; i++) { await page.mouse.move(x0 + ((x1 - x0) * i) / 10, y0 + ((y1 - y0) * i) / 10); await page.waitForTimeout(30) } await page.mouse.up(); await page.waitForTimeout(1500) }
     else if (k === 'wait') await page.waitForTimeout(Number(a))
+    else if (k === 'keys') { for (const ch of a) { await page.locator('#ime .ime-key', { hasText: new RegExp('^' + ch.replace(/[?.]/g, '\\$&') + '$', 'i') }).first().click(); await page.waitForTimeout(250) } } // keys:abc on droid's keyboard
     else if (k === 'prof') { // prof:ms -> top js functions by self time
       const cdp = await page.context().newCDPSession(page)
       await cdp.send('Profiler.enable'); await cdp.send('Profiler.start')

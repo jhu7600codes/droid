@@ -19,4 +19,7 @@ public final class Host {
     public static native void windowRemoved(int window);
     /** the shell hears about the app: "resumed", "finished", titles */
     public static native void event(String what, String detail);
+    /** droid's keyboard: show it for a field (kind text / number / phone / email / url / password, enter go / search / send / next / done / enter), hide it */
+    public static native void imeShow(String kind, String enter, boolean multiline, boolean autocap);
+    public static native void imeHide();
 }

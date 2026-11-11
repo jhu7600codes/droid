@@ -141,12 +141,12 @@ export function hostActivity(pkg: string, ctx: ActivityContext): Activity {
       // droid keyboard for the app's text fields: keys go back as "ime" events
       if (msg.call === 'ime.show' || msg.call === 'ime.hide') {
         if (msg.call === 'ime.hide') { if (imeTarget) ime.close(imeTarget); imeTarget = null }
-        else if (imeEnabled()) {
+        else if (imeEnabled() || msg.args?.[0]?.force) { // force: apps drawn on a canvas have no other keyboard
           const o = msg.args?.[0] || {}
           imeTarget = { kind: o.kind || 'text', enter: o.enter || 'enter', multiline: !!o.multiline, autocap: !!o.autocap, key: (k) => host.send('ime', k), before: () => imeBefore }
           ime.open(imeTarget)
         }
-        port!.postMessage({ id: msg.id, value: imeEnabled() })
+        port!.postMessage({ id: msg.id, value: imeEnabled() || !!msg.args?.[0]?.force })
         return
       }
       if (msg.call === 'ime.text') { imeBefore = String(msg.args?.[0] ?? ''); ime.changed(); port!.postMessage({ id: msg.id, value: null }); return }
