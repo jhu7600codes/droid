@@ -8,9 +8,9 @@ export default async ({ page, shot, base }) => {
   await page.evaluate(() => window.droid_shell.wm.start({ action: 'danen-account' }))
   await page.waitForTimeout(1200)
   const w = page.locator('.window.visible')
-  await w.locator('input[placeholder=Username]').click()
+  if (process.env.TOUCH) await w.locator('input[placeholder=Username]').tap(); else await w.locator('input[placeholder=Username]').click()
   await page.waitForTimeout(500)
-  const tap = async (label) => { await page.locator('#ime .ime-key', { hasText: new RegExp('^' + label.replace(/[?.]/g, '\\$&') + '$', 'i') }).first().click() }
+  const tap = async (label) => { const k = page.locator('#ime .ime-key', { hasText: new RegExp('^' + label.replace(/[?.]/g, '\\$&') + '$', 'i') }).first(); if (process.env.TOUCH) await k.tap(); else await k.click() }
   for (const c of 'pigeon') await tap(c)
   await shot('ime-01-shell')
   console.log('shell value:', await w.locator('input[placeholder=Username]').inputValue())
@@ -30,7 +30,7 @@ export default async ({ page, shot, base }) => {
   const f = page.frameLocator('.window.visible iframe')
   const field = f.locator('input, textarea').first()
   console.log('app fields:', await f.locator('input, textarea').count())
-  await field.click()
+  if (process.env.TOUCH) await field.tap(); else await field.click()
   await page.waitForTimeout(600)
   console.log('ime open:', await page.locator('#ime.on').count(), 'inputmode:', await field.getAttribute('inputmode'))
   for (const c of 'coo') await tap(c)

@@ -15,7 +15,7 @@ public final class Boot {
         ServiceRegistry.services.put("power", new droid.defaults.DefaultIPowerManager() {
             @Override public boolean isScreenOn() { return true; }
         });
-        ServiceRegistry.services.put("input_method", new droid.defaults.DefaultIInputMethodManager());
+        ServiceRegistry.services.put("input_method", new InputMethodManagerImpl());
         ServiceRegistry.services.put("accessibility", new droid.defaults.DefaultIAccessibilityManager());
         ServiceRegistry.services.put("alarm", new droid.defaults.DefaultIAlarmManager());
         ServiceRegistry.services.put("notification", new droid.defaults.DefaultINotificationManager());

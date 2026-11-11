@@ -128,6 +128,14 @@
     device: {
       info: function () { return call('device.info', []) },
     },
+    // droid's keyboard for apps that draw their own text fields (a canvas): show({ kind, enter,
+    // multiline, autocap, force }), text(before the cursor, for auto-capitals), hide(); keys arrive
+    // as "ime" events ({ text } | { del } | { enter })
+    ime: {
+      show: function (o) { return call('ime.show', [o || {}]) },
+      text: function (t) { return call('ime.text', [String(t || '')]) },
+      hide: function () { return call('ime.hide', []) },
+    },
     net: {
       mediaUrl: function (url) { return call('net.mediaUrl', [String(url)]) },
       fetch: function (url, init) {

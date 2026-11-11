@@ -3,6 +3,7 @@
 // (java or the app's native code) go to droid's one GL (arm/gles.ts).
 import type { VM, JObject } from '../dalvik.ts'
 import { GL } from '../arm/gles.ts'
+import { Block, scheduler } from '../threads.ts'
 
 export interface EglHost {
   windowOf: (surfaceObj: number) => number | null
@@ -17,6 +18,10 @@ const CONFIG: Record<number, number> = {
   0x3020: 32, 0x3021: 8, 0x3022: 8, 0x3023: 8, 0x3024: 8, 0x3025: 24, 0x3026: 8, 0x3027: 0x3038, 0x3028: 1,
   0x302e: 1, 0x302f: 0x3038, 0x3031: 0, 0x3032: 0, 0x3033: 5, 0x3040: 5, 0x3042: 0x3038, 0x303f: 0x308e, 0x3029: 0, 0x302a: 0, 0x302c: 0,
 }
+
+// display frames (requestAnimationFrame), counted while someone waits on a swap
+let frame = 0, ticking = false
+const tick = () => { if (ticking) return; ticking = true; requestAnimationFrame(() => { ticking = false; frame++; scheduler.wake() }) }
 
 export function registerAospEgl(vm: VM, host: EglHost) {
   let error = 0x3000, nextH = 1
@@ -103,6 +108,14 @@ export function registerAospEgl(vm: VM, host: EglHost) {
       const sf = surfaces.get(h(srf, 'mEGLSurface'))
       if (!sf) return fail(0x300d)
       if (sf.canvas) { GL.swap(); size(sf); if (GL.surface?.canvas === sf.canvas) GL.resize(sf.w, sf.h) }
+      // like a phone, swapping waits for the next display frame: a render loop then runs at the
+      // display's rate and the app's other threads (loading, audio, game logic) get the time between
+      if (sf.canvas && typeof requestAnimationFrame !== 'undefined') {
+        const want = frame + 1
+        tick()
+        error = 0x3000
+        throw new Block(() => frame >= want, performance.now() + 50, 'vsync').then(() => 1)
+      }
       return ok()
     },
     eglCopyBuffers: () => fail(0x300a),

@@ -8,6 +8,7 @@
 // before returning. a fault inside a block reports the faulting instruction's address (ip).
 // blocks are dropped when code memory is flushed (cacheflush / __clear_cache: mono's jit patches code).
 import { MemFault, type CPU } from './cpu.ts'
+import { compileThumb } from './thumb-jit.ts'
 
 type BlockFn = (c: CPU, r: Uint32Array, dv: DataView) => number
 export interface Block { fn: BlockFn; n: number; start: number; end: number; src?: string }
@@ -85,6 +86,24 @@ export class Jit {
     if (blk) {
       this.compiled++
       for (let p = blk.start >>> PAGE; p <= (blk.end - 1) >>> PAGE; p++) { let s = this.pages.get(p); if (!s) this.pages.set(p, (s = new Set())); s.add(pc) }
+    }
+    return blk ?? undefined
+  }
+
+  // thumb blocks share the maps under odd keys (thumb code is 2-aligned, so pc + 1 never clashes)
+  getThumb(pc: number): Block | undefined {
+    const key = pc + 1
+    const b = this.blocks.get(key)
+    if (b !== undefined) return b ?? undefined
+    const h = (this.heat.get(key) ?? 0) + 1
+    if (h < HOT) { this.heat.set(key, h); return undefined }
+    this.heat.delete(key)
+    let blk: Block | null = null
+    try { blk = compileThumb(this.c, pc) } catch (e) { console.warn('jit: could not compile thumb block at', hex(pc), (e as Error).message); blk = null }
+    this.blocks.set(key, blk)
+    if (blk) {
+      this.compiled++
+      for (let p = blk.start >>> PAGE; p <= (blk.end - 1) >>> PAGE; p++) { let s = this.pages.get(p); if (!s) this.pages.set(p, (s = new Set())); s.add(key) }
     }
     return blk ?? undefined
   }

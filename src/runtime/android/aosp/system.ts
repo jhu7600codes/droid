@@ -16,6 +16,8 @@ export interface HostSide {
   windowGone?: (window: number) => void
   // a window got a (new) frame: video shown in it moves along
   windowFrame?: (window: number, frame: [number, number, number, number]) => void
+  // droid's keyboard (InputMethodManagerImpl asks for it)
+  ime?: { show: (o: { kind: string; enter: string; multiline: boolean; autocap: boolean }) => void; hide: () => void }
   event?: (what: string, detail: string) => void
 }
 interface Gfx { newBmp: (w: number, h: number) => Bmp; canvasFor: (bm: Bmp) => number; resetCanvas: (h: number, bm: Bmp) => void; get: <T>(h: number) => T }
@@ -99,6 +101,8 @@ export function registerAospSystem(vm: VM, gfx: Gfx, host: HostSide) {
       host.windowFrame?.(id, w.frame)
     },
     event: (v, s, [what, detail]) => host.event?.(text(what), text(detail)),
+    imeShow: (v, s, [kind, enter, multiline, autocap]) => host.ime?.show({ kind: text(kind), enter: text(enter), multiline: !!multiline, autocap: !!autocap }),
+    imeHide: () => host.ime?.hide(),
   })
   vm.registerNatives('Landroid/view/Surface;', {
     nativeIsValid: (v, s, [o]) => (surfaces.has(o) ? 1 : 0),
@@ -264,7 +268,12 @@ export function registerAospSystem(vm: VM, gfx: Gfx, host: HostSide) {
     const ev = vm.newObject('Landroid/view/KeyEvent;', '<init>(JJIIIIIIII)V', [t, t, action, code, 0, 0, -1, 0, 8, 0x101])
     post(rx.queue, rx.self, 'dispatchInputEvent(ILandroid/view/InputEvent;)V', [seq++, ev])
   }
-  return { touch, key, later, windowOf: (surfaceObj: number) => surfaces.get(surfaceObj) ?? null, frameOf: (id: number) => wins.get(id)?.frame ?? null }
+  // a key from droid's keyboard into the focused editor (on the main looper, like an input method's binder call)
+  const imeKey = (k: { text?: string; del?: boolean; enter?: boolean }) => {
+    const m = vm.findMethod(vm.cls('Ldroid/system/InputMethodManagerImpl;'), 'key(Ljava/lang/String;I)V')
+    if (m) later(m, null, [k.text ?? null, k.del ? 1 : k.enter ? 2 : 0])
+  }
+  return { touch, key, imeKey, later, windowOf: (surfaceObj: number) => surfaces.get(surfaceObj) ?? null, frameOf: (id: number) => wins.get(id)?.frame ?? null }
 }
 
 const KEYS: Record<number, string> = { 62: ' ', 66: '\n', 55: ',', 56: '.', 76: '/', 69: '-', 70: '=' }
