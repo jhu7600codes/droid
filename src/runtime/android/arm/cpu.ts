@@ -115,6 +115,8 @@ export const STOP = { YIELD: 1, BLOCK: 2, RETURN: 3, EXIT: 4, SIGRETURN: 5 } as 
 export const THREAD_EXIT_TRAP = 0xfffffff4
 export const SIGRETURN_TRAP = 0xfffffff8
 
+// THUMB_JIT=0 (node) or window.__nothumbjit turns the thumb block compiler off, for comparisons
+const THUMB_JIT_OFF = (globalThis as any).process?.env?.THUMB_JIT === '0' || !!(globalThis as any).__nothumbjit
 export class CPU {
   r: Uint32Array = new Uint32Array(16)
   N = false; Z = false; C = false; V = false
@@ -251,7 +253,17 @@ export class CPU {
       }
       let inBlock = false
       try {
-        if (this.thumb) { execThumb(this, pc); atTarget = true; continue }
+        if (this.thumb) {
+          // compiled thumb blocks start at branch targets, outside IT blocks
+          if (this.jit && atTarget && this.it === 0 && !THUMB_JIT_OFF) {
+            const b = this.jit.getThumb(pc)
+            if (b) { inBlock = true; this.steps += b.n * (1 + b.fn(this, this.r, this.mem.dv)) - 1; atTarget = true; continue }
+          }
+          execThumb(this, pc)
+          const next = this.r[15]
+          atTarget = next !== pc + 2 && next !== pc + 4
+          continue
+        }
         // compiled code for this address (hot blocks; see jit.ts)
         if (this.jit && atTarget) {
           const b = this.jit.get(pc)
