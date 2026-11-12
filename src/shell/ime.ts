@@ -61,15 +61,19 @@ function key(label: string | HTMLElement, cls: string, act: () => void, opts: { 
     e.preventDefault()
     k.setPointerCapture?.(e.pointerId)
     k.classList.add('down')
-    if (opts.preview && typeof label === 'string') {
-      const r = k.getBoundingClientRect(), s = screenEl.getBoundingClientRect(), z = s.width / screenEl.offsetWidth || 1
-      preview.textContent = label
-      preview.style.left = (r.left - s.left) / z + r.width / z / 2 + 'px'
-      preview.style.top = (r.top - s.top) / z + 'px'
-      preview.classList.add('on')
-    }
-    if (settings.get('ime.sound') !== false) sound.play(cls.includes('del') ? 'KeypressDelete' : cls.includes('space') ? 'KeypressSpacebar' : cls.includes('enter') ? 'KeypressReturn' : 'KeypressStandard', 0.5)
+    // the key first: the preview bubble and the click sound must never stop it (a sound can throw on
+    // browsers that cannot play it)
     act()
+    try {
+      if (opts.preview && typeof label === 'string') {
+        const r = k.getBoundingClientRect(), s = screenEl.getBoundingClientRect(), z = s.width / screenEl.offsetWidth || 1
+        preview.textContent = label
+        preview.style.left = (r.left - s.left) / z + r.width / z / 2 + 'px'
+        preview.style.top = (r.top - s.top) / z + 'px'
+        preview.classList.add('on')
+      }
+      if (settings.get('ime.sound') !== false) sound.play(cls.includes('del') ? 'KeypressDelete' : cls.includes('space') ? 'KeypressSpacebar' : cls.includes('enter') ? 'KeypressReturn' : 'KeypressStandard', 0.5)
+    } catch { /* cosmetic */ }
     if (opts.repeat) delay = window.setTimeout(() => { rep = window.setInterval(act, 50) }, 400)
   })
   k.addEventListener('pointerup', stop)
