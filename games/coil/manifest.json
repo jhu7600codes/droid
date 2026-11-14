@@ -1,0 +1,23 @@
+{
+ "id": "com.droid.coil",
+ "name": "Coil",
+ "version": "1.0",
+ "versioncode": 1,
+ "type": "web",
+ "main": "main",
+ "icon": "icon.svg",
+ "theme": "holo-dark",
+ "dpk": "2.0",
+ "permissions": [
+  "vibrate"
+ ],
+ "activities": {
+  "main": {
+   "entry": "index.html",
+   "label": "Coil",
+   "launcher": true
+  }
+ },
+ "author": "droid games",
+ "description": "A coil of light grows every time it eats a spark. Swipe to turn, do not bite yourself."
+}

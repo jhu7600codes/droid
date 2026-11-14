@@ -1,0 +1,9 @@
+{
+ "id": "com.droid.stardrift",
+ "name": "Star Drift",
+ "author": "droid games",
+ "category": "games",
+ "icon": "icon.svg",
+ "dpk": "repo:public/games/stardrift.dpk",
+ "description": "Drag your ship, it fires on its own. Survive the waves of drifting rocks and drones."
+}

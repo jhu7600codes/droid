@@ -1,0 +1,23 @@
+{
+ "id": "com.droid.fieldsweep",
+ "name": "Fieldsweep",
+ "version": "1.0",
+ "versioncode": 1,
+ "type": "web",
+ "main": "main",
+ "icon": "icon.svg",
+ "theme": "holo-dark",
+ "dpk": "2.0",
+ "permissions": [
+  "vibrate"
+ ],
+ "activities": {
+  "main": {
+   "entry": "index.html",
+   "label": "Fieldsweep",
+   "launcher": true
+  }
+ },
+ "author": "droid games",
+ "description": "Clear the field without stepping on a charge. Numbers tell how many charges touch a cell. Tap to open, long-press to flag."
+}

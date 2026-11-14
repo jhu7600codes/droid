@@ -1,0 +1,9 @@
+{
+ "id": "com.droid.bouncewall",
+ "name": "Bounce Wall",
+ "author": "droid games",
+ "category": "games",
+ "icon": "icon.svg",
+ "dpk": "repo:public/games/bouncewall.dpk",
+ "description": "Drag the bar, keep the ball alive and break every block of the wall. Ten walls, faster each time."
+}

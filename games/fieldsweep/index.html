@@ -1,0 +1,138 @@
+<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;height:100%;background:#101418;overflow:hidden;touch-action:none;user-select:none;font-family:Roboto,sans-serif;color:#fff}
+#bar{display:flex;align-items:center;justify-content:space-between;height:52px;padding:0 12px;border-bottom:2px solid #33b5e5}
+#bar b{font-weight:500;font-size:20px}
+#face{font-size:15px}
+canvas{display:block;margin:8px auto}
+</style>
+</head>
+<body>
+<div id="bar"><b id="left">⚑ 10</b><button class="h-btn" id="face">New game</button><b id="time">0:00</b></div>
+<canvas id="c"></canvas>
+<script>
+// Fieldsweep: open every cell that is not a charge. the first tap is always safe.
+const LEVELS = { Easy: [9, 9, 10], Medium: [12, 16, 30], Hard: [16, 22, 60] }
+const cv = document.getElementById('c'), g = cv.getContext('2d')
+droid.system.orientation('portrait').catch(() => {})
+const buzz = (ms) => droid.system.vibrate(ms).catch(() => {})
+// ask for vibration once at launch, not in the middle of a game
+buzz(1)
+let level = 'Easy', cols, rows, mines, cells, opened, flags, state, started, timer = 0, size
+droid.prefs.get('level').then((v) => { if (LEVELS[v]) level = v; newGame() })
+droid.actionbar.menu([{ id: 'Easy', title: 'Easy' }, { id: 'Medium', title: 'Medium' }, { id: 'Hard', title: 'Hard' }, { id: 'best', title: 'Best times' }]).catch(() => {})
+droid.on('menu', async ({ id }) => {
+  if (LEVELS[id]) { level = id; droid.prefs.set('level', id); newGame(); return }
+  const out = []
+  for (const l of Object.keys(LEVELS)) { const b = await droid.prefs.get('best-' + l); out.push(`${l}: ${b ? fmt(+b) : '–'}`) }
+  droid.dialog({ title: 'Best times', message: out.join('\n') })
+})
+const fmt = (s) => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0')
+
+function newGame() {
+  ;[cols, rows, mines] = LEVELS[level]
+  cells = Array.from({ length: cols * rows }, () => ({ mine: false, n: 0, open: false, flag: false }))
+  opened = 0; flags = 0; state = 'ready'; started = 0; timer = 0
+  droid.actionbar.title('Fieldsweep · ' + level).catch(() => {})
+  fit(); hud(); draw()
+}
+function fit() {
+  const W = innerWidth, H = innerHeight - 70
+  size = Math.floor(Math.min(W / cols, H / rows, 44))
+  const D = devicePixelRatio || 1
+  cv.width = cols * size * D; cv.height = rows * size * D; cv.style.width = cols * size + 'px'; cv.style.height = rows * size + 'px'
+  g.setTransform(D, 0, 0, D, 0, 0)
+}
+addEventListener('resize', () => { fit(); draw() })
+const at = (x, y) => (x < 0 || y < 0 || x >= cols || y >= rows ? null : cells[y * cols + x])
+const around = (x, y) => { const o = []; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (dx || dy) { const c = at(x + dx, y + dy); if (c) o.push([x + dx, y + dy, c]) } return o }
+
+function lay(sx, sy) {
+  let k = 0
+  while (k < mines) {
+    const x = Math.floor(Math.random() * cols), y = Math.floor(Math.random() * rows)
+    if (Math.abs(x - sx) <= 1 && Math.abs(y - sy) <= 1) continue
+    const c = at(x, y); if (c.mine) continue
+    c.mine = true; k++
+  }
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) at(x, y).n = around(x, y).filter(([, , c]) => c.mine).length
+}
+function open(x, y) {
+  const c = at(x, y); if (!c || c.open || c.flag) return
+  if (state === 'ready') { lay(x, y); state = 'play'; started = performance.now() }
+  if (c.mine) { c.open = true; c.boom = true; lose(); return }
+  const stack = [[x, y]]
+  while (stack.length) {
+    const [px, py] = stack.pop(), q = at(px, py)
+    if (q.open || q.flag) continue
+    q.open = true; opened++
+    if (q.n === 0) for (const [nx, ny] of around(px, py)) stack.push([nx, ny])
+  }
+  if (opened === cols * rows - mines) win()
+}
+// tapping an opened number with all its flags placed opens the rest around it
+function chord(x, y) {
+  const c = at(x, y)
+  if (!c.open || !c.n) return
+  const ar = around(x, y)
+  if (ar.filter(([, , q]) => q.flag).length === c.n) for (const [nx, ny] of ar) open(nx, ny)
+}
+function lose() { state = 'lost'; buzz(400); for (const c of cells) if (c.mine) c.open = true; hud() }
+async function win() {
+  state = 'won'; buzz(60)
+  const t = (performance.now() - started) / 1000
+  const b = +(await droid.prefs.get('best-' + level)) || Infinity
+  if (t < b) { droid.prefs.set('best-' + level, t); droid.toast('New best time ' + fmt(t)) }
+  else droid.toast('Cleared in ' + fmt(t))
+  for (const c of cells) if (c.mine) c.flag = true
+  hud()
+}
+function hud() {
+  document.getElementById('left').textContent = '⚑ ' + (mines - flags)
+  document.getElementById('face').textContent = state === 'lost' ? 'Try again' : state === 'won' ? 'Play again' : 'New game'
+}
+setInterval(() => { if (state === 'play') document.getElementById('time').textContent = fmt((performance.now() - started) / 1000) }, 250)
+
+const COLORS = ['', '#33b5e5', '#99cc00', '#ff4444', '#aa66cc', '#ffbb33', '#00ddff', '#fff', '#9e9e9e']
+function draw() {
+  g.clearRect(0, 0, cols * size, rows * size)
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+    const c = at(x, y), px = x * size, py = y * size
+    if (!c.open) {
+      g.fillStyle = '#2a333c'; g.fillRect(px + 1, py + 1, size - 2, size - 2)
+      g.fillStyle = '#36424d'; g.fillRect(px + 1, py + 1, size - 2, 3)
+      if (c.flag) { g.fillStyle = '#ff4444'; g.beginPath(); g.moveTo(px + size * 0.38, py + size * 0.22); g.lineTo(px + size * 0.72, py + size * 0.36); g.lineTo(px + size * 0.38, py + size * 0.5); g.fill(); g.fillStyle = '#ddd'; g.fillRect(px + size * 0.35, py + size * 0.22, 2, size * 0.58) }
+    } else {
+      g.fillStyle = c.boom ? '#7a1f1f' : '#171c21'; g.fillRect(px + 1, py + 1, size - 2, size - 2)
+      if (c.mine) { g.fillStyle = '#ffbb33'; g.beginPath(); g.arc(px + size / 2, py + size / 2, size * 0.22, 0, 7); g.fill() }
+      else if (c.n) { g.fillStyle = COLORS[c.n]; g.font = `600 ${size * 0.55}px Roboto,sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(c.n, px + size / 2, py + size / 2 + 1) }
+    }
+  }
+}
+// tap opens, long press flags
+let press = 0, pressAt = null, longDone = false
+const cellOf = (e) => { const r = cv.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / size), Math.floor((e.clientY - r.top) / size)] }
+cv.addEventListener('pointerdown', (e) => {
+  if (state === 'lost' || state === 'won') return
+  pressAt = cellOf(e); longDone = false
+  press = setTimeout(() => {
+    const c = at(...pressAt); if (!c || c.open) return
+    c.flag = !c.flag; flags += c.flag ? 1 : -1; longDone = true; buzz(25); hud(); draw()
+  }, 380)
+})
+cv.addEventListener('pointerup', () => {
+  clearTimeout(press)
+  if (!pressAt || longDone || state === 'lost' || state === 'won') return
+  const [x, y] = pressAt, c = at(x, y)
+  if (c?.open) chord(x, y); else open(x, y)
+  pressAt = null; draw()
+})
+cv.addEventListener('pointercancel', () => clearTimeout(press))
+cv.addEventListener('contextmenu', (e) => e.preventDefault())
+document.getElementById('face').onclick = newGame
+</script>
+</body>
+</html>

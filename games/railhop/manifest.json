@@ -1,0 +1,23 @@
+{
+ "id": "com.droid.railhop",
+ "name": "Rail Hop",
+ "version": "1.0",
+ "versioncode": 1,
+ "type": "web",
+ "main": "main",
+ "icon": "icon.svg",
+ "theme": "holo-dark",
+ "dpk": "2.0",
+ "permissions": [
+  "vibrate"
+ ],
+ "activities": {
+  "main": {
+   "entry": "index.html",
+   "label": "Rail Hop",
+   "launcher": true
+  }
+ },
+ "author": "droid games",
+ "description": "Endless runner on three rail lanes. Swipe left and right to switch lanes, swipe up to hop over barriers, grab the bolts."
+}

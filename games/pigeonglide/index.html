@@ -1,0 +1,100 @@
+<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:none;user-select:none;font-family:Roboto,sans-serif}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// Pigeon Glide: tap to flap through the gaps between rooftop antennas over a night city.
+const cv = document.getElementById('c'), g = cv.getContext('2d')
+let W, H, D
+function fit() { D = devicePixelRatio || 1; W = innerWidth; H = innerHeight; cv.width = W * D; cv.height = H * D; cv.style.width = W + 'px'; cv.style.height = H + 'px'; g.setTransform(D, 0, 0, D, 0, 0) }
+addEventListener('resize', fit); fit()
+droid.system.orientation('portrait').catch(() => {})
+droid.actionbar.hide().catch(() => {})
+const buzz = (ms) => droid.system.vibrate(ms).catch(() => {})
+// ask for vibration once at launch, not in the middle of a game
+buzz(1)
+let best = 0
+droid.prefs.get('best').then((v) => { best = +v || 0 })
+
+let state = 'menu', bird, posts, score, scroll, spawnX
+const GAP = () => Math.max(150, H * 0.24), SPEED = 150
+function start() { bird = { y: H * 0.45, v: 0, a: 0 }; posts = []; score = 0; scroll = 0; spawnX = W + 60; state = 'run'; flap() }
+function flap() { if (state === 'run') { bird.v = -Math.max(330, H * 0.5); buzz(5) } }
+function update(dt) {
+  if (state !== 'run') { if (bird && state === 'over') { bird.v += 1400 * dt; bird.y = Math.min(H - 60, bird.y + bird.v * dt) } return }
+  scroll += SPEED * dt
+  bird.v += Math.max(1050, H * 1.6) * dt; bird.y += bird.v * dt; bird.a = Math.max(-0.5, Math.min(1.2, bird.v / 600))
+  for (const p of posts) p.x -= SPEED * dt * (1 + Math.min(0.6, score * 0.01))
+  if (!posts.length || posts[posts.length - 1].x < W - Math.max(190, W * 0.55)) posts.push({ x: W + 40, gapY: 120 + Math.random() * (H - 300 - GAP()), passed: false })
+  posts = posts.filter((p) => p.x > -80)
+  const bx = W * 0.3, r = 15
+  for (const p of posts) {
+    if (!p.passed && p.x + 26 < bx) { p.passed = true; score++; buzz(8) }
+    if (bx + r > p.x - 26 && bx - r < p.x + 26 && (bird.y - r < p.gapY || bird.y + r > p.gapY + GAP())) return crash()
+  }
+  if (bird.y > H - 60 || bird.y < -40) crash()
+}
+function crash() { state = 'over'; buzz(220); if (score > best) { best = score; droid.prefs.set('best', best) } }
+
+function drawPigeon(x, y, a, t) {
+  g.save(); g.translate(x, y); g.rotate(a)
+  g.fillStyle = '#8c9aa8'; g.beginPath(); g.ellipse(0, 0, 18, 13, 0, 0, 7); g.fill()
+  g.fillStyle = '#5f7f8f'; g.beginPath(); g.ellipse(9, -6, 9, 9, 0, 0, 7); g.fill()
+  g.fillStyle = '#4caf50'; g.fillRect(4, 1, 9, 3)
+  g.fillStyle = '#fff'; g.beginPath(); g.arc(12, -8, 3, 0, 7); g.fill(); g.fillStyle = '#111'; g.beginPath(); g.arc(13, -8, 1.5, 0, 7); g.fill()
+  g.fillStyle = '#ffbb33'; g.beginPath(); g.moveTo(17, -6); g.lineTo(25, -4); g.lineTo(17, -2); g.fill()
+  const wing = Math.sin(t / 60) * 10
+  g.fillStyle = '#6d7e8c'; g.beginPath(); g.moveTo(-6, -2); g.lineTo(-20, -6 - wing); g.lineTo(4, 2); g.fill()
+  g.restore()
+}
+function draw(t) {
+  const sky = g.createLinearGradient(0, 0, 0, H); sky.addColorStop(0, '#0b1a2b'); sky.addColorStop(1, '#2d4a66')
+  g.fillStyle = sky; g.fillRect(0, 0, W, H)
+  g.fillStyle = '#fff'; for (let i = 0; i < 40; i++) { const x = (i * 97 - (scroll || 0) * 0.05) % W; g.globalAlpha = 0.3 + (i % 3) * 0.2; g.fillRect((x + W) % W, (i * 53) % (H * 0.6), 2, 2) } g.globalAlpha = 1
+  // far and near skylines
+  for (const [k, c, base] of [[0.25, '#16283b', 160], [0.6, '#1f3550', 110]]) {
+    g.fillStyle = c
+    for (let i = -1; i < 12; i++) { const bw = 70, x = i * bw - ((scroll || 0) * k) % bw, h = base + ((i + Math.floor(((scroll || 0) * k) / bw)) * 47 % 90 + 90) % 90; g.fillRect(x, H - 60 - h, bw - 6, h)
+      g.fillStyle = 'rgba(255,214,120,.5)'; for (let w = 0; w < 4; w++) if ((i * 3 + w) % 3) g.fillRect(x + 10 + w * 14, H - 50 - h + 20, 5, 7); g.fillStyle = c }
+  }
+  if (posts) for (const p of posts) {
+    g.fillStyle = '#90a4ae'
+    g.fillRect(p.x - 4, 0, 8, p.gapY); g.fillRect(p.x - 4, p.gapY + GAP(), 8, H)
+    g.fillStyle = '#607d8b'
+    for (let y = p.gapY - 20; y > 0; y -= 34) g.fillRect(p.x - 26, y, 52, 4)
+    for (let y = p.gapY + GAP() + 20; y < H; y += 34) g.fillRect(p.x - 26, y, 52, 4)
+    g.fillStyle = '#ff4444'; g.beginPath(); g.arc(p.x, p.gapY, 5, 0, 7); g.arc(p.x, p.gapY + GAP(), 5, 0, 7); g.fill()
+  }
+  g.fillStyle = '#263238'; g.fillRect(0, H - 60, W, 60); g.fillStyle = '#37474f'; g.fillRect(0, H - 60, W, 6)
+  drawPigeon(W * 0.3, bird ? bird.y : H * 0.45 + Math.sin(t / 300) * 10, bird ? bird.a : 0, t)
+  g.textAlign = 'center'; g.fillStyle = '#fff'
+  if (state === 'run') { g.font = '600 46px Roboto,sans-serif'; g.fillText(score, W / 2, 80) }
+  else {
+    g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(0, 0, W, H); g.fillStyle = '#33b5e5'; g.font = '300 44px Roboto,sans-serif'; g.fillText('Pigeon Glide', W / 2, H * 0.3)
+    g.fillStyle = '#fff'; g.font = '18px Roboto,sans-serif'; if (state === 'over') g.fillText('Score ' + score, W / 2, H * 0.38); g.fillText('Best ' + best, W / 2, H * 0.43)
+    g.font = '600 22px Roboto,sans-serif'; g.fillText(state === 'paused' ? 'Tap to go on' : 'Tap to fly', W / 2, H * 0.62)
+  }
+}
+let overAt = 0
+addEventListener('pointerdown', () => {
+  if (state === 'run') return flap()
+  if (state === 'paused') { state = 'run'; return }
+  if (state === 'over' && performance.now() - overAt < 500) return
+  start()
+})
+addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'ArrowUp') state === 'run' ? flap() : start() })
+droid.on('pause', () => { if (state === 'run') state = 'paused'; return null })
+let last = performance.now(), was = state
+function frame(t) {
+  const dt = Math.min(0.033, (t - last) / 1000); last = t
+  update(dt); if (was !== 'over' && state === 'over') overAt = performance.now(); was = state
+  draw(t); requestAnimationFrame(frame)
+}
+requestAnimationFrame(frame)
+</script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+ "id": "com.droid.stardrift",
+ "name": "Star Drift",
+ "version": "1.0",
+ "versioncode": 1,
+ "type": "web",
+ "main": "main",
+ "icon": "icon.svg",
+ "theme": "holo-dark",
+ "dpk": "2.0",
+ "permissions": [
+  "vibrate"
+ ],
+ "activities": {
+  "main": {
+   "entry": "index.html",
+   "label": "Star Drift",
+   "launcher": true
+  }
+ },
+ "author": "droid games",
+ "description": "Drag your ship, it fires on its own. Survive the waves of drifting rocks and drones."
+}
