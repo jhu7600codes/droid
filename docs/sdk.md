@@ -47,13 +47,15 @@ pack it: `npm run pack-dpk -- path/to/folder out.dpk --integrity`, then drop the
 | `droid.device.info()` | size in dp and px, density, bucket, orientation, mode, api 19, locale |
 | `droid.net.fetch(url, init)`, `droid.net.websocket(url)`, `state()`, `isonline()` | `network`, optional `hosts` list |
 | `droid.danen.account()`, `.sync.get/set`, `.push.subscribe()`, `.push.send(title, body)` | `danen` (push also `notifications`); send reaches the user's own devices that subscribed for this app |
+| `droid.vte.carriers()`, `.sims()`, `.plan(carrier, plan)`, `.usage(carrier)`, `.open('messaging' | carrier)` | `vte`: the user's VTE vSIMs (number, D$ credit, VMS and VoVTE minutes left, plan); for carrier apps |
+| `droid.ime.show({kind, enter, multiline, autocap, force})`, `.text(before)`, `.hide()` | droid's keyboard for fields an app draws itself; keys arrive as `ime` events |
 | `droid.wasm.instantiate(path, imports)` | see below |
 
 errors have a `code`: `denied`, `notfound`, `invalid`, `toolarge`, `unsupported`, `offline`.
 
 ## permissions
 `network`, `storage`, `notifications`, `vibrate`, `clipboard`, `camera`, `microphone`, `location`, `fullscreen`,
-`background-audio`, `danen`. list them in the manifest; droid asks the user on first use and remembers.
+`background-audio`, `danen`, `vte`. list them in the manifest; droid asks the user on first use and remembers.
 `network` can be `{ "name": "network", "hosts": ["api.example.com", "*.example.org"] }`.
 
 ## wasm (c and friends)

@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;min-height:100%;font-family:Roboto,sans-serif;-webkit-user-select:none;user-select:none}
+.st{display:none;padding:40px 24px;text-align:center}.small{font-size:13px;opacity:.75}
+body[data-state=loading] .st-loading,body[data-state=error] .st-error,body[data-state=nosim] .st-nosim{display:block}
+body:not([data-state=ok]) .main{display:none}
+button{font:500 14px Roboto,sans-serif;border:0;cursor:pointer}
+#calls{list-style:none;margin:0;padding:0}#calls li{padding:8px 0;font-size:14px}#calls .none{opacity:.6}
+
+body{background:linear-gradient(180deg,#2a1b5c,#120c26 60%);color:#ece7ff;min-height:100vh}
+.hello{text-align:center;padding:28px 16px 6px}.hello small{display:block;color:#b39dff;letter-spacing:3px;font-size:11px}
+.hello .num{font-size:26px;font-weight:300;margin-top:6px}
+.breath{width:58vw;max-width:220px;aspect-ratio:1;margin:18px auto;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-direction:column;
+ background:radial-gradient(circle,rgba(124,77,255,.55) 0,rgba(124,77,255,.15) calc(var(--vms)*70%),transparent 71%);box-shadow:0 0 0 1px rgba(179,157,255,.3);animation:b 6s ease-in-out infinite}
+@keyframes b{50%{transform:scale(1.04)}}
+.breath b{font-size:40px;font-weight:200}.breath span{font-size:12px;color:#b39dff}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:6px 16px}
+.card{background:rgba(255,255,255,.06);border-radius:14px;padding:14px}.card small{color:#b39dff;font-size:11px;letter-spacing:1px;text-transform:uppercase}.card b{display:block;font-size:22px;font-weight:300;margin-top:4px}
+h3{font-weight:300;font-size:18px;margin:22px 16px 8px}
+#plans{padding:0 16px}.plan{background:rgba(255,255,255,.05);border-radius:14px;padding:14px;margin-bottom:8px;display:flex;flex-direction:column;gap:4px}.plan.cur{box-shadow:inset 0 0 0 1px #7c4dff}
+.plan span{font-size:13px;color:#b39dff}.plan button{align-self:flex-start;margin-top:6px;background:#7c4dff;color:#fff;padding:8px 14px;border-radius:16px}.plan button:disabled{background:transparent;color:#b39dff;padding-left:0}
+#calls{padding:0 16px}
+.go{display:block;margin:22px auto 34px;background:transparent;color:#ece7ff;border:1px solid #7c4dff;padding:12px 26px;border-radius:24px}
+.st button{background:#7c4dff;color:#fff;padding:12px 22px;border-radius:24px}</style></head>
+<body data-state="loading">
+
+<div class="st st-loading">Loading…</div>
+<div class="st st-error"><p data-v="error"></p><button data-act="retry">Try again</button></div>
+<div class="st st-nosim"><p>You do not have a vSIM from OMVTE yet.</p><p class="small">It is free. Get it on <b data-v="host"></b> in droid's Browser.</p><button data-act="get">Get a free vSIM</button></div>
+
+<div class="main">
+<div class="hello"><small>OMVTE</small><div class="num" data-v="number"></div></div>
+<div class="breath"><b data-v="vms"></b><span>VMS left of <i data-v="vms-total"></i></span></div>
+<div class="pair"><div class="card"><small>Minutes</small><b><span data-v="min"></span> / <span data-v="min-total"></span></b></div><div class="card"><small>Credit</small><b data-v="balance"></b></div>
+<div class="card"><small>Plan</small><b data-v="plan"></b></div><div class="card"><small>Renews</small><b data-v="renews"></b></div></div>
+<h3>Plans</h3><div id="plans"></div>
+<h3>Recent calls</h3><ul id="calls"></ul>
+<button class="go" data-act="messaging">Open Messaging</button>
+</div>
+<script>window.CARRIER = 'omvte'</script>
+<script src="app.js"></script>
+</body>
+</html>

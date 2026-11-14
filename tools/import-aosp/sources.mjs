@@ -47,6 +47,7 @@ export const sources = [
   app('music', 'packages/apps/Music', 'res'),
   app('email', 'packages/apps/Email', 'res'),
   app('calendar', 'packages/apps/Calendar', 'res'),
+  app('mms', 'packages/apps/Mms', 'res'),
   app('packageinstaller', 'packages/apps/PackageInstaller', 'res'),
   app('latinime', 'packages/inputmethods/LatinIME', 'java/res'),
   app('wallpapers_basic', 'packages/wallpapers/Basic', 'res'),

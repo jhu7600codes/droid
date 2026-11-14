@@ -4,7 +4,7 @@
 export const SPEC_VERSION = '2.0'
 export const API_LEVEL = 19
 export const LIMITS = { total: 64 * 1024 * 1024, file: 20 * 1024 * 1024, files: 5000, extras: 256 * 1024, saved: 64 * 1024 }
-export const PERMISSIONS = ['network', 'storage', 'notifications', 'vibrate', 'clipboard', 'camera', 'microphone', 'location', 'fullscreen', 'background-audio', 'danen']
+export const PERMISSIONS = ['network', 'storage', 'notifications', 'vibrate', 'clipboard', 'camera', 'microphone', 'location', 'fullscreen', 'background-audio', 'danen', 'vte']
 export const SYSTEM_PERMISSIONS = ['system.statusbar', 'system.notifications', 'system.wallpaper', 'system.settings', 'system.windows', 'system.networks', 'system.apps']
 const TYPES = ['web', 'wasm', 'arm', 'converted']
 

@@ -1,0 +1,23 @@
+{
+ "id": "com.vte.transfer",
+ "name": "Transfer",
+ "version": "1.0",
+ "versioncode": 1,
+ "type": "web",
+ "main": "main",
+ "icon": "icon.svg",
+ "theme": "holo-light",
+ "dpk": "2.0",
+ "permissions": [
+  "vte"
+ ],
+ "activities": {
+  "main": {
+   "entry": "index.html",
+   "label": "Transfer",
+   "launcher": true
+  }
+ },
+ "author": "VTE carriers",
+ "description": "Your Transfer vSIM as a ticket: credit, VMS and minutes left, plans, recent calls."
+}

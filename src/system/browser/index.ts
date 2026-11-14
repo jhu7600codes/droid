@@ -7,12 +7,16 @@ import { h, pressable, dialog, toast } from '../../shell/ui'
 import { img } from '../../shell/assets'
 import { settings } from '../../shell/settings'
 import { proxyConfig, ensureProxyToken } from '../../runtime/netclient'
+import { carrierByHost, vte, fmtNumber, dollars, type Carrier } from '../../shell/vte'
+import { LOGOS } from '../../shell/vte-logos'
+import { signedIn, backendUrl } from '../../shell/danen-remote'
+import { wm } from '../../shell/wm'
 import './browser.css'
 
 const B = 'apps/browser'
 const KEY = 'droid.browser'
 interface Entry { url: string; title: string; time: number }
-interface Tab { id: number; url: string; title: string; icon: string; back: string[]; fwd: string[]; frame: HTMLIFrameElement; sid?: string; incognito: boolean; loading: boolean; error?: string; desktop: boolean }
+interface Tab { id: number; url: string; title: string; icon: string; back: string[]; fwd: string[]; frame: HTMLIFrameElement; sid?: string; incognito: boolean; loading: boolean; error?: string; desktop: boolean; carrier?: string }
 
 const store = {
   get<T>(k: string, d: T): T { try { return JSON.parse(localStorage.getItem(`${KEY}.${k}`) || 'null') ?? d } catch { return d } },
@@ -98,7 +102,11 @@ function browser(ctx: ActivityContext): Activity {
     t.error = undefined
     t.title = target
     if (t === cur) showUrl()
+    t.carrier = undefined
     if (target === HOME) return homePage(t)
+    // the VTE carriers live only inside droid (fastline.vte, omvte.net, bumble.line, transfer.line, line.carrier)
+    const vc = (() => { try { return carrierByHost(new URL(target).hostname) } catch { return undefined } })()
+    if (vc) return carrierPage(t, vc)
     if (!navigator.onLine) return errorPage(t, 'You are offline.')
     setLoading(t, true)
     const p = proxyConfig()
@@ -172,6 +180,61 @@ function browser(ctx: ActivityContext): Activity {
     if (t === cur) showUrl()
   }
 
+  // a carrier's own page: who they are, their free plans, and a button for a free vSIM
+  function carrierPage(t: Tab, c: Carrier, note = '') {
+    setLoading(t, false)
+    t.carrier = c.id
+    t.title = c.name + ' · VTE'
+    const sim = vte.sims().find((s) => s.carrier === c.id)
+    const fg = c.id === 'bumble' ? '#3e2723' : '#fff'
+    const plans = c.plans.map((p) => `<div class="plan${sim?.plan === p.id ? ' cur' : ''}"><b>${esc(p.name)}</b><span>${p.vms.toLocaleString()} VMS</span><span>${p.minutes} VoVTE minutes</span><span>renews every ${p.days} days</span><em>Free</em>${sim && sim.plan !== p.id ? `<button data-plan="${p.id}">Switch to ${esc(p.name)}</button>` : sim ? '<i>Your plan</i>' : ''}</div>`).join('')
+    const state = !signedIn() || !backendUrl()
+      ? `<p>vSIMs are tied to your Danen account.</p><button data-act="account">Sign in to Danen</button>`
+      : sim
+        ? `<div class="num"><small>Your ${esc(c.name)} number</small><b>${fmtNumber(sim.number)}</b><span>${sim.vms_left} VMS · ${sim.minutes_left} min · ${dollars(sim.balance)} credit</span></div><button data-act="open">Open Messaging</button><button class="ghost" data-act="drop">Give back this vSIM</button>`
+        : `<button data-act="get">Get my free vSIM</button><p class="small">Free forever. Comes with ${dollars(c.welcome)} of credit.</p>`
+    t.frame.removeAttribute('src')
+    t.frame.srcdoc = `<!doctype html><meta name=viewport content="width=device-width"><style>
+      body{margin:0;font-family:Roboto,sans-serif;background:#f5f5f5;color:#222}
+      .hero{background:${c.color};color:${fg};padding:28px 20px 24px;text-align:center}
+      .hero svg{width:88px;height:88px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.25))}
+      h1{font-weight:300;font-size:34px;margin:10px 0 4px}.tag{opacity:.85;margin:0}
+      .box{padding:18px 16px;text-align:center}
+      button{display:block;width:100%;max-width:340px;margin:10px auto;border:0;background:${c.color};color:${fg};font:500 16px Roboto,sans-serif;padding:14px;border-radius:2px;text-transform:uppercase;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+      button.ghost{background:transparent;color:#888;box-shadow:none;font-size:13px}
+      .num{background:#fff;padding:16px;box-shadow:0 1px 2px rgba(0,0,0,.2);max-width:340px;margin:0 auto 6px;border-top:4px solid ${c.color}}
+      .num small{display:block;color:#888;text-transform:uppercase;font-size:12px}.num b{display:block;font-size:30px;font-weight:300;margin:4px 0}.num span{color:#555;font-size:14px}
+      h2{font-weight:400;font-size:14px;text-transform:uppercase;color:#888;margin:8px 16px}
+      .plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;padding:0 16px 16px}
+      .plan{background:#fff;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.2);display:flex;flex-direction:column;gap:4px;font-size:14px;color:#444}
+      .plan b{font-size:18px;color:#222;font-weight:500}.plan em{font-style:normal;color:${c.color === '#ffc107' ? '#b28704' : c.color};font-weight:700;font-size:20px;margin-top:4px}
+      .plan.cur{outline:2px solid ${c.color}}.plan i{color:#888;font-size:12px}.plan button{font-size:12px;padding:8px;margin:6px 0 0}
+      .small{font-size:13px;color:#777}.note{background:#fff3cd;color:#6b5000;padding:10px 16px;font-size:14px;text-align:center}
+      .fine{font-size:12px;color:#888;padding:0 16px 24px;line-height:1.5}</style>
+      <div class="hero">${LOGOS[c.id]}<h1>${esc(c.name)}</h1><p class="tag">${esc(c.tagline)}</p></div>
+      ${note ? `<div class="note">${esc(note)}</div>` : ''}
+      <div class="box">${state}</div>
+      <h2>Plans</h2><div class="plans">${plans}</div>
+      <p class="fine">${esc(c.name)} runs on VTE, droid's mobile network: MoVTE messages ("VMS") and VoVTE calls between droid users. Every plan is free and renews by itself. Past your plan, a VMS costs ${dollars(c.vmsPrice)} and a call minute ${dollars(c.minutePrice)} of D$ credit. D$ is not real money and there is no way to earn more. Numbers start with ${c.prefix}.</p>
+      <script>document.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;parent.postMessage({droid:'vte',act:b.dataset.act||'plan',plan:b.dataset.plan},'*')})</script>`
+    if (t === cur) showUrl()
+  }
+  async function carrierAction(t: Tab, d: { act?: string; plan?: string }) {
+    const c = carrierByHost(new URL(t.url).hostname)
+    if (!c) return
+    try {
+      if (d.act === 'account') return wm.start({ action: 'danen-account' })
+      if (d.act === 'open') return wm.start({ package: 'droid.messenger', action: 'main' })
+      if (d.act === 'get') { const s = await vte.getSim(c.id); return carrierPage(t, c, `Welcome to ${c.name}! Your number is ${fmtNumber(s.number)}.`) }
+      if (d.act === 'drop') {
+        const r = await dialog({ title: 'Give back your vSIM?', message: `Your ${c.name} number and its credit go away. You can get a new vSIM later, with a new number.`, ok: 'Give back', cancel: 'Keep' })
+        if (r.button !== 'ok') return
+        await vte.dropSim(c.id); return carrierPage(t, c, 'Your vSIM is gone.')
+      }
+      if (d.act === 'plan' && d.plan) { await vte.setPlan(c.id, d.plan); return carrierPage(t, c, 'Plan changed.') }
+    } catch (e) { carrierPage(t, c, (e as Error).message) }
+  }
+
   function realTab(u: string) { window.open(u, '_blank', 'noopener') }
 
   // ---------- tabs ----------
@@ -238,6 +301,7 @@ function browser(ctx: ActivityContext): Activity {
       if (d.back) { if (t.back.length) load(t, t.back.pop()!, false); else setLoading(t, false) }
     }
     if (d.droid === 'go' && d.url) load(t, d.url)
+    if (d.droid === 'vte' && t.carrier) carrierAction(t, d)
   }
   addEventListener('message', onMsg)
 

@@ -1,0 +1,9 @@
+{
+ "id": "com.vte.fastline",
+ "name": "Fastline",
+ "author": "VTE carriers",
+ "category": "tools",
+ "icon": "icon.svg",
+ "dpk": "repo:public/vte/fastline.dpk",
+ "description": "Your Fastline vSIM at a glance: credit, VMS and VoVTE minutes left, plans, recent calls. Needs a vSIM from Fastline (free, in droid's Browser)."
+}

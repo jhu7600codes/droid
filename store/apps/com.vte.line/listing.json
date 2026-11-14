@@ -1,0 +1,9 @@
+{
+ "id": "com.vte.line",
+ "name": "Line Carrier",
+ "author": "VTE carriers",
+ "category": "tools",
+ "icon": "icon.svg",
+ "dpk": "repo:public/vte/line.dpk",
+ "description": "Your Line Carrier account: credit, VMS and minutes left, plans and recent calls. Needs a vSIM from Line Carrier (free, in droid's Browser)."
+}

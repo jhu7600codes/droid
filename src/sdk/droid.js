@@ -136,6 +136,14 @@
       text: function (t) { return call('ime.text', [String(t || '')]) },
       hide: function () { return call('ime.hide', []) },
     },
+    // VTE (permission "vte"): the vSIMs on this droid's Danen account, for carrier apps
+    vte: {
+      carriers: function () { return call('vte.carriers', []) },
+      sims: function () { return call('vte.sims', []) },
+      plan: function (carrier, plan) { return call('vte.plan', [carrier, plan]) },
+      usage: function (carrier) { return call('vte.usage', [carrier]) },
+      open: function (what) { return call('vte.open', [what]) },
+    },
     net: {
       mediaUrl: function (url) { return call('net.mediaUrl', [String(url)]) },
       fetch: function (url, init) {

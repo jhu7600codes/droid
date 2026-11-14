@@ -1,0 +1,23 @@
+{
+ "id": "com.vte.fastline",
+ "name": "Fastline",
+ "version": "1.0",
+ "versioncode": 1,
+ "type": "web",
+ "main": "main",
+ "icon": "icon.svg",
+ "theme": "holo-dark",
+ "dpk": "2.0",
+ "permissions": [
+  "vte"
+ ],
+ "activities": {
+  "main": {
+   "entry": "index.html",
+   "label": "Fastline",
+   "launcher": true
+  }
+ },
+ "author": "VTE carriers",
+ "description": "Your Fastline vSIM at a glance: credit, VMS and VoVTE minutes left, plans, recent calls."
+}

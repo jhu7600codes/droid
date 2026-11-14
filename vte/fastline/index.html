@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;min-height:100%;font-family:Roboto,sans-serif;-webkit-user-select:none;user-select:none}
+.st{display:none;padding:40px 24px;text-align:center}.small{font-size:13px;opacity:.75}
+body[data-state=loading] .st-loading,body[data-state=error] .st-error,body[data-state=nosim] .st-nosim{display:block}
+body:not([data-state=ok]) .main{display:none}
+button{font:500 14px Roboto,sans-serif;border:0;cursor:pointer}
+#calls{list-style:none;margin:0;padding:0}#calls li{padding:8px 0;font-size:14px}#calls .none{opacity:.6}
+
+body{background:#141414;color:#fff}
+.top{padding:18px 18px 8px;display:flex;justify-content:space-between;align-items:center}
+.top .num{font-size:24px;font-weight:300;letter-spacing:1px}.top .lbl{font-size:11px;color:#ff9e40;text-transform:uppercase;letter-spacing:2px}
+.bal{background:#ff6d00;color:#fff;padding:6px 12px;border-radius:16px;font-weight:700;font-size:15px}
+.gauges{display:flex;justify-content:space-around;padding:12px 8px}
+.g{position:relative;width:44vw;max-width:170px;aspect-ratio:1;border-radius:50%;background:conic-gradient(#ff6d00 calc(var(--f)*270deg),#2a2a2a 0 270deg,transparent 0);transform:rotate(-135deg)}
+.g::after{content:'';position:absolute;inset:12%;border-radius:50%;background:#141414}
+.g .in{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;transform:rotate(135deg);z-index:1}
+.g b{font-size:30px;font-weight:300}.g span{font-size:12px;color:#aaa}
+.row{display:flex;justify-content:space-between;padding:12px 18px;border-top:1px solid #262626;font-size:15px}.row span:last-child{color:#ff9e40}
+h3{font-size:12px;color:#ff9e40;text-transform:uppercase;letter-spacing:2px;margin:18px 18px 6px;font-weight:500}
+#plans{padding:0 12px}.plan{display:flex;align-items:center;gap:10px;background:#1e1e1e;margin:6px 0;padding:12px;border-left:4px solid #3a3a3a}.plan.cur{border-left-color:#ff6d00}
+.plan b{display:block}.plan span{font-size:12px;color:#aaa;flex:1}.plan button{background:#ff6d00;color:#fff;padding:8px 10px;border-radius:2px}.plan button:disabled{background:#333;color:#999}
+#calls{padding:0 18px}
+.go{display:block;margin:20px auto 30px;background:#ff6d00;color:#fff;padding:14px 28px;border-radius:24px;text-transform:uppercase}
+.st button{background:#ff6d00;color:#fff;padding:12px 24px;border-radius:24px}</style></head>
+<body data-state="loading">
+
+<div class="st st-loading">Loading…</div>
+<div class="st st-error"><p data-v="error"></p><button data-act="retry">Try again</button></div>
+<div class="st st-nosim"><p>You do not have a vSIM from Fastline yet.</p><p class="small">It is free. Get it on <b data-v="host"></b> in droid's Browser.</p><button data-act="get">Get a free vSIM</button></div>
+
+<div class="main">
+<div class="top"><div><div class="lbl">Fastline</div><div class="num" data-v="number"></div></div><div class="bal" data-v="balance"></div></div>
+<div class="gauges"><div class="g" data-meter="vms"><div class="in"><b data-v="vms"></b><span>of <i data-v="vms-total"></i> VMS</span></div></div><div class="g" data-meter="min"><div class="in"><b data-v="min"></b><span>of <i data-v="min-total"></i> min</span></div></div></div>
+<div class="row"><span>Plan</span><span data-v="plan"></span></div>
+<div class="row"><span>Renews</span><span data-v="renews"></span></div>
+<div class="row"><span>Sent today</span><span data-v="sent-today">0</span></div>
+<h3>Plans</h3><div id="plans"></div>
+<h3>Recent calls</h3><ul id="calls"></ul>
+<button class="go" data-act="messaging">Open Messaging</button>
+</div>
+<script>window.CARRIER = 'fastline'</script>
+<script src="app.js"></script>
+</body>
+</html>

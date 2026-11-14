@@ -26,6 +26,7 @@ const PERM_TEXT: Record<string, string> = {
   fullscreen: 'hide the status and navigation bars',
   'background-audio': 'play audio in the background',
   danen: 'use your Danen account',
+  vte: 'see your VTE vSIMs (numbers, credit, plans) and change their plans',
 }
 export const permissionText = (p: string) => PERM_TEXT[p] || p
 
@@ -36,7 +37,15 @@ let aosp: Promise<{ dex: ArrayBuffer; res: ArrayBuffer } | null> | null = null
 const aospFiles = () => (aosp ||= Promise.all(['runtime/aosp/framework.dex', 'runtime/aosp/framework-res.apk'].map((u) => fetch(u).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(u)))))).then(([dex, res]) => ({ dex, res })).catch(() => { aosp = null; return null }))
 
 // asks once per app and permission, remembers the answer (holo dialog)
-export async function ensure(pkg: string, perm: string) {
+// one question per app and permission at a time: calls that arrive while it is open wait for its answer
+const asking = new Map<string, Promise<void>>()
+export function ensure(pkg: string, perm: string): Promise<void> {
+  const key = pkg + ' ' + perm
+  let p = asking.get(key)
+  if (!p) { p = ensureOnce(pkg, perm).finally(() => asking.delete(key)); asking.set(key, p) }
+  return p
+}
+async function ensureOnce(pkg: string, perm: string) {
   const app = kernel.get(pkg)
   const declared = (app?.manifest.permissions || []).map(permName)
   if (!declared.includes(perm)) throw err('denied', `${perm} is not in the manifest`)
@@ -205,6 +214,22 @@ export function makeBridge(pkg: string, ctx: ActivityContext, host: Host) {
     },
     'net.ws.send': (id: number, d: unknown) => sockets.get(id)?.send(d as any),
     'net.ws.close': (id: number, c?: number, r?: string) => sockets.get(id)?.close(c, r),
+
+    // VTE carriers: vSIMs of this droid's Danen account (carrier apps show balance, VMS and minutes left)
+    'vte.carriers': async () => { const { vte } = await import('../shell/vte'); return vte.carriers() },
+    'vte.sims': async () => { await ensure(pkg, 'vte'); const { vte } = await import('../shell/vte'); try { return await vte.refreshSims() } catch { return vte.sims() } },
+    'vte.plan': async (carrierId: string, plan: string) => { await ensure(pkg, 'vte'); const { vte } = await import('../shell/vte'); return vte.setPlan(String(carrierId), String(plan)) },
+    'vte.usage': async (carrierId: string) => {
+      await ensure(pkg, 'vte')
+      const { vte } = await import('../shell/vte')
+      const sim = vte.sims().find((s) => s.carrier === carrierId)
+      if (!sim) return null
+      const day = Date.now() - 86400000
+      const sent = vte.thread ? vte.conversations().reduce((n, c) => n + vte.thread(c.mine, c.peer).filter((m) => m.from_number === sim.number && Date.parse(m.created_at) > day).length, 0) : 0
+      const calls = vte.calls().filter((c) => c.from_number === sim.number || c.to_number === sim.number).map((c) => ({ out: c.from_number === sim.number, state: c.state, at: c.created_at, seconds: c.answered_at && c.ended_at ? Math.round((Date.parse(c.ended_at) - Date.parse(c.answered_at)) / 1000) : 0 }))
+      return { sentToday: sent, calls }
+    },
+    'vte.open': async (what: string) => { const { wm } = await import('../shell/wm'); if (what === 'messaging') wm.start({ package: 'droid.messenger', action: 'main' }); else { const { carrier } = await import('../shell/vte'); const c = carrier(String(what)); if (c) wm.start({ action: 'view', data: 'https://' + c.host + '/' }) } },
 
     // danen play services (milestone 6 wires the backend; local account works now)
     'danen.account': async () => {

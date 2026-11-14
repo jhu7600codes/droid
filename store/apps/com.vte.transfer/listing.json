@@ -1,0 +1,9 @@
+{
+ "id": "com.vte.transfer",
+ "name": "Transfer",
+ "author": "VTE carriers",
+ "category": "tools",
+ "icon": "icon.svg",
+ "dpk": "repo:public/vte/transfer.dpk",
+ "description": "Your Transfer vSIM as a ticket: credit, VMS and minutes left, plans, recent calls. Needs a vSIM from Transfer (free, in droid's Browser)."
+}
