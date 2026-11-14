@@ -209,6 +209,8 @@ export const wm = {
         tasks.push(existing)
         layout()
         animate(top()!.el, 'win-open')
+        // a launch that carries something (a notification opening a conversation) reaches the app
+        if (i.extras && Object.keys(i.extras).length) top()!.impl.intent?.(i)
         return top()!
       }
       task = { id: nextId++, pkg: app.manifest.id, stack: [], label: app.manifest.name, icon: app.icon }

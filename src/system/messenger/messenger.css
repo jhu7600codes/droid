@@ -1,0 +1,56 @@
+/* messaging: kitkat's light lists and message bubbles; the call screen is dark with the carrier's colour */
+.ms .content { display: flex; flex-direction: column; overflow: hidden; }
+.ms .ms-list, .ms .h-list { overflow-y: auto; flex: 1; margin: 0; }
+.ms-empty { padding: 24px 20px; color: #555; font-size: 15px; line-height: 1.4; }
+.ms-empty .ms-big { font-size: 22px; font-weight: 300; color: #222; margin: 0 0 6px; }
+.ms-carrier { display: flex !important; align-items: center; gap: 10px; text-transform: none !important; font-size: 16px !important; color: #0099cc !important; padding: 8px 0 !important; }
+.ms-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
+.ms-conv { display: flex; align-items: center; gap: 12px; min-height: 72px; padding: 0 12px !important; }
+.ms-avatar { width: 48px; height: 48px; flex: none; }
+.ms-letter { display: flex; align-items: center; justify-content: center; color: #fff; font-size: 22px; }
+.ms-conv .lines { flex: 1; min-width: 0; }
+.ms-conv .title { display: flex; align-items: center; gap: 6px; }
+.ms-conv .summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ms-conv.unread .title, .ms-conv.unread .summary { font-weight: 600; color: #111; }
+.ms-count { background: #33b5e5; color: #fff; font-size: 11px; border-radius: 9px; padding: 1px 6px; font-weight: 500; }
+.ms-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 12px; color: #777; }
+
+.ms-thread { flex: 1; overflow-y: auto; padding: 8px 10px; background: #f0f0f0; }
+.ms-day { text-align: center; font-size: 12px; color: #888; margin: 12px 0 6px; text-transform: uppercase; }
+.ms-msg { display: flex; flex-direction: column; max-width: 78%; margin: 4px 0; padding: 8px 10px 6px; background: #fff; box-shadow: 0 1px 1px rgba(0, 0, 0, .15); }
+.ms-msg.in { align-self: flex-start; margin-right: auto; border-left: 3px solid #33b5e5; }
+.ms-msg.out { margin-left: auto; background: #e2f4fb; }
+.ms-msg.failed { background: #fde3e3; }
+.ms-body { font-size: 16px; color: #222; white-space: pre-wrap; word-wrap: break-word; }
+.ms-time { font-size: 11px; color: #888; margin-top: 3px; align-self: flex-end; }
+.ms-thread { display: flex; flex-direction: column; }
+.ms-compose { background: #fff; border-top: 1px solid #ddd; padding: 4px 6px 6px; }
+.ms-from { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #777; padding: 2px 4px 4px; }
+.ms-row { display: flex; align-items: flex-end; gap: 4px; }
+.ms-input { flex: 1; border: 0; border-bottom: 2px solid #33b5e5; font: 16px Roboto, sans-serif; resize: none; padding: 8px 4px; max-height: 120px; background: transparent; color: #222; outline: none; }
+.ms-sendcol { display: flex; flex-direction: column; align-items: center; }
+.ms-counter { font-size: 11px; color: #888; min-height: 12px; }
+.ms-send { background: none; border: 0; padding: 6px; }
+.ms-send img { width: 32px; height: 32px; }
+
+.ms-sims { padding: 12px; overflow-y: auto; }
+.ms-sim { background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .2); border-left: 6px solid #33b5e5; padding: 12px 14px; margin-bottom: 10px; }
+.ms-sim-name { font-size: 13px; text-transform: uppercase; color: #777; font-weight: 500; }
+.ms-sim-num { font-size: 24px; font-weight: 300; color: #222; margin: 2px 0 6px; }
+.ms-sim-row { font-size: 14px; color: #444; }
+.ms-hint { color: #777; font-size: 13px; line-height: 1.4; }
+
+.mc { background: #0b1016; color: #fff; display: flex; flex-direction: column; align-items: center; --carrier: #33b5e5; }
+.mc-top { width: 100%; padding: 24px 16px 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--carrier) 35%, #0b1016), #0b1016); text-align: center; }
+.mc-label { font-size: 12px; letter-spacing: 2px; color: var(--carrier); font-weight: 500; }
+.mc-name { font-size: 30px; font-weight: 300; margin-top: 8px; }
+.mc-num { font-size: 15px; color: #aaa; margin-top: 2px; }
+.mc-status { font-size: 16px; color: #ddd; margin-top: 12px; }
+.mc-pic { flex: 1; display: flex; align-items: center; }
+.mc-pic img { width: 160px; height: 160px; opacity: .85; border-radius: 50%; box-shadow: 0 0 0 6px color-mix(in srgb, var(--carrier) 40%, transparent); }
+.mc-btns { display: flex; gap: 20px; padding: 24px 16px 40px; }
+.mc-btn { border: 0; color: #fff; font: 500 16px Roboto, sans-serif; border-radius: 40px; padding: 18px 26px; min-width: 120px; background: #37474f; }
+.mc-btn.answer { background: #2e7d32; }
+.mc-btn.decline { background: #c62828; }
+.mc-btn.small { min-width: 96px; padding: 14px 20px; }
+.mc-btn.on { background: var(--carrier); }

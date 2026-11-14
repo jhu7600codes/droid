@@ -1,0 +1,23 @@
+{
+ "id": "com.vte.line",
+ "name": "Line Carrier",
+ "version": "1.0",
+ "versioncode": 1,
+ "type": "web",
+ "main": "main",
+ "icon": "icon.svg",
+ "theme": "holo-light",
+ "dpk": "2.0",
+ "permissions": [
+  "vte"
+ ],
+ "activities": {
+  "main": {
+   "entry": "index.html",
+   "label": "Line Carrier",
+   "launcher": true
+  }
+ },
+ "author": "VTE carriers",
+ "description": "Your Line Carrier account: credit, VMS and minutes left, plans and recent calls."
+}

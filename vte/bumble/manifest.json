@@ -1,0 +1,23 @@
+{
+ "id": "com.vte.bumble",
+ "name": "Bumble Line",
+ "version": "1.0",
+ "versioncode": 1,
+ "type": "web",
+ "main": "main",
+ "icon": "icon.svg",
+ "theme": "holo-light",
+ "dpk": "2.0",
+ "permissions": [
+  "vte"
+ ],
+ "activities": {
+  "main": {
+   "entry": "index.html",
+   "label": "Bumble Line",
+   "launcher": true
+  }
+ },
+ "author": "VTE carriers",
+ "description": "Your Bumble Line vSIM in the hive: credit, VMS and minutes left, plans, recent calls."
+}

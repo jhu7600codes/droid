@@ -1,0 +1,9 @@
+{
+ "id": "com.vte.omvte",
+ "name": "OMVTE",
+ "author": "VTE carriers",
+ "category": "tools",
+ "icon": "icon.svg",
+ "dpk": "repo:public/vte/omvte.dpk",
+ "description": "Your OMVTE vSIM, calmly: credit, VMS and minutes left, plans and recent calls. Needs a vSIM from OMVTE (free, in droid's Browser)."
+}
