@@ -14,6 +14,18 @@
 //   POST /store/publish    (session) {id, name, description, category, version, versioncode, size, sha256, permissions, converted, icon}
 //   POST /store/unpublish  (session) {id}
 //   POST /store/report     (session) {id, reason}          -> {}  5 reports hide a listing
+//   GET  /vte/carriers                                     -> {carriers}  the five carriers, their plans and prices
+//   GET  /vte/sims          (session)                      -> {sims}  your vSIMs (plans renew here when due)
+//   POST /vte/sim           (session) {carrier}            -> {sim}   a free vSIM with a new number
+//   POST /vte/sim/drop      (session) {carrier}            -> {}      gives the vSIM (and its number) back
+//   POST /vte/plan          (session) {carrier, plan}      -> {sim}   change plan (plans are free)
+//   POST /vte/vms/send      (session) {carrier, to, body}  -> {vms, sim}  plan first, then D$ credit
+//   GET  /vte/sync?after=id (session)                      -> {vms, calls}  new messages and calls for your numbers
+//   POST /vte/call          (session) {carrier, to, offer} -> {call}  rings the other side (VoVTE)
+//   GET  /vte/call?id       (session)                      -> {call}  state, answer and ice of a call you are in
+//   POST /vte/call/answer   (session) {id, answer}         -> {}
+//   POST /vte/call/ice      (session) {id, candidates}     -> {}
+//   POST /vte/call/end      (session) {id, state?}         -> {sim?}  minutes are charged to the caller
 // store files go straight from the browser to the public "droid-store" bucket with the signed urls;
 // a package id belongs to whoever published it first (not the main store's ids, not droid.*), and
 // updates need a higher versioncode. uploads nobody published are swept after an hour.
@@ -157,6 +169,47 @@ async function sweep() {
   if (stale.length) await db.storage.from(BUCKET).remove(stale)
 }
 
+// ---------- vte: carriers, vSIMs, VMS and VoVTE ----------
+// prices in D$ cents. plans are free and renew every `days`; credit pays for what goes past a plan.
+const CARRIERS: Record<string, { name: string; host: string; prefix: string; color: string; tagline: string; welcome: number; vmsPrice: number; minutePrice: number; plans: { id: string; name: string; vms: number; minutes: number; days: number }[] }> = {
+  fastline: { name: 'Fastline', host: 'fastline.vte', prefix: '701', color: '#ff6d00', tagline: 'Fast lines. Zero cost.', welcome: 4000, vmsPrice: 5, minutePrice: 20,
+    plans: [{ id: 'lite', name: 'Fast Lite', vms: 200, minutes: 30, days: 7 }, { id: 'turbo', name: 'Turbo', vms: 1000, minutes: 120, days: 30 }] },
+  omvte: { name: 'OMVTE', host: 'omvte.net', prefix: '702', color: '#7c4dff', tagline: 'Talk more, mind less.', welcome: 6000, vmsPrice: 4, minutePrice: 15,
+    plans: [{ id: 'basic', name: 'Om Basic', vms: 300, minutes: 60, days: 30 }, { id: 'calm', name: 'Om Calm', vms: 5000, minutes: 600, days: 30 }] },
+  bumble: { name: 'Bumble Line', host: 'bumble.line', prefix: '703', color: '#ffc107', tagline: 'Buzzing everywhere VTE goes.', welcome: 2500, vmsPrice: 3, minutePrice: 10,
+    plans: [{ id: 'buzz', name: 'Buzz', vms: 150, minutes: 45, days: 14 }, { id: 'hive', name: 'Hive', vms: 500, minutes: 200, days: 30 }] },
+  transfer: { name: 'Transfer', host: 'transfer.line', prefix: '704', color: '#00bfa5', tagline: 'Everything gets through.', welcome: 5000, vmsPrice: 5, minutePrice: 15,
+    plans: [{ id: 'relay', name: 'Relay', vms: 250, minutes: 90, days: 30 }, { id: 'express', name: 'Express', vms: 800, minutes: 300, days: 30 }] },
+  line: { name: 'Line Carrier', host: 'line.carrier', prefix: '705', color: '#2979ff', tagline: 'The line that is always there.', welcome: 10000, vmsPrice: 6, minutePrice: 25,
+    plans: [{ id: 'standard', name: 'Standard', vms: 400, minutes: 120, days: 30 }, { id: 'plus', name: 'Standard Plus', vms: 1500, minutes: 400, days: 30 }] },
+}
+const planOf = (carrier: string, id: string) => CARRIERS[carrier]?.plans.find((p) => p.id === id)
+const renewAt = (days: number) => new Date(Date.now() + days * 86400000).toISOString()
+const simOut = (s: any) => ({ carrier: s.carrier, number: s.number, plan: s.plan, balance: s.balance, vms_left: s.vms_left, minutes_left: s.minutes_left, renews_at: s.renews_at, created_at: s.created_at })
+// a plan whose period ran out starts again (unused allowance does not carry over)
+async function freshen(s: any) {
+  if (Date.parse(s.renews_at) > Date.now()) return s
+  const p = planOf(s.carrier, s.plan)
+  if (!p) return s
+  const up = { vms_left: p.vms, minutes_left: p.minutes, renews_at: renewAt(p.days) }
+  await db.from('vsims').update(up).eq('user_id', s.user_id).eq('carrier', s.carrier)
+  return { ...s, ...up }
+}
+async function simsOf(user: string) {
+  const { data } = await db.from('vsims').select('*').eq('user_id', user)
+  return Promise.all((data || []).map(freshen))
+}
+async function mySim(user: string, carrier: string) {
+  const { data } = await db.from('vsims').select('*').eq('user_id', user).eq('carrier', String(carrier)).maybeSingle()
+  return data ? freshen(data) : null
+}
+const digits = (n: unknown) => String(n || '').replace(/\D/g, '')
+async function ownerOf(number: string) {
+  const { data } = await db.from('vsims').select('user_id, carrier').eq('number', number).maybeSingle()
+  return data as { user_id: string; carrier: string } | null
+}
+const fmtNumber = (n: string) => `${n.slice(0, 3)} ${n.slice(3, 6)} ${n.slice(6)}`
+
 const clean = (m: any) => ({ title: String(m?.title || 'droid').slice(0, 120), body: String(m?.body || '').slice(0, 500), data: m?.data ?? null })
 
 Deno.serve(async (req) => {
@@ -173,6 +226,8 @@ Deno.serve(async (req) => {
       if (!u) return json(req, { error: 'no such user' }, 404)
       return json(req, { sent: await pushTo(u.id, b.pkg ? String(b.pkg) : null, clean(b)) })
     }
+
+    if (path === '/vte/carriers') return json(req, { carriers: Object.entries(CARRIERS).map(([id, c]) => ({ id, ...c })) })
 
     if (path === '/account/create' && req.method === 'POST') {
       if (limited('c' + ip, 5)) return json(req, { error: 'slow down' }, 429)
@@ -308,6 +363,138 @@ Deno.serve(async (req) => {
       const b = await req.json()
       return json(req, { sent: await pushTo(user, b.pkg ? String(b.pkg) : null, clean(b)) })
     }
+    // ---------- vte ----------
+    if (path === '/vte/sims' && req.method === 'GET') return json(req, { sims: (await simsOf(user)).map(simOut) })
+    if (path === '/vte/sim' && req.method === 'POST') {
+      if (limited('v' + user, 10)) return json(req, { error: 'slow down' }, 429)
+      const { carrier } = await req.json()
+      const c = CARRIERS[String(carrier)]
+      if (!c) return json(req, { error: 'no such carrier' }, 400)
+      const have = await mySim(user, carrier)
+      if (have) return json(req, { sim: simOut(have) })
+      const p = c.plans[0]
+      for (let i = 0; i < 20; i++) {
+        const number = c.prefix + String(Math.floor(Math.random() * 1e7)).padStart(7, '0')
+        const { data, error } = await db.from('vsims').insert({ user_id: user, carrier, number, plan: p.id, balance: c.welcome, vms_left: p.vms, minutes_left: p.minutes, renews_at: renewAt(p.days) }).select('*').single()
+        if (!error) return json(req, { sim: simOut(data) })
+        if (error.code !== '23505') break
+      }
+      return json(req, { error: 'could not get a number, try again' }, 500)
+    }
+    if (path === '/vte/sim/drop' && req.method === 'POST') {
+      const { carrier } = await req.json()
+      await db.from('vsims').delete().eq('user_id', user).eq('carrier', String(carrier))
+      return json(req, {})
+    }
+    if (path === '/vte/plan' && req.method === 'POST') {
+      const { carrier, plan } = await req.json()
+      const s = await mySim(user, carrier), p = planOf(String(carrier), String(plan))
+      if (!s || !p) return json(req, { error: 'no such plan' }, 400)
+      if (s.plan === p.id) return json(req, { sim: simOut(s) })
+      const up = { plan: p.id, vms_left: p.vms, minutes_left: p.minutes, renews_at: renewAt(p.days) }
+      await db.from('vsims').update(up).eq('user_id', user).eq('carrier', s.carrier)
+      return json(req, { sim: simOut({ ...s, ...up }) })
+    }
+    if (path === '/vte/vms/send' && req.method === 'POST') {
+      if (limited('m' + user, 60)) return json(req, { error: 'slow down' }, 429)
+      const b = await req.json()
+      const s = await mySim(user, b.carrier)
+      if (!s) return json(req, { error: 'no vSIM from that carrier' }, 400)
+      const to = digits(b.to), body = String(b.body || '').slice(0, 1000)
+      if (!body.trim()) return json(req, { error: 'empty message' }, 400)
+      const peer = await ownerOf(to)
+      if (!peer) return json(req, { error: 'the number you texted is not in service' }, 404)
+      const price = CARRIERS[s.carrier].vmsPrice
+      let up: any
+      if (s.vms_left > 0) up = { vms_left: s.vms_left - 1 }
+      else if (s.balance >= price) up = { balance: s.balance - price }
+      else return json(req, { error: 'no VMS left on your plan and not enough D$ credit' }, 402)
+      await db.from('vsims').update(up).eq('user_id', user).eq('carrier', s.carrier)
+      const { data: m } = await db.from('vms').insert({ from_number: s.number, to_number: to, body }).select('*').single()
+      pushTo(peer.user_id, 'droid.messenger', { title: fmtNumber(s.number), body: body.slice(0, 200), data: { vms: m.id } }).catch(() => {})
+      return json(req, { vms: m, sim: simOut({ ...s, ...up }) })
+    }
+    if (path === '/vte/sync' && req.method === 'GET') {
+      const after = Number(new URL(req.url).searchParams.get('after')) || 0
+      // messages are kept 30 days, calls 7 (now and then, whoever syncs sweeps)
+      if (Math.random() < 0.01) { await db.from('vms').delete().lt('created_at', new Date(Date.now() - 30 * 86400000).toISOString()); await db.from('vcalls').delete().lt('created_at', new Date(Date.now() - 7 * 86400000).toISOString()) }
+      const nums = (await simsOf(user)).map((x) => x.number)
+      if (!nums.length) return json(req, { vms: [], calls: [] })
+      const list = nums.map((n) => `"${n}"`).join(',')
+      const { data: vms } = await db.from('vms').select('*').gt('id', after).or(`to_number.in.(${list}),from_number.in.(${list})`).order('id').limit(500)
+      // ringing calls to you, and the log of the last day
+      const since = new Date(Date.now() - 86400000).toISOString()
+      const { data: calls } = await db.from('vcalls').select('id, from_number, to_number, state, created_at, answered_at, ended_at').gt('created_at', since).or(`to_number.in.(${list}),from_number.in.(${list})`).order('created_at', { ascending: false }).limit(100)
+      // calls nobody picked up in 45 seconds are missed
+      for (const c of calls || []) if (c.state === 'ringing' && Date.now() - Date.parse(c.created_at) > 45000) { c.state = 'missed'; await db.from('vcalls').update({ state: 'missed', ended_at: new Date().toISOString() }).eq('id', c.id).eq('state', 'ringing') }
+      return json(req, { vms: vms || [], calls: calls || [] })
+    }
+    if (path === '/vte/call' && req.method === 'POST') {
+      if (limited('k' + user, 20)) return json(req, { error: 'slow down' }, 429)
+      const b = await req.json()
+      const s = await mySim(user, b.carrier)
+      if (!s) return json(req, { error: 'no vSIM from that carrier' }, 400)
+      if (s.minutes_left <= 0 && s.balance < CARRIERS[s.carrier].minutePrice) return json(req, { error: 'no VoVTE minutes left on your plan and not enough D$ credit' }, 402)
+      const to = digits(b.to), peer = await ownerOf(to)
+      if (!peer) return json(req, { error: 'the number you called is not in service' }, 404)
+      if (to === s.number) return json(req, { error: 'you cannot call yourself' }, 400)
+      const { data: busy } = await db.from('vcalls').select('id').in('state', ['ringing', 'active']).or(`to_number.eq.${to},from_number.eq.${to}`).gt('created_at', new Date(Date.now() - 3600000).toISOString()).limit(1)
+      const { data: c } = await db.from('vcalls').insert({ from_number: s.number, to_number: to, offer: b.offer ?? null, state: busy?.length ? 'busy' : 'ringing' }).select('id, from_number, to_number, state, created_at').single()
+      if (c.state === 'ringing') pushTo(peer.user_id, 'droid.messenger', { title: 'Incoming VoVTE call', body: fmtNumber(s.number), data: { call: c.id } }).catch(() => {})
+      return json(req, { call: c })
+    }
+    // the caller or the callee of a call (by their numbers)
+    const callFor = async (id: string) => {
+      const { data: c } = await db.from('vcalls').select('*').eq('id', id).maybeSingle()
+      if (!c) return null
+      const nums = (await simsOf(user)).map((x) => x.number)
+      const side = nums.includes(c.from_number) ? 'caller' : nums.includes(c.to_number) ? 'callee' : null
+      return side ? { c, side } : null
+    }
+    if (path === '/vte/call' && req.method === 'GET') {
+      const r = await callFor(String(new URL(req.url).searchParams.get('id') || ''))
+      if (!r) return json(req, { error: 'no such call' }, 404)
+      const { c, side } = r
+      if (c.state === 'ringing' && Date.now() - Date.parse(c.created_at) > 45000) { c.state = 'missed'; await db.from('vcalls').update({ state: 'missed', ended_at: new Date().toISOString() }).eq('id', c.id) }
+      return json(req, { call: { id: c.id, from_number: c.from_number, to_number: c.to_number, state: c.state, side, offer: side === 'callee' ? c.offer : null, answer: side === 'caller' ? c.answer : null, ice: side === 'caller' ? c.callee_ice : c.caller_ice } })
+    }
+    if (path === '/vte/call/answer' && req.method === 'POST') {
+      const b = await req.json()
+      const r = await callFor(String(b.id))
+      if (!r || r.side !== 'callee' || r.c.state !== 'ringing') return json(req, { error: 'the call is gone' }, 409)
+      await db.from('vcalls').update({ answer: b.answer ?? null, state: 'active', answered_at: new Date().toISOString() }).eq('id', r.c.id)
+      return json(req, {})
+    }
+    if (path === '/vte/call/ice' && req.method === 'POST') {
+      const b = await req.json()
+      const r = await callFor(String(b.id))
+      if (!r) return json(req, { error: 'no such call' }, 404)
+      const col = r.side === 'caller' ? 'caller_ice' : 'callee_ice'
+      const list = [...(r.c[col] || []), ...(Array.isArray(b.candidates) ? b.candidates : [])].slice(-60)
+      await db.from('vcalls').update({ [col]: list }).eq('id', r.c.id)
+      return json(req, {})
+    }
+    if (path === '/vte/call/end' && req.method === 'POST') {
+      const b = await req.json()
+      const r = await callFor(String(b.id))
+      if (!r) return json(req, { error: 'no such call' }, 404)
+      const { c, side } = r
+      if (c.state === 'ended' || c.state === 'declined' || c.state === 'missed') return json(req, {})
+      const state = c.state === 'ringing' ? (side === 'callee' ? 'declined' : 'missed') : 'ended'
+      await db.from('vcalls').update({ state, ended_at: new Date().toISOString() }).eq('id', c.id)
+      // the caller pays: plan minutes first, then credit (whole minutes, rounded up)
+      if (state === 'ended' && c.answered_at) {
+        const mins = Math.max(1, Math.ceil((Date.now() - Date.parse(c.answered_at)) / 60000))
+        const { data: sim } = await db.from('vsims').select('*').eq('number', c.from_number).maybeSingle()
+        if (sim) {
+          const fromPlan = Math.min(sim.minutes_left, mins), rest = mins - fromPlan
+          const price = CARRIERS[sim.carrier].minutePrice
+          await db.from('vsims').update({ minutes_left: sim.minutes_left - fromPlan, balance: Math.max(0, sim.balance - rest * price) }).eq('number', c.from_number)
+        }
+      }
+      return json(req, {})
+    }
+
     return json(req, { error: 'not found' }, 404)
   } catch {
     return json(req, { error: 'server error' }, 500)
