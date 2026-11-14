@@ -16,5 +16,6 @@ import store from './store'
 import calculator from './calculator'
 import deskclock from './deskclock'
 import messenger from './messenger'
+import phone from './phone'
 
-export const systemApps: SystemApp[] = [wallpaper, systemui, launcher, setupwizard, packageinstaller, settings, networks, camera, gallery, files, browser, services, store, calculator, deskclock, messenger]
+export const systemApps: SystemApp[] = [wallpaper, systemui, launcher, setupwizard, packageinstaller, settings, networks, camera, gallery, files, browser, services, store, calculator, deskclock, phone, messenger]

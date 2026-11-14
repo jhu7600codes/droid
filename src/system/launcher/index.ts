@@ -17,13 +17,28 @@ interface Cell { pkg: string; activity: string }
 interface Layout { pages: (Cell | null)[][]; hotseat: (Cell | null)[] }
 const COLS = 4, ROWS = 4, HOTSEAT = 5, ALLAPPS_SLOT = 2
 
-const DEFAULT_HOTSEAT = ['droid.browser', 'droid.contacts', null, 'droid.camera', 'droid.gallery']
-const DEFAULT_PAGE = ['droid.settings', 'droid.store', 'droid.deskclock', 'droid.calculator', 'droid.files', 'droid.music', 'droid.email', 'droid.calendar']
+// kitkat's dock: phone, people, all apps, messaging, browser (droid has no people app: the camera)
+const DEFAULT_HOTSEAT = ['droid.phone', 'droid.camera', null, 'droid.messenger', 'droid.browser']
+const DEFAULT_PAGE = ['droid.gallery', 'droid.settings', 'droid.store', 'droid.deskclock', 'droid.calculator', 'droid.files', 'droid.music', 'droid.email', 'droid.calendar']
 
 function load(): Layout {
   try {
     const l = JSON.parse(localStorage.getItem(KEY) || 'null')
-    if (l?.pages) return l
+    if (l?.pages) {
+      // apps added to droid after the layout was saved (Phone, Messaging) get a free spot in the dock, else on a page
+      for (const id of ['droid.phone', 'droid.messenger']) {
+        const all = [...l.hotseat, ...l.pages.flat()]
+        if (!kernel.get(id) || all.some((c: Cell | null) => c?.pkg === id) || localStorage.getItem(KEY + '.added.' + id)) continue
+        const act = Object.entries(kernel.get(id)!.manifest.activities).find(([, d]) => d.launcher)
+        if (!act) continue
+        const cell = { pkg: id, activity: act[0] }
+        const hs = l.hotseat.findIndex((c: Cell | null, i: number) => !c && i !== 2)
+        if (hs >= 0) l.hotseat[hs] = cell
+        else for (const p of l.pages) { const i = p.lastIndexOf(null); if (i >= 0) { p[i] = cell; break } }
+        localStorage.setItem(KEY + '.added.' + id, '1')
+      }
+      return l
+    }
   } catch { /* fall through */ }
   const cell = (id: string | null): Cell | null => {
     const a = id && kernel.get(id)

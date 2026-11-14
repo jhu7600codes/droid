@@ -1,0 +1,83 @@
+/* phone: kitkat's dialer (light) */
+.ph { background: #fafafa; overflow: hidden; }
+.ph-tabs { display: flex; background: #fff; border-bottom: 1px solid #ddd; }
+.ph-tabs span { flex: 1; text-align: center; padding: 14px 0 11px; font: 500 14px Roboto, sans-serif; text-transform: uppercase; color: #777; }
+.ph-tabs span.on { color: #33b5e5; border-bottom: 3px solid #33b5e5; }
+.ph-empty { padding: 0 20px; color: #666; font-size: 15px; line-height: 1.4; }
+.ph-recents { flex: 1; overflow-y: auto; margin: 0; }
+.ph-row { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 0 0 0 12px !important; }
+.ph-avatar { width: 48px; height: 48px; object-fit: cover; flex: none; }
+.ph-row .lines { flex: 1; min-width: 0; }
+.ph-row .summary { display: flex; align-items: center; gap: 4px; }
+.ph-kind { width: 16px; height: 16px; filter: brightness(.6); }
+.ph-callback { align-self: stretch; display: flex; align-items: center; padding: 0 16px; border-left: 1px solid #e3e3e3; }
+.ph-callback img { width: 32px; height: 32px; filter: brightness(.45); }
+.ph-bottom { display: flex; justify-content: center; border-top: 1px solid #ddd; background: #fff; height: 56px; }
+.ph-tool { display: flex; align-items: center; justify-content: center; width: 96px; }
+.ph-tool img { width: 32px; height: 32px; }
+/* the dialpad slides up over the list */
+.ph-pad { position: absolute; left: 0; right: 0; bottom: 0; background: #fff; transform: translateY(102%); transition: transform .2s ease-out; box-shadow: 0 -2px 6px rgba(0, 0, 0, .15); display: flex; flex-direction: column; }
+.ph.pad-on .ph-pad { transform: none; }
+.ph-field { display: flex; align-items: center; border-bottom: 1px solid #ddd; height: 64px; padding: 0 0 0 16px; }
+.ph-digits { flex: 1; min-width: 0; border: 0; outline: none; background: none; font: 300 32px Roboto, sans-serif; color: #222; text-align: center; letter-spacing: 1px; }
+.ph-del { width: 56px; display: flex; justify-content: center; opacity: 0; transition: opacity .15s; }
+.ph-del.on { opacity: 1; }
+.ph-del img { width: 32px; height: 32px; }
+.ph-keys { display: grid; grid-template-columns: repeat(3, 1fr); }
+.ph-key { display: flex; align-items: baseline; justify-content: center; gap: 8px; height: 64px; align-items: center; }
+.ph-key:active { background: #ececec; }
+.ph-num { font: 300 36px Roboto, sans-serif; color: #222; width: 30px; text-align: right; }
+.ph-let { font: 13px Roboto, sans-serif; color: #8b8b8b; width: 50px; text-align: left; }
+.ph-callbar { border-top: 1px solid #ddd; display: flex; justify-content: center; }
+.ph-call { width: 100%; height: 64px; display: flex; align-items: center; justify-content: center; }
+.ph-call:active { background: #e6f7fd; }
+.ph-call img { width: 40px; height: 40px; }
+
+/* in-call screen (InCallUI): photo, caller banner #A0000000, provider strip #8033b5e5, end bar #f22121, 76dp buttons */
+.icu { background: #000; color: #fff; overflow: hidden; }
+.icu-photo { position: absolute; inset: 0; background: #1a1a1a center 40% / cover no-repeat; }
+.icu-top { position: relative; z-index: 1; }
+.icu-banner { display: flex; align-items: center; background: rgba(0, 0, 0, .63); padding: 16px 24px; min-height: 48px; }
+.icu-who { flex: 1; min-width: 0; padding-right: 50px; }
+.icu-name { font: 18px Roboto, sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.icu-number { font: 14px Roboto, sans-serif; opacity: .9; }
+.icu-elapsed { font: 18px Roboto, sans-serif; }
+.icu-strip { display: flex; justify-content: space-between; background: rgba(51, 181, 229, .5); padding: 8px 24px; font: 14px Roboto, sans-serif; text-transform: uppercase; }
+.icu-strip span:empty { display: none; }
+.icu-padwrap { position: relative; z-index: 1; flex: 1; display: none; flex-direction: column; justify-content: flex-end; background: rgba(0, 0, 0, .85); }
+.icu.pad-on .icu-padwrap { display: flex; }
+.icu-dtmf-digits { text-align: center; font: 300 32px Roboto, sans-serif; min-height: 44px; padding: 4px 8px; letter-spacing: 2px; overflow: hidden; white-space: nowrap; }
+.icu-dtmf { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 2px; }
+.icu-dkey { height: 60px; display: flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, .04); }
+.icu-dkey:active { background: rgba(51, 181, 229, .4); }
+.icu-dkey img { max-height: 44px; }
+.icu-controls { position: relative; z-index: 1; margin-top: auto; }
+.icu.pad-on .icu-controls { margin-top: 0; }
+.icu-end { display: flex; width: 100%; height: 60px; align-items: center; justify-content: center; background: #f22121; border: 0; }
+.icu-end:active { background: #ff4e4e; }
+.icu-end:disabled { background: #303030; }
+.icu-end img { width: 48px; height: 48px; }
+.icu-row { display: flex; height: 76px; background: #000; }
+.icu-btn { flex: 1; background: transparent; border: 0; display: flex; align-items: center; justify-content: center; border-bottom: 4px solid transparent; }
+.icu-btn:active { background: rgba(51, 181, 229, .3); }
+.icu-btn.on { border-bottom-color: #33b5e5; background: rgba(51, 181, 229, .15); }
+.icu-btn:disabled, .icu-btn.off { opacity: .35; }
+.icu-btn img { width: 32px; height: 32px; }
+.icu-sep { width: 2px; background: #000; }
+.icu[data-state=incoming] .icu-controls { display: none; }
+.icu:not([data-state=incoming]) .gp { display: none; }
+
+/* glow ring: 270dp ring, 94dp targets at its edge */
+.gp { position: absolute; z-index: 2; left: 50%; bottom: 40px; width: 270px; height: 270px; margin-left: -135px; }
+.gp-ring { position: absolute; inset: 0; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .1); opacity: 0; transition: opacity .15s; }
+.gp.dragging .gp-ring { opacity: 1; }
+.gp-target { position: absolute; width: 94px; height: 94px; opacity: 0; transition: opacity .15s; pointer-events: none; }
+.gp.dragging .gp-target { opacity: 1; }
+.gp-target.answer { right: -47px; top: 88px; }
+.gp-target.decline { left: -47px; top: 88px; }
+.gp-target.text { left: 88px; top: -47px; display: flex; align-items: center; justify-content: center; border-radius: 50%; }
+.gp-target.text img { width: 48px; height: 48px; }
+.gp-target.text.on { background: rgba(51, 181, 229, .5); }
+.gp-handle { position: absolute; left: 50%; top: 50%; width: 94px; height: 94px; margin: -47px 0 0 -47px; cursor: grab; touch-action: none; animation: gp-pulse 1.6s ease-in-out infinite; }
+.gp.dragging .gp-handle { animation: none; }
+@keyframes gp-pulse { 50% { transform: scale(1.08); } }
