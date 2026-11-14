@@ -31,7 +31,7 @@ SOURCES = [  # (repo, path in repo, where it goes)
     ('libcore', 'xml/src/main/java', 'libcore'),
 ]
 # from libcore only these packages: java.* / javax.* are droid's own
-LIBCORE_KEEP = ['libcore', 'dalvik', 'org/apache/harmony', 'org/xmlpull', 'org/kxml2', 'org/xml/sax']
+LIBCORE_KEEP = ['libcore', 'dalvik', 'org/apache/harmony', 'org/xmlpull', 'org/kxml2', 'org/xml/sax', 'org/w3c', 'javax/xml']
 EXCLUDE = [r'^sym_def_app_icon', r'android_logo', r'^ic_launcher_android', r'robot', r'google', r'market', r'you_?tube', r'platlogo', r'_android(\.|_|$)']
 # what the framework build starts from; javac pulls in everything they reach
 SEEDS = ['android/view/View', 'android/view/ViewGroup', 'android/view/LayoutInflater', 'android/view/WindowManagerGlobal',
@@ -46,6 +46,8 @@ SEEDS = ['android/view/View', 'android/view/ViewGroup', 'android/view/LayoutInfl
          'android/webkit/WebView', 'android/widget/VideoView',
          'com/android/internal/policy/impl/Policy', 'android/app/ActivityThread', 'android/content/pm/PackageParser',
          'android/os/ServiceManagerNative', 'android/view/Choreographer', 'android/view/ViewRootImpl']
+# libcore's xml parsers (javax.xml.parsers: DOM and SAX over kxml), for apps and their ad / analytics SDKs
+SEED_LIBCORE = ['javax/xml/parsers/DocumentBuilderFactory', 'javax/xml/parsers/SAXParserFactory', 'org/apache/harmony/xml/parsers/DocumentBuilderFactoryImpl', 'org/apache/harmony/xml/parsers/SAXParserFactoryImpl']
 SEED_DIRS = ['android/app', 'android/widget', 'android/view', 'android/view/animation', 'android/view/inputmethod', 'android/content',
              'android/content/res', 'android/content/pm', 'android/os', 'android/text', 'android/text/style', 'android/text/method',
              'android/text/format', 'android/util', 'android/graphics', 'android/graphics/drawable', 'android/graphics/drawable/shapes',
@@ -62,7 +64,11 @@ SERVICES = ['android.app.IActivityManager=android.app.ActivityManagerNative', 'a
             'com.android.internal.statusbar.IStatusBarService', 'android.location.ILocationManager', 'com.android.internal.app.IAppOpsService',
             'android.content.IContentService', 'android.accounts.IAccountManager', 'android.os.IUserManager', 'android.os.IVibratorService',
             'android.app.IUiModeManager', 'android.hardware.input.IInputManager', 'android.app.IWallpaperManager',
-            'com.android.internal.textservice.ITextServicesManager', 'android.app.ISearchManager', 'android.os.storage.IMountService']
+            'com.android.internal.textservice.ITextServicesManager', 'android.app.ISearchManager', 'android.os.storage.IMountService',
+            # droid's WebView provider (no chromium): every piece does nothing until a real one draws pages
+            'android.webkit.WebViewFactoryProvider=java.lang.Object', 'android.webkit.WebViewFactoryProvider$Statics=java.lang.Object',
+            'android.webkit.WebViewProvider=java.lang.Object', 'android.webkit.WebViewProvider$ViewDelegate=java.lang.Object',
+            'android.webkit.WebViewProvider$ScrollDelegate=java.lang.Object', '!android.webkit.WebSettings', '!android.webkit.CookieManager']
 
 def sh(cmd, **kw):
     r = subprocess.run(cmd, capture_output=True, text=True, **kw)
@@ -83,7 +89,8 @@ def fetch():
             print('fetch', repo, path)
             urllib.request.urlretrieve(f'{G}/{repo}/+archive/{TAG}/{path}.tar.gz', tgz)
         d = os.path.join(CACHE, dest)
-        marker = os.path.join(d, '.got-' + os.path.basename(tgz))
+        # (libcore's marker names the packages kept: keeping more extracts again)
+        marker = os.path.join(d, '.got-' + os.path.basename(tgz) + ('-' + '+'.join(LIBCORE_KEEP).replace('/', '_') if dest == 'libcore' else ''))
         if os.path.exists(marker): continue
         os.makedirs(d, exist_ok=True)
         if dest == 'libcore':
@@ -245,6 +252,9 @@ def compile_java():
         for f in sorted(os.listdir(root)) if os.path.isdir(root) else []:
             if f.endswith('.java') and f != 'package-info.java': optional.add(os.path.join(root, f))
     seeds += sorted(optional)
+    for x in SEED_LIBCORE:
+        f = os.path.join(W, 'libcore', x + '.java')
+        if os.path.exists(f): seeds.append(f); optional.add(f)
     # overlay files always go in (they replace system-side pieces the seeds may not reach directly)
     seeds += [os.path.join(dp, f) for dp, _, fs in os.walk(os.path.join(HERE, 'overlay')) for f in fs if f.endswith('.java')]
     for attempt in range(6):

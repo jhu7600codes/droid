@@ -3,6 +3,7 @@
 // files, droid's java system services (tools/aosp/system) and android's own ActivityThread.
 // every window android draws is shown on a canvas; touches and the back key go back in.
 import { VM } from '../dalvik.ts'
+import { scheduler } from '../threads.ts'
 import { registerJava, jstr } from '../java.ts'
 import { Vfs, registerJavaIo } from '../javaio.ts'
 import { registerReflect } from '../reflect.ts'
@@ -15,6 +16,7 @@ import { registerAospNatives } from './natives.ts'
 import { registerAospSystem } from './system.ts'
 import { registerAospMedia } from './media.ts'
 import { registerAospEgl } from './egl.ts'
+import { registerAospSoundPool } from './soundpool.ts'
 import { apks, device } from './res.ts'
 import { registerNet, registerAudio } from '../audio.ts'
 import { registerHttp } from '../net.ts'
@@ -110,6 +112,7 @@ export async function startAosp(o: { droid: any; root: HTMLElement; pkg: string;
     if (!f) return
     Object.assign(el.style, { display: 'block', left: f[0] / dpr + 'px', top: f[1] / dpr + 'px', width: (f[2] - f[0]) / dpr + 'px', height: (f[3] - f[1]) / dpr + 'px' })
   }
+  registerAospSoundPool(vm, vfs, sys.later)
   registerAospMedia(vm, vfs, {
     later: sys.later, windowOf: sys.windowOf, mediaUrl: droid.net?.mediaUrl,
     show: (el, id) => { if (!el.isConnected) root.append(el); videos.set(el, id); if (id == null) el.style.display = 'none'; else place(el, id) },
@@ -154,4 +157,6 @@ export async function startAosp(o: { droid: any; root: HTMLElement; pkg: string;
     droid.dialog({ title: 'Unfortunately, the app has stopped.', message: msg })
   }
   ;(window as any).__androidReport = () => ({ aosp: true, missing: [...vm.missing], dalvikSteps: vm.steps })
+  // debugging: every green thread, its state and where it is (java frame or what it waits on)
+  ;(window as any).__threads = () => scheduler.tasks.map((t: any) => `${t.name} ${t.state}${t.block ? ' (' + t.block.what + ')' : ''} ${t.frames?.length ? t.frames.slice(-3).map((f: any) => f.m.cls.name.split('/').pop() + '.' + f.m.name + '@' + f.pc).join(' < ') : ''}`)
 }

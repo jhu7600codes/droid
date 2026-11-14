@@ -53,6 +53,8 @@ const sys = registerAospSystem(vm, gfx, {
 })
 const { registerAospMedia } = await import('../../src/runtime/android/aosp/media.ts')
 registerAospMedia(vm, vfs, { later: sys.later, windowOf: sys.windowOf })
+const { registerAospSoundPool } = await import('../../src/runtime/android/aosp/soundpool.ts')
+registerAospSoundPool(vm, vfs, sys.later)
 const { registerAospEgl } = await import('../../src/runtime/android/aosp/egl.ts')
 registerAospEgl(vm, { windowOf: sys.windowOf, frameOf: sys.frameOf })
 if (process.env.TRACE) for (const k of process.env.TRACE.split(',')) { const f = vm.dexNatives.get(k); if (f) vm.dexNatives.set(k, (v, s, a) => { console.log('trace', k.split('->')[1], a.map((x) => (typeof x === 'object' && x ? x.cls?.name ?? '[]' : String(x))).join(' ')); return f(v, s, a) }) }

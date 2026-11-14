@@ -2,6 +2,7 @@
 // seeded with what apps look at on a phone (/proc/cpuinfo, /proc/meminfo); the app's own files
 // live under /data/data/<pkg>/ and stay for the session.
 import { VM, JObject, JArray, type NativeFn } from './dalvik.ts'
+import { jstr } from './java.ts'
 
 const OBJ = 'Ljava/lang/Object;'
 const enc = new TextEncoder(), dec = new TextDecoder()
@@ -243,7 +244,41 @@ export function registerJavaIo(vm: VM, fs: Vfs) {
     'toString()Ljava/lang/String;': (v, s) => s.f.out ?? '',
   })
   const wr = (s: JObject, t: string) => { s.f.out = (s.f.out ?? '') + t; if (s.f.target) vm.callVirtual(s.f.target, 'write(Ljava/lang/String;)V', [t]) }
-  def('Ljava/io/Writer;', OBJ, { '<init>()V': () => {}, ...writerMethods() }, { interfaces: ['Ljava/io/Closeable;', 'Ljava/io/Flushable;'] })
+  // Writer.lock: what subclasses (PrintWriter, android's FastPrintWriter) synchronize on
+  def('Ljava/io/Writer;', OBJ, { '<init>()V': (v, s) => { s.f.lock = s }, '<init>(Ljava/lang/Object;)V': (v, s, [l]) => { s.f.lock = l ?? s }, ...writerMethods() }, { interfaces: ['Ljava/io/Closeable;', 'Ljava/io/Flushable;'] })
+  // PrintWriter: text into another Writer (or a stream / file through a writer), never throws
+  const pstr = (x: any) => (x == null ? 'null' : jstr(vm, x))
+  // straight to the writer it wraps (nothing kept here)
+  const pw = (s: JObject, t: string) => { try { if (s.f.target) vm.callVirtual(s.f.target, 'write(Ljava/lang/String;)V', [t]); else wr(s, t) } catch { s.f.error = true } }
+  const pwInit = (s: JObject, target: any) => { s.f.pwTarget = target; s.f.target = target; s.f.lock = target ?? s }
+  const PW: Record<string, NativeFn> = {
+    '<init>(Ljava/io/Writer;)V': (v, s, [w]) => pwInit(s, w),
+    '<init>(Ljava/io/Writer;Z)V': (v, s, [w]) => pwInit(s, w),
+    '<init>(Ljava/io/OutputStream;)V': (v, s, [o]) => pwInit(s, vm.newObject('Ljava/io/OutputStreamWriter;', '<init>(Ljava/io/OutputStream;)V', [o])),
+    '<init>(Ljava/io/OutputStream;Z)V': (v, s, [o]) => pwInit(s, vm.newObject('Ljava/io/OutputStreamWriter;', '<init>(Ljava/io/OutputStream;)V', [o])),
+    '<init>(Ljava/lang/String;)V': (v, s, [p]) => pwInit(s, vm.newObject('Ljava/io/FileWriter;', '<init>(Ljava/lang/String;)V', [p])),
+    '<init>(Ljava/io/File;)V': (v, s, [f]) => pwInit(s, vm.newObject('Ljava/io/FileWriter;', '<init>(Ljava/io/File;)V', [f])),
+    'checkError()Z': (v, s) => { if (s.f.target) try { vm.callVirtual(s.f.target, 'flush()V', []) } catch { s.f.error = true } return s.f.error ? 1 : 0 },
+    'flush()V': (v, s) => { if (s.f.target) try { vm.callVirtual(s.f.target, 'flush()V', []) } catch { s.f.error = true } },
+    'close()V': (v, s) => { if (s.f.target) try { vm.callVirtual(s.f.target, 'close()V', []) } catch { s.f.error = true } },
+    'println()V': (v, s) => pw(s, '\n'),
+    'write(Ljava/lang/String;)V': (v, s, [t]) => pw(s, pstr(t)),
+    'write(Ljava/lang/String;II)V': (v, s, [t, o, n]) => pw(s, pstr(t).slice(o, o + n)),
+    'write(I)V': (v, s, [c]) => pw(s, String.fromCharCode(c)),
+    'write([C)V': (v, s, [a]) => pw(s, String.fromCharCode(...a.data)),
+    'write([CII)V': (v, s, [a, o, n]) => pw(s, String.fromCharCode(...Array.prototype.slice.call(a.data, o, o + n))),
+    'printf(Ljava/lang/String;[Ljava/lang/Object;)Ljava/io/PrintWriter;': (v, s, [f, a]) => { pw(s, jstr(vm, vm.callStatic('Ljava/lang/String;', 'format(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;', [f, a]))); return s },
+    'format(Ljava/lang/String;[Ljava/lang/Object;)Ljava/io/PrintWriter;': (v, s, [f, a]) => { pw(s, jstr(vm, vm.callStatic('Ljava/lang/String;', 'format(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;', [f, a]))); return s },
+    'append(C)Ljava/io/PrintWriter;': (v, s, [c]) => { pw(s, String.fromCharCode(c)); return s },
+    'append(Ljava/lang/CharSequence;)Ljava/io/PrintWriter;': (v, s, [t]) => { pw(s, pstr(t)); return s },
+  }
+  for (const [sig, f] of [['Ljava/lang/String;', pstr], ['Ljava/lang/Object;', pstr], ['I', String], ['J', String], ['Z', (x: any) => (x ? 'true' : 'false')], ['C', (x: number) => String.fromCharCode(x)],
+    ['F', (x: number) => jstr(vm, vm.callStatic('Ljava/lang/String;', 'valueOf(F)Ljava/lang/String;', [x]))], ['D', (x: number) => jstr(vm, vm.callStatic('Ljava/lang/String;', 'valueOf(D)Ljava/lang/String;', [x]))],
+    ['[C', (a: any) => String.fromCharCode(...a.data)]] as [string, (x: any) => string][]) {
+    PW[`print(${sig})V`] = (v, s, [x]) => pw(s, f(x))
+    PW[`println(${sig})V`] = (v, s, [x]) => pw(s, f(x) + '\n')
+  }
+  def('Ljava/io/PrintWriter;', 'Ljava/io/Writer;', PW)
   def('Ljava/io/StringWriter;', 'Ljava/io/Writer;', { '<init>()V': (v, s) => { s.f.out = '' }, 'getBuffer()Ljava/lang/StringBuffer;': (v, s) => s.f.out })
   def('Ljava/io/FileWriter;', 'Ljava/io/Writer;', {
     '<init>(Ljava/lang/String;)V': (v, s, [p]) => { s.f.out = ''; s.f.sync = () => fs.text(p, s.f.out) },

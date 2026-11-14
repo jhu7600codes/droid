@@ -13,10 +13,22 @@ export interface EglHost {
 }
 
 const PK = 'Lcom/google/android/gles_jni/'
-// one config: rgba8888, depth 24, stencil 8, es1 + es2, window + pbuffer
-const CONFIG: Record<number, number> = {
-  0x3020: 32, 0x3021: 8, 0x3022: 8, 0x3023: 8, 0x3024: 8, 0x3025: 24, 0x3026: 8, 0x3027: 0x3038, 0x3028: 1,
-  0x302e: 1, 0x302f: 0x3038, 0x3031: 0, 0x3032: 0, 0x3033: 5, 0x3040: 5, 0x3042: 0x3038, 0x303f: 0x308e, 0x3029: 0, 0x302a: 0, 0x302c: 0,
+// the configs on offer (all draw into the same rgba8888 webgl canvas): what phones list, so choosers that
+// want an exact format (cocos2d-x asks for 565 or 8888, with or without depth) find theirs
+const BASE: Record<number, number> = { 0x3027: 0x3038, 0x302e: 1, 0x302f: 0x3038, 0x3031: 0, 0x3032: 0, 0x3033: 5, 0x3040: 5, 0x3042: 0x3038, 0x303f: 0x308e, 0x3029: 0, 0x302a: 0, 0x302c: 0 }
+const fmt = (r: number, g: number, b: number, a: number, d: number, st: number): Record<number, number> => ({ ...BASE, 0x3020: r + g + b + a, 0x3024: r, 0x3023: g, 0x3022: b, 0x3021: a, 0x3025: d, 0x3026: st })
+const CONFIGS = [fmt(8, 8, 8, 8, 24, 8), fmt(8, 8, 8, 8, 16, 0), fmt(8, 8, 8, 8, 0, 0), fmt(5, 6, 5, 0, 16, 0), fmt(5, 6, 5, 0, 24, 8), fmt(5, 6, 5, 0, 0, 0), fmt(8, 8, 8, 0, 24, 8), fmt(8, 8, 8, 0, 16, 0)]
+CONFIGS.forEach((c, i) => (c[0x3028] = i + 1))
+// eglChooseConfig: sizes are "at least", type masks must be offered
+const matches = (c: Record<number, number>, attrs: ArrayLike<number> | null) => {
+  for (let i = 0; attrs && i + 1 < attrs.length && attrs[i] !== 0x3038; i += 2) {
+    const k = attrs[i], want = attrs[i + 1]
+    if (want === -1 || want === 0x3038) continue
+    if (k >= 0x3020 && k <= 0x3026 || k === 0x3031 || k === 0x3032) { if ((c[k] ?? 0) < want) return false }
+    else if (k === 0x3040 || k === 0x3033) { if ((c[k] & want) !== want) return false }
+    else if (k === 0x3028) { if (c[k] !== want) return false }
+  }
+  return true
 }
 
 // display frames (requestAnimationFrame), counted while someone waits on a swap
@@ -46,17 +58,22 @@ export function registerAospEgl(vm: VM, host: EglHost) {
     eglTerminate: () => ok(), eglReleaseThread: () => ok(), eglWaitGL: () => ok(), eglWaitNative: () => ok(),
     eglGetError: () => { const e = error; error = 0x3000; return e },
     eglQueryString: (v, s, [, name]) => ({ 0x3053: 'Droid', 0x3054: '1.4 Droid', 0x3055: 'EGL_KHR_image_base', 0x308d: 'OpenGL_ES' } as Record<number, string>)[name] ?? null,
-    eglChooseConfig: (v, s, [, , configs, n, num]) => {
-      if (configs && n > 0) configs.data[0] = vm.newObject(PK + 'EGLConfigImpl;', '<init>(I)V', [1])
-      if (num) num.data[0] = 1
+    eglChooseConfig: (v, s, [, attrs, configs, n, num]) => {
+      const found = CONFIGS.filter((c) => matches(c, attrs?.data ?? null))
+      if (configs) found.slice(0, n).forEach((c, i) => (configs.data[i] = vm.newObject(PK + 'EGLConfigImpl;', '<init>(I)V', [c[0x3028]])))
+      if (num) num.data[0] = configs ? Math.min(n, found.length) : found.length
       return ok()
     },
     eglGetConfigs: (v, s, [, configs, n, num]) => {
-      if (configs && n > 0) configs.data[0] = vm.newObject(PK + 'EGLConfigImpl;', '<init>(I)V', [1])
-      if (num) num.data[0] = 1
+      if (configs) CONFIGS.slice(0, n).forEach((c, i) => (configs.data[i] = vm.newObject(PK + 'EGLConfigImpl;', '<init>(I)V', [c[0x3028]])))
+      if (num) num.data[0] = configs ? Math.min(n, CONFIGS.length) : CONFIGS.length
       return ok()
     },
-    eglGetConfigAttrib: (v, s, [, , attr, out]) => { if (!(attr in CONFIG)) return fail(0x3004); out.data[0] = CONFIG[attr]; return ok() },
+    eglGetConfigAttrib: (v, s, [, config, attr, out]) => {
+      const c = CONFIGS[(config?.f.mEGLConfig | 0) - 1] || CONFIGS[0]
+      if (!(attr in c)) return fail(0x3004)
+      out.data[0] = c[attr]; return ok()
+    },
     _eglCreateContext: () => { const c = nextH++; contexts.add(c); return ok(c) },
     eglDestroyContext: (v, s, [, c]) => { contexts.delete(h(c, 'mEGLContext')); return ok() },
     eglQueryContext: (v, s, [, , attr, out]) => { out.data[0] = attr === 0x3098 ? 2 : attr === 0x3028 ? 1 : 0; return ok() },

@@ -1204,6 +1204,12 @@ export function registerWidgets(vm: VM, env: Env, w: WidgetHelpers) {
     'getUserAgentString()Ljava/lang/String;': (v, s) => s.f.ua, 'setUserAgentString(Ljava/lang/String;)V': (v, s, [u]) => { s.f.ua = u == null ? navigator.userAgent : text(u) },
     'setJavaScriptEnabled(Z)V': noop, 'getJavaScriptEnabled()Z': () => 1, 'setDomStorageEnabled(Z)V': noop, 'setBuiltInZoomControls(Z)V': noop, 'setSupportZoom(Z)V': noop,
     'setLoadWithOverviewMode(Z)V': noop, 'setUseWideViewPort(Z)V': noop, 'setCacheMode(I)V': noop, 'setAppCacheEnabled(Z)V': noop, 'setDatabaseEnabled(Z)V': noop,
+    // the rest of WebSettings' setters: accepted, nothing to set in an iframe
+    ...Object.fromEntries(['setSupportMultipleWindows(Z)V', 'setLoadsImagesAutomatically(Z)V', 'setBlockNetworkImage(Z)V', 'setBlockNetworkLoads(Z)V', 'setGeolocationEnabled(Z)V', 'setLightTouchEnabled(Z)V',
+      'setNeedInitialFocus(Z)V', 'setRenderPriority(Landroid/webkit/WebSettings$RenderPriority;)V', 'setLayoutAlgorithm(Landroid/webkit/WebSettings$LayoutAlgorithm;)V', 'setDisplayZoomControls(Z)V',
+      'setTextZoom(I)V', 'setDefaultFontSize(I)V', 'setMinimumFontSize(I)V', 'setAppCachePath(Ljava/lang/String;)V', 'setAppCacheMaxSize(J)V', 'setDatabasePath(Ljava/lang/String;)V',
+      'setGeolocationDatabasePath(Ljava/lang/String;)V', 'setAllowContentAccess(Z)V', 'setAllowFileAccessFromFileURLs(Z)V', 'setAllowUniversalAccessFromFileURLs(Z)V', 'setEnableSmoothTransition(Z)V',
+      'setUserAgentString(Ljava/lang/String;)V', 'setUserAgent(I)V', 'setDefaultZoom(Landroid/webkit/WebSettings$ZoomDensity;)V', 'setSavePassword(Z)V', 'setPluginsEnabled(Z)V'].map((k) => [k, noop])),
     'setPluginState(Landroid/webkit/WebSettings$PluginState;)V': noop, 'setAllowFileAccess(Z)V': noop, 'setJavaScriptCanOpenWindowsAutomatically(Z)V': noop, 'setMediaPlaybackRequiresUserGesture(Z)V': noop,
     'setDefaultTextEncodingName(Ljava/lang/String;)V': noop, 'setLoadsImagesAutomatically(Z)V': noop, 'setSaveFormData(Z)V': noop, 'setSavePassword(Z)V': noop,
   })
