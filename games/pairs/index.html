@@ -1,0 +1,81 @@
+<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;height:100%;background:#0f1215;color:#fff;overflow:hidden;touch-action:manipulation;user-select:none;font-family:Roboto,sans-serif}
+#top{display:flex;justify-content:space-between;padding:12px 16px;font-size:16px;color:#9e9e9e}
+#grid{display:grid;gap:8px;margin:6px auto;perspective:600px}
+.card{position:relative;aspect-ratio:3/4;transform-style:preserve-3d;transition:transform .3s}
+.card.up,.card.got{transform:rotateY(180deg)}
+.card .f,.card .b{position:absolute;inset:0;backface-visibility:hidden;border-radius:4px;display:flex;align-items:center;justify-content:center}
+.card .b{background:linear-gradient(135deg,#0099cc,#0d5a7f);border:2px solid #33b5e5}
+.card .b:after{content:'';width:40%;height:40%;border:2px solid rgba(255,255,255,.35);border-radius:50%}
+.card .f{background:#20272e;transform:rotateY(180deg);font-size:min(9vw,40px)}
+.card.got .f{background:#1f3a1a;box-shadow:inset 0 0 0 2px #99cc00}
+</style>
+</head>
+<body>
+<div id="top"><span id="moves">Moves 0</span><span id="pairs">0 / 0</span><span id="time">0:00</span></div>
+<div id="grid"></div>
+<script>
+// Pairs: a memory game. sizes 4x4, 4x5, 5x6; best moves are kept per size.
+const SYMBOLS = ['★', '♥', '♦', '♣', '♠', '☀', '☂', '☘', '♪', '⚑', '✈', '⚓', '☕', '✿', '♞']
+const SIZES = { Small: [4, 4], Medium: [4, 5], Large: [5, 6] }
+const COLORS = ['#ffbb33', '#ff4444', '#33b5e5', '#99cc00', '#e0e0e0', '#ffbb33', '#00ddff', '#99cc00', '#aa66cc', '#ff4444', '#33b5e5', '#9e9e9e', '#a1887f', '#ff8a80', '#e0e0e0']
+const $ = (id) => document.getElementById(id)
+droid.system.orientation('portrait').catch(() => {})
+const buzz = (ms) => droid.system.vibrate(ms).catch(() => {})
+// ask for vibration once at launch, not in the middle of a game
+buzz(1)
+let size = 'Small', deck, open = [], moves = 0, got = 0, t0 = 0, lock = false, done = false
+function newGame() {
+  const [c, r] = SIZES[size], n = (c * r) / 2
+  const pick = [...SYMBOLS.keys()].sort(() => Math.random() - 0.5).slice(0, n)
+  deck = [...pick, ...pick].sort(() => Math.random() - 0.5).map((k) => ({ k, up: false, got: false }))
+  open = []; moves = 0; got = 0; t0 = 0; lock = false; done = false
+  droid.actionbar.title('Pairs · ' + size).catch(() => {})
+  render()
+}
+function render() {
+  const [c, r] = SIZES[size], g = $('grid')
+  const w = Math.min(innerWidth - 24, (innerHeight - 70) * c / r * 0.75)
+  g.style.width = w + 'px'; g.style.gridTemplateColumns = `repeat(${c},1fr)`; g.innerHTML = ''
+  deck.forEach((d, i) => {
+    const el = document.createElement('div'); el.className = 'card' + (d.up ? ' up' : '') + (d.got ? ' got' : '')
+    el.innerHTML = `<div class="b"></div><div class="f" style="color:${COLORS[d.k]}">${SYMBOLS[d.k]}</div>`
+    el.onclick = () => flip(i)
+    g.append(el)
+  })
+  $('moves').textContent = 'Moves ' + moves; $('pairs').textContent = got + ' / ' + deck.length / 2
+}
+async function flip(i) {
+  const d = deck[i]
+  if (lock || d.up || d.got || done) return
+  if (!t0) t0 = performance.now()
+  d.up = true; open.push(i); render()
+  if (open.length < 2) return
+  moves++
+  const [a, b] = open.map((j) => deck[j])
+  if (a.k === b.k) { a.got = b.got = true; got++; open = []; buzz(15); render(); if (got === deck.length / 2) win(); return }
+  lock = true; buzz(4)
+  await new Promise((r) => setTimeout(r, 800))
+  a.up = b.up = false; open = []; lock = false; render()
+}
+async function win() {
+  done = true
+  const n = deck.length / 2, stars = moves <= n * 1.4 ? 3 : moves <= n * 2 ? 2 : 1
+  const key = 'best-' + size, b = +(await droid.prefs.get(key)) || Infinity
+  if (moves < b) droid.prefs.set(key, moves)
+  const r = await droid.dialog({ title: '★'.repeat(stars) + '☆'.repeat(3 - stars), message: `All pairs in ${moves} moves and ${fmt((performance.now() - t0) / 1000)}.${moves < b ? ' New best!' : ` Best: ${b} moves.`}`, ok: 'Again', cancel: 'Close' })
+  if (r?.button === 'ok') newGame()
+}
+const fmt = (s) => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0')
+setInterval(() => { if (t0 && !done) $('time').textContent = fmt((performance.now() - t0) / 1000) }, 500)
+addEventListener('resize', render)
+droid.actionbar.menu(Object.keys(SIZES).map((k) => ({ id: k, title: k + ' (' + SIZES[k].join('×') + ')' }))).catch(() => {})
+droid.on('menu', ({ id }) => { if (SIZES[id]) { size = id; droid.prefs.set('size', id); newGame() } })
+droid.prefs.get('size').then((v) => { if (SIZES[v]) size = v; newGame() })
+</script>
+</body>
+</html>

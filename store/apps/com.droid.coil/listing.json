@@ -1,0 +1,9 @@
+{
+ "id": "com.droid.coil",
+ "name": "Coil",
+ "author": "droid games",
+ "category": "games",
+ "icon": "icon.svg",
+ "dpk": "repo:public/games/coil.dpk",
+ "description": "A coil of light grows every time it eats a spark. Swipe to turn, do not bite yourself."
+}

@@ -1,0 +1,23 @@
+{
+ "id": "com.droid.pigeonglide",
+ "name": "Pigeon Glide",
+ "version": "1.0",
+ "versioncode": 1,
+ "type": "web",
+ "main": "main",
+ "icon": "icon.svg",
+ "theme": "holo-dark",
+ "dpk": "2.0",
+ "permissions": [
+  "vibrate"
+ ],
+ "activities": {
+  "main": {
+   "entry": "index.html",
+   "label": "Pigeon Glide",
+   "launcher": true
+  }
+ },
+ "author": "droid games",
+ "description": "Tap to flap. Glide the pigeon through the gaps between the city antennas."
+}

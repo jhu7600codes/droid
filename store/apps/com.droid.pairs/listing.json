@@ -1,0 +1,9 @@
+{
+ "id": "com.droid.pairs",
+ "name": "Pairs",
+ "author": "droid games",
+ "category": "games",
+ "icon": "icon.svg",
+ "dpk": "repo:public/games/pairs.dpk",
+ "description": "Flip two cards, find the matching symbols. Fewer moves, better stars."
+}

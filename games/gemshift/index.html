@@ -1,0 +1,145 @@
+<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0;height:100%;background:#120f1c;overflow:hidden;touch-action:none;user-select:none;font-family:Roboto,sans-serif}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// Gem Shift: swap neighbours to make lines of three or more; matches fall, chains score double.
+const cv = document.getElementById('c'), g = cv.getContext('2d')
+const N = 8, KINDS = 6, TIME = 90
+const COLORS = ['#ff4444', '#ffbb33', '#99cc00', '#33b5e5', '#aa66cc', '#f5f5f5']
+let W, H, D, cell, ox, oy
+function fit() {
+  D = devicePixelRatio || 1; W = innerWidth; H = innerHeight
+  cv.width = W * D; cv.height = H * D; cv.style.width = W + 'px'; cv.style.height = H + 'px'; g.setTransform(D, 0, 0, D, 0, 0)
+  cell = Math.floor(Math.min(W - 16, H - 150) / N); ox = (W - cell * N) / 2; oy = 110
+}
+addEventListener('resize', fit); fit()
+droid.system.orientation('portrait').catch(() => {})
+droid.actionbar.hide().catch(() => {})
+const buzz = (ms) => droid.system.vibrate(ms).catch(() => {})
+// ask for vibration once at launch, not in the middle of a game
+buzz(1)
+let best = 0
+droid.prefs.get('best').then((v) => { best = +v || 0 })
+
+let grid, state = 'menu', score, left, sel = null, busy = false, fx = []
+const rnd = () => Math.floor(Math.random() * KINDS)
+function fresh() {
+  grid = []
+  for (let y = 0; y < N; y++) { grid.push([]); for (let x = 0; x < N; x++) { let k; do k = rnd(); while ((x > 1 && grid[y][x - 1].k === k && grid[y][x - 2].k === k) || (y > 1 && grid[y - 1][x].k === k && grid[y - 2][x].k === k)); grid[y].push({ k, dy: -(N - y) * cell * 1.2 }) } }
+  if (!anyMove()) fresh()
+}
+function start() { score = 0; left = TIME; sel = null; busy = false; fx = []; fresh(); state = 'run' }
+function matches() {
+  const hit = new Set()
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const k = grid[y][x].k
+    if (x < N - 2 && grid[y][x + 1].k === k && grid[y][x + 2].k === k) for (let i = x; i < N && grid[y][i].k === k; i++) hit.add(y * N + i)
+    if (y < N - 2 && grid[y + 1][x].k === k && grid[y + 2][x].k === k) for (let i = y; i < N && grid[i][x].k === k; i++) hit.add(i * N + x)
+  }
+  return hit
+}
+function swap(a, b) { const t = grid[a.y][a.x]; grid[a.y][a.x] = grid[b.y][b.x]; grid[b.y][b.x] = t }
+function anyMove() {
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) for (const [dx, dy] of [[1, 0], [0, 1]]) {
+    if (x + dx >= N || y + dy >= N) continue
+    swap({ x, y }, { x: x + dx, y: y + dy }); const ok = matches().size > 0; swap({ x, y }, { x: x + dx, y: y + dy })
+    if (ok) return true
+  }
+  return false
+}
+const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+async function resolve() {
+  busy = true
+  let chain = 1
+  for (;;) {
+    const hit = matches()
+    if (!hit.size) break
+    score += hit.size * 10 * chain; buzz(10 * chain)
+    for (const i of hit) { const x = i % N, y = Math.floor(i / N); fx.push({ x: ox + (x + 0.5) * cell, y: oy + (y + 0.5) * cell, c: COLORS[grid[y][x].k], t: 0 }); grid[y][x] = null }
+    await wait(140)
+    for (let x = 0; x < N; x++) {
+      let w = N - 1
+      for (let y = N - 1; y >= 0; y--) if (grid[y][x]) { if (w !== y) { grid[w][x] = grid[y][x]; grid[w][x].dy = -(w - y) * cell; grid[y][x] = null } w-- }
+      for (let y = w; y >= 0; y--) grid[y][x] = { k: rnd(), dy: -(w + 1) * cell }
+    }
+    await wait(260); chain *= 2
+  }
+  if (!anyMove()) { fresh(); droid.toast('No moves left: new board') }
+  busy = false
+}
+async function trySwap(a, b) {
+  if (busy || state !== 'run') return
+  swap(a, b)
+  if (!matches().size) { buzz(30); await wait(120); swap(a, b); return }
+  await resolve()
+}
+function update(dt) {
+  if (state === 'run') { left -= dt; if (left <= 0) { left = 0; state = 'over'; buzz(200); if (score > best) { best = score; droid.prefs.set('best', best) } } }
+  if (grid) for (const row of grid) for (const c of row) if (c && c.dy) c.dy = Math.min(0, c.dy + dt * cell * 14)
+  fx = fx.filter((f) => (f.t += dt) < 0.4)
+}
+function gem(x, y, k, s) {
+  g.fillStyle = COLORS[k]; g.beginPath()
+  const r = s * 0.38
+  if (k === 0) { g.arc(x, y, r, 0, 7) }
+  else if (k === 1) { g.moveTo(x, y - r); g.lineTo(x + r, y); g.lineTo(x, y + r); g.lineTo(x - r, y) }
+  else if (k === 2) { g.rect(x - r * 0.8, y - r * 0.8, r * 1.6, r * 1.6) }
+  else if (k === 3) { g.moveTo(x, y - r); g.lineTo(x + r, y + r * 0.8); g.lineTo(x - r, y + r * 0.8) }
+  else if (k === 4) { for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3; i ? g.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r) : g.moveTo(x + r, y) } }
+  else { for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, q = i % 2 ? r * 0.45 : r; i ? g.lineTo(x + Math.cos(a) * q, y + Math.sin(a) * q) : g.moveTo(x, y - r) } }
+  g.closePath(); g.fill()
+  g.fillStyle = 'rgba(255,255,255,.35)'; g.beginPath(); g.arc(x - r * 0.3, y - r * 0.3, r * 0.2, 0, 7); g.fill()
+}
+function draw() {
+  g.fillStyle = '#120f1c'; g.fillRect(0, 0, W, H)
+  g.fillStyle = '#fff'; g.font = '600 22px Roboto,sans-serif'; g.textAlign = 'left'; g.fillText('Score ' + (score || 0), 16, 40)
+  g.textAlign = 'right'; g.fillStyle = left < 10 ? '#ff4444' : '#fff'; g.fillText(Math.ceil(left || TIME) + 's', W - 16, 40)
+  g.fillStyle = '#2a2140'; g.fillRect(16, 58, W - 32, 8); g.fillStyle = '#aa66cc'; g.fillRect(16, 58, (W - 32) * ((left ?? TIME) / TIME), 8)
+  if (grid) {
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      g.fillStyle = (x + y) % 2 ? '#1c1730' : '#211b38'; g.fillRect(ox + x * cell, oy + y * cell, cell, cell)
+      const c = grid[y][x]; if (!c) continue
+      if (sel && sel.x === x && sel.y === y) { g.strokeStyle = '#fff'; g.lineWidth = 3; g.strokeRect(ox + x * cell + 2, oy + y * cell + 2, cell - 4, cell - 4) }
+      gem(ox + (x + 0.5) * cell, oy + (y + 0.5) * cell + c.dy, c.k, cell)
+    }
+    for (const f of fx) { g.globalAlpha = 1 - f.t / 0.4; g.strokeStyle = f.c; g.lineWidth = 3; g.beginPath(); g.arc(f.x, f.y, cell * 0.3 + f.t * cell * 1.5, 0, 7); g.stroke() } g.globalAlpha = 1
+  }
+  if (state !== 'run') {
+    g.textAlign = 'center'; g.fillStyle = 'rgba(0,0,0,.6)'; g.fillRect(0, 0, W, H)
+    g.fillStyle = '#aa66cc'; g.font = '300 46px Roboto,sans-serif'; g.fillText('Gem Shift', W / 2, H * 0.36)
+    g.fillStyle = '#fff'; g.font = '18px Roboto,sans-serif'; if (state === 'over') g.fillText('Score ' + score, W / 2, H * 0.45); g.fillText('Best ' + best, W / 2, H * 0.5)
+    g.fillStyle = '#9e9e9e'; g.fillText('Swipe a gem onto its neighbour', W / 2, H * 0.58)
+    g.fillStyle = '#fff'; g.font = '600 22px Roboto,sans-serif'; g.fillText(state === 'paused' ? 'Tap to go on' : 'Tap to play', W / 2, H * 0.68)
+  }
+}
+let down = null
+const cellAt = (e) => { const x = Math.floor((e.clientX - ox) / cell), y = Math.floor((e.clientY - oy) / cell); return x >= 0 && y >= 0 && x < N && y < N ? { x, y } : null }
+addEventListener('pointerdown', (e) => { if (state !== 'run') return; down = { c: cellAt(e), x: e.clientX, y: e.clientY } })
+addEventListener('pointermove', (e) => {
+  if (!down?.c) return
+  const dx = e.clientX - down.x, dy = e.clientY - down.y
+  if (Math.hypot(dx, dy) < cell * 0.35) return
+  const a = down.c, b = Math.abs(dx) > Math.abs(dy) ? { x: a.x + Math.sign(dx), y: a.y } : { x: a.x, y: a.y + Math.sign(dy) }
+  down = null; sel = null
+  if (b.x >= 0 && b.y >= 0 && b.x < N && b.y < N) trySwap(a, b)
+})
+addEventListener('pointerup', (e) => {
+  if (state === 'paused') { state = 'run'; return }
+  if (state !== 'run') { start(); return }
+  if (!down) return
+  const c = down.c; down = null
+  if (!c) return
+  if (sel && Math.abs(sel.x - c.x) + Math.abs(sel.y - c.y) === 1) { const a = sel; sel = null; trySwap(a, c) } else sel = c
+})
+droid.on('pause', () => { if (state === 'run') state = 'paused'; return null })
+let last = performance.now()
+function frame(t) { const dt = Math.min(0.05, (t - last) / 1000); last = t; update(dt); draw(); requestAnimationFrame(frame) }
+requestAnimationFrame(frame)
+</script>
+</body>
+</html>

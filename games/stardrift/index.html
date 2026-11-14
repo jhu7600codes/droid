@@ -1,0 +1,118 @@
+<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none;user-select:none;font-family:Roboto,sans-serif}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// Star Drift: drag the ship (it fires by itself), dodge and break rocks, shoot drones, grab shields.
+const cv = document.getElementById('c'), g = cv.getContext('2d')
+let W, H, D
+function fit() { D = devicePixelRatio || 1; W = innerWidth; H = innerHeight; cv.width = W * D; cv.height = H * D; cv.style.width = W + 'px'; cv.style.height = H + 'px'; g.setTransform(D, 0, 0, D, 0, 0) }
+addEventListener('resize', fit); fit()
+droid.system.orientation('portrait').catch(() => {})
+droid.actionbar.hide().catch(() => {})
+const buzz = (ms) => droid.system.vibrate(ms).catch(() => {})
+// ask for vibration once at launch, not in the middle of a game
+buzz(1)
+let best = 0
+droid.prefs.get('best').then((v) => { best = +v || 0 })
+const stars = Array.from({ length: 90 }, () => ({ x: Math.random(), y: Math.random(), z: 0.2 + Math.random() * 0.8 }))
+
+let state = 'menu', ship, shots, foes, bits, pickups, score, wave, fireIn, spawnIn, time, shield
+function start() { ship = { x: W / 2, y: H - 110 }; shots = []; foes = []; bits = []; pickups = []; score = 0; wave = 1; fireIn = 0; spawnIn = 1; time = 0; shield = 2; state = 'run' }
+function spawn() {
+  const drone = Math.random() < Math.min(0.5, 0.15 + wave * 0.04)
+  const r = drone ? 16 : 14 + Math.random() * 22
+  foes.push({ x: r + Math.random() * (W - 2 * r), y: -r, r, vx: (Math.random() - 0.5) * 60, vy: 70 + Math.random() * 60 + wave * 10, hp: drone ? 2 : Math.ceil(r / 12), drone, rot: Math.random() * 6, spin: (Math.random() - 0.5) * 3, sides: 7 + Math.floor(Math.random() * 4), fire: 1 + Math.random() * 2 })
+}
+function boom(x, y, c, n = 12) { for (let i = 0; i < n; i++) { const a = Math.random() * 7, s = 40 + Math.random() * 160; bits.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: 0.5 + Math.random() * 0.4, c }) } }
+function hurt() {
+  buzz(120); boom(ship.x, ship.y, '#33b5e5', 18); shield--
+  if (shield < 0) { state = 'over'; if (score > best) { best = score; droid.prefs.set('best', best) } }
+}
+function update(dt) {
+  for (const s of stars) { s.y += dt * 0.08 * s.z * (state === 'run' ? 1 + wave * 0.1 : 0.4); if (s.y > 1) { s.y = 0; s.x = Math.random() } }
+  bits = (bits || []).filter((b) => { b.x += b.vx * dt; b.y += b.vy * dt; return (b.t -= dt) > 0 })
+  if (state !== 'run') return
+  time += dt; wave = 1 + Math.floor(time / 25)
+  fireIn -= dt
+  if (fireIn <= 0) { fireIn = 0.16; shots.push({ x: ship.x - 9, y: ship.y - 16, vy: -620, mine: true }, { x: ship.x + 9, y: ship.y - 16, vy: -620, mine: true }) }
+  spawnIn -= dt
+  if (spawnIn <= 0) { spawn(); spawnIn = Math.max(0.25, 1.1 - wave * 0.09) * (0.6 + Math.random() * 0.8) }
+  for (const s of shots) s.y += s.vy * dt, s.x += (s.vx || 0) * dt
+  for (const f of foes) {
+    f.x += f.vx * dt; f.y += f.vy * dt; f.rot += f.spin * dt
+    if (f.x < f.r || f.x > W - f.r) f.vx = -f.vx
+    if (f.drone && (f.fire -= dt) <= 0 && f.y > 0) { f.fire = 1.8 + Math.random(); const a = Math.atan2(ship.y - f.y, ship.x - f.x); shots.push({ x: f.x, y: f.y, vx: Math.cos(a) * 220, vy: Math.sin(a) * 220, mine: false }) }
+  }
+  for (const s of shots) {
+    if (s.dead) continue
+    if (s.mine) for (const f of foes) {
+      if (f.dead || (s.x - f.x) ** 2 + (s.y - f.y) ** 2 > f.r ** 2) continue
+      s.dead = true
+      if (--f.hp <= 0) {
+        f.dead = true; score += f.drone ? 50 : Math.round(f.r); boom(f.x, f.y, f.drone ? '#ff4444' : '#a1887f'); buzz(8)
+        if (Math.random() < 0.06) pickups.push({ x: f.x, y: f.y })
+        if (!f.drone && f.r > 26) for (let i = 0; i < 2; i++) foes.push({ ...f, dead: false, r: f.r * 0.55, hp: 1, vx: (i ? 1 : -1) * 80, vy: f.vy * 1.1 })
+      }
+      break
+    } else if ((s.x - ship.x) ** 2 + (s.y - ship.y) ** 2 < 14 ** 2) { s.dead = true; hurt() }
+  }
+  for (const f of foes) if (!f.dead && (f.x - ship.x) ** 2 + (f.y - ship.y) ** 2 < (f.r + 12) ** 2) { f.dead = true; boom(f.x, f.y, '#a1887f'); hurt() }
+  for (const p of pickups) { p.y += 90 * dt; if ((p.x - ship.x) ** 2 + (p.y - ship.y) ** 2 < 26 ** 2) { p.dead = true; shield = Math.min(3, shield + 1); buzz(20) } }
+  shots = shots.filter((s) => !s.dead && s.y > -20 && s.y < H + 20 && s.x > -20 && s.x < W + 20)
+  foes = foes.filter((f) => !f.dead && f.y < H + 60)
+  pickups = pickups.filter((p) => !p.dead && p.y < H + 20)
+}
+function draw() {
+  g.fillStyle = '#02040a'; g.fillRect(0, 0, W, H)
+  for (const s of stars) { g.fillStyle = `rgba(255,255,255,${s.z})`; g.fillRect(s.x * W, s.y * H, s.z * 2, s.z * 2) }
+  if (foes) for (const f of foes) {
+    g.save(); g.translate(f.x, f.y); g.rotate(f.rot)
+    if (f.drone) { g.fillStyle = '#ff4444'; g.beginPath(); g.moveTo(0, f.r); g.lineTo(f.r, -f.r * 0.6); g.lineTo(0, -f.r * 0.2); g.lineTo(-f.r, -f.r * 0.6); g.closePath(); g.fill(); g.fillStyle = '#ffbb33'; g.beginPath(); g.arc(0, 0, 4, 0, 7); g.fill() }
+    else { g.fillStyle = '#6d5a4f'; g.strokeStyle = '#a1887f'; g.lineWidth = 2; g.beginPath(); for (let i = 0; i < f.sides; i++) { const a = i / f.sides * 6.283, q = f.r * (0.8 + ((i * 7) % 3) * 0.1); i ? g.lineTo(Math.cos(a) * q, Math.sin(a) * q) : g.moveTo(q, 0) } g.closePath(); g.fill(); g.stroke() }
+    g.restore()
+  }
+  if (shots) for (const s of shots) { g.fillStyle = s.mine ? '#33b5e5' : '#ff4444'; g.fillRect(s.x - 2, s.y - 7, 4, 12) }
+  if (pickups) for (const p of pickups) { g.strokeStyle = '#99cc00'; g.lineWidth = 3; g.beginPath(); g.arc(p.x, p.y, 10, 0, 7); g.stroke() }
+  for (const b of bits || []) { g.globalAlpha = Math.min(1, b.t * 2); g.fillStyle = b.c; g.fillRect(b.x, b.y, 3, 3) } g.globalAlpha = 1
+  if (ship && state !== 'over') {
+    g.save(); g.translate(ship.x, ship.y)
+    g.fillStyle = '#33b5e5'; g.beginPath(); g.moveTo(0, -20); g.lineTo(15, 14); g.lineTo(0, 8); g.lineTo(-15, 14); g.closePath(); g.fill()
+    g.fillStyle = '#ffbb33'; g.fillRect(-4, 10, 8, 6 + Math.random() * 8)
+    if (shield > 0) { g.strokeStyle = `rgba(153,204,0,${0.25 + shield * 0.15})`; g.lineWidth = 2; g.beginPath(); g.arc(0, 0, 26, 0, 7); g.stroke() }
+    g.restore()
+  }
+  g.fillStyle = '#fff'; g.font = '600 20px Roboto,sans-serif'; g.textAlign = 'left'; g.fillText(String(score || 0).padStart(6, '0'), 14, 34)
+  g.textAlign = 'right'; g.fillStyle = '#99cc00'; g.fillText('◯'.repeat(Math.max(0, shield ?? 0)), W - 14, 34)
+  if (state === 'run') { g.fillStyle = '#9e9e9e'; g.font = '14px Roboto,sans-serif'; g.fillText('wave ' + wave, W - 14, 56) }
+  g.textAlign = 'center'
+  if (state !== 'run') {
+    g.fillStyle = 'rgba(0,0,0,.5)'; g.fillRect(0, 0, W, H)
+    g.fillStyle = '#33b5e5'; g.font = '300 46px Roboto,sans-serif'; g.fillText('Star Drift', W / 2, H * 0.36)
+    g.fillStyle = '#fff'; g.font = '18px Roboto,sans-serif'; if (state === 'over') g.fillText('Score ' + score, W / 2, H * 0.45); g.fillText('Best ' + best, W / 2, H * 0.5)
+    g.fillStyle = '#9e9e9e'; g.fillText('Drag to fly, your guns fire on their own', W / 2, H * 0.58)
+    g.fillStyle = '#fff'; g.font = '600 22px Roboto,sans-serif'; g.fillText(state === 'paused' ? 'Tap to go on' : 'Tap to launch', W / 2, H * 0.68)
+  }
+}
+let px = 0, py = 0, sx = 0, sy = 0
+addEventListener('pointerdown', (e) => {
+  if (state === 'paused') { state = 'run'; return }
+  if (state !== 'run') { start(); return }
+  px = e.clientX; py = e.clientY; sx = ship.x; sy = ship.y
+})
+addEventListener('pointermove', (e) => {
+  if (state !== 'run' || !(e.buttons || e.pointerType === 'touch')) return
+  ship.x = Math.max(16, Math.min(W - 16, sx + (e.clientX - px) * 1.2))
+  ship.y = Math.max(H * 0.35, Math.min(H - 30, sy + (e.clientY - py) * 1.2))
+})
+droid.on('pause', () => { if (state === 'run') state = 'paused'; return null })
+let last = performance.now()
+function frame(t) { const dt = Math.min(0.033, (t - last) / 1000); last = t; update(dt); draw(); requestAnimationFrame(frame) }
+requestAnimationFrame(frame)
+</script>
+</body>
+</html>

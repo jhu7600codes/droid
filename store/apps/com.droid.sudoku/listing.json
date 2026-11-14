@@ -1,0 +1,9 @@
+{
+ "id": "com.droid.sudoku",
+ "name": "Sudoku",
+ "author": "droid games",
+ "category": "games",
+ "icon": "icon.svg",
+ "dpk": "repo:public/games/sudoku.dpk",
+ "description": "Classic number puzzles in three difficulties, with pencil marks and mistakes highlighted."
+}

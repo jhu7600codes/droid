@@ -1,0 +1,23 @@
+{
+ "id": "com.droid.sudoku",
+ "name": "Sudoku",
+ "version": "1.0",
+ "versioncode": 1,
+ "type": "web",
+ "main": "main",
+ "icon": "icon.svg",
+ "theme": "holo-dark",
+ "dpk": "2.0",
+ "permissions": [
+  "vibrate"
+ ],
+ "activities": {
+  "main": {
+   "entry": "index.html",
+   "label": "Sudoku",
+   "launcher": true
+  }
+ },
+ "author": "droid games",
+ "description": "Classic number puzzles in three difficulties, with pencil marks and mistakes highlighted."
+}

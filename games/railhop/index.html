@@ -1,0 +1,154 @@
+<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0;height:100%;background:#0b0f14;overflow:hidden;touch-action:none;user-select:none;font-family:Roboto,sans-serif}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// Rail Hop: three lanes seen from above and behind; obstacles come down the lanes toward the runner.
+const cv = document.getElementById('c'), g = cv.getContext('2d')
+let W = 0, H = 0, D = 1
+function fit() { D = devicePixelRatio || 1; W = innerWidth; H = innerHeight; cv.width = W * D; cv.height = H * D; cv.style.width = W + 'px'; cv.style.height = H + 'px'; g.setTransform(D, 0, 0, D, 0, 0) }
+addEventListener('resize', fit); fit()
+droid.system.orientation('portrait').catch(() => {})
+droid.actionbar.hide().catch(() => {})
+
+let best = 0
+droid.prefs.get('best').then((v) => { best = +v || 0 })
+const buzz = (ms) => droid.system.vibrate(ms).catch(() => {})
+// ask for vibration once at launch, not in the middle of a game
+buzz(1)
+
+// perspective: z = 0 at the runner, 1 at the horizon
+const horizon = () => H * 0.28
+const proj = (lane, z) => {
+  const y = horizon() + (H * 0.86 - horizon()) * (1 - z) ** 1.6
+  const spread = (1 - z * 0.82)
+  return { x: W / 2 + (lane - 1) * W * 0.3 * spread, y, s: spread }
+}
+
+let state = 'menu', lane = 1, laneX = 1, jump = 0, speed = 0, dist = 0, bolts = 0, things = [], spawnIn = 0, t0 = 0
+function start() { state = 'run'; lane = 1; laneX = 1; jump = 0; speed = 0.45; dist = 0; bolts = 0; things = []; spawnIn = 0.6 }
+function over() {
+  state = 'over'; buzz(300)
+  const score = Math.floor(dist) + bolts * 25
+  if (score > best) { best = score; droid.prefs.set('best', best) }
+}
+
+function spawn() {
+  const free = [0, 1, 2]
+  const kinds = Math.random() < 0.55 ? 'bar' : 'train'
+  const blocked = kinds === 'train' ? (Math.random() < 0.5 ? 1 : 2) : 1
+  for (let i = 0; i < blocked; i++) { const k = free.splice(Math.floor(Math.random() * free.length), 1)[0]; things.push({ lane: k, z: 1, kind: kinds === 'train' ? 'train' : 'bar' }) }
+  for (const k of free) if (Math.random() < 0.6) for (let j = 0; j < 4; j++) things.push({ lane: k, z: 1 + j * 0.06, kind: 'bolt' })
+}
+
+function update(dt) {
+  if (state !== 'run') return
+  speed = Math.min(1.25, speed + dt * 0.012)
+  dist += dt * speed * 60
+  laneX += (lane - laneX) * Math.min(1, dt * 14)
+  if (jump > 0) jump = Math.max(0, jump - dt * 1.6)
+  spawnIn -= dt * speed
+  if (spawnIn <= 0) { spawn(); spawnIn = 0.55 + Math.random() * 0.5 }
+  for (const o of things) o.z -= dt * speed
+  for (const o of things) {
+    if (o.z > 0.06 || o.z < -0.04 || o.hit) continue
+    if (Math.abs(o.lane - laneX) > 0.45) continue
+    if (o.kind === 'bolt') { o.hit = true; bolts++; buzz(8) }
+    else if (o.kind === 'bar' && jump > 0.15) continue
+    else return over()
+  }
+  things = things.filter((o) => o.z > -0.1 && !o.hit)
+}
+
+function draw() {
+  const hz = horizon()
+  const sky = g.createLinearGradient(0, 0, 0, hz)
+  sky.addColorStop(0, '#0d2b45'); sky.addColorStop(1, '#2d6a8f')
+  g.fillStyle = sky; g.fillRect(0, 0, W, hz)
+  g.fillStyle = '#1c2a22'; g.fillRect(0, hz, W, H - hz)
+  // city silhouette
+  g.fillStyle = '#123047'
+  for (let i = 0; i < 14; i++) { const bw = W / 14, bh = 20 + ((i * 37) % 60); g.fillRect(i * bw, hz - bh, bw - 2, bh) }
+  // rails
+  const off = (dist * 0.04) % 1
+  for (let l = 0; l < 3; l++) {
+    for (const side of [-0.32, 0.32]) {
+      g.strokeStyle = '#8a9aa6'; g.lineWidth = 2; g.beginPath()
+      for (let z = 0; z <= 1; z += 0.05) { const p = proj(l + side * 0.5, z); z ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y) }
+      g.stroke()
+    }
+    g.strokeStyle = '#4a3a2a'
+    for (let k = 0; k < 18; k++) {
+      const z = (k / 18 + 1 - off) % 1, a = proj(l - 0.22, z), b = proj(l + 0.22, z)
+      g.lineWidth = Math.max(1, 4 * a.s); g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke()
+    }
+  }
+  // things, far first
+  for (const o of [...things].sort((a, b) => b.z - a.z)) {
+    if (o.z > 1) continue
+    const p = proj(o.lane, Math.max(0, o.z)), w = W * 0.22 * p.s
+    if (o.kind === 'bolt') { g.fillStyle = '#ffbb33'; g.beginPath(); g.arc(p.x, p.y - 24 * p.s, 9 * p.s, 0, 7); g.fill() }
+    else if (o.kind === 'bar') {
+      g.fillStyle = '#cc0000'; g.fillRect(p.x - w / 2, p.y - 34 * p.s, w, 12 * p.s)
+      g.fillStyle = '#fff'; for (let i = 0; i < 4; i++) g.fillRect(p.x - w / 2 + (i + 0.3) * w / 4, p.y - 34 * p.s, w / 10, 12 * p.s)
+      g.fillStyle = '#555'; g.fillRect(p.x - w / 2, p.y - 22 * p.s, 4 * p.s, 22 * p.s); g.fillRect(p.x + w / 2 - 4 * p.s, p.y - 22 * p.s, 4 * p.s, 22 * p.s)
+    } else {
+      g.fillStyle = '#e8b20e'; g.fillRect(p.x - w / 2, p.y - 110 * p.s, w, 110 * p.s)
+      g.fillStyle = '#2b3a46'; g.fillRect(p.x - w / 2 + 6 * p.s, p.y - 100 * p.s, w - 12 * p.s, 34 * p.s)
+      g.fillStyle = '#c62828'; g.fillRect(p.x - w / 2, p.y - 30 * p.s, w, 8 * p.s)
+    }
+  }
+  // runner
+  const me = proj(laneX, 0), up = Math.sin(Math.min(1, jump) * Math.PI) * 70
+  g.fillStyle = 'rgba(0,0,0,.35)'; g.beginPath(); g.ellipse(me.x, me.y, 22, 7, 0, 0, 7); g.fill()
+  const bob = state === 'run' ? Math.sin(dist * 0.5) * 3 : 0
+  g.fillStyle = '#33b5e5'; g.fillRect(me.x - 14, me.y - 62 - up + bob, 28, 34)
+  g.fillStyle = '#ffd7b0'; g.beginPath(); g.arc(me.x, me.y - 74 - up + bob, 12, 0, 7); g.fill()
+  g.fillStyle = '#0099cc'; g.fillRect(me.x - 13, me.y - 86 - up + bob, 26, 8)
+  g.fillStyle = '#263238'; g.fillRect(me.x - 12, me.y - 28 - up, 10, 26); g.fillRect(me.x + 2, me.y - 28 - up, 10, 26)
+  // hud
+  g.fillStyle = '#fff'; g.font = '600 20px Roboto,sans-serif'; g.textAlign = 'left'
+  g.fillText(String(Math.floor(dist) + bolts * 25).padStart(6, '0'), 16, 34)
+  g.fillStyle = '#ffbb33'; g.fillText('⚡ ' + bolts, 16, 60)
+  g.textAlign = 'center'
+  if (state !== 'run') {
+    g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(0, 0, W, H)
+    g.fillStyle = '#33b5e5'; g.font = '300 44px Roboto,sans-serif'; g.fillText('Rail Hop', W / 2, H * 0.36)
+    g.fillStyle = '#fff'; g.font = '18px Roboto,sans-serif'
+    if (state === 'over') g.fillText('Score ' + (Math.floor(dist) + bolts * 25), W / 2, H * 0.45)
+    g.fillText('Best ' + best, W / 2, H * 0.5)
+    g.fillStyle = '#9e9e9e'; g.fillText('Swipe ← → to switch lanes, ↑ to hop', W / 2, H * 0.6)
+    g.fillStyle = '#fff'; g.font = '600 22px Roboto,sans-serif'; g.fillText(state === 'over' ? 'Tap to run again' : 'Tap to run', W / 2, H * 0.7)
+  }
+}
+
+let sx = 0, sy = 0, moved = false
+addEventListener('pointerdown', (e) => { sx = e.clientX; sy = e.clientY; moved = false })
+addEventListener('pointermove', (e) => {
+  if (moved || state !== 'run') return
+  const dx = e.clientX - sx, dy = e.clientY - sy
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return
+  moved = true
+  if (Math.abs(dx) > Math.abs(dy)) lane = Math.max(0, Math.min(2, lane + Math.sign(dx)))
+  else if (dy < 0 && jump === 0) jump = 1
+})
+addEventListener('pointerup', () => { if (!moved && state !== 'run') start() })
+addEventListener('keydown', (e) => {
+  if (state !== 'run') { if (e.key === ' ' || e.key === 'Enter') start(); return }
+  if (e.key === 'ArrowLeft') lane = Math.max(0, lane - 1)
+  if (e.key === 'ArrowRight') lane = Math.min(2, lane + 1)
+  if (e.key === 'ArrowUp' && jump === 0) jump = 1
+})
+droid.on('pause', () => { if (state === 'run') state = 'paused'; return null })
+droid.on('resume', () => { if (state === 'paused') state = 'run' })
+
+let last = performance.now()
+function frame(t) { const dt = Math.min(0.05, (t - last) / 1000); last = t; update(dt); draw(); requestAnimationFrame(frame) }
+requestAnimationFrame(frame)
+</script>
+</body>
+</html>

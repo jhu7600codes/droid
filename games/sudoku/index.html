@@ -1,0 +1,129 @@
+<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;height:100%;background:#0f1215;color:#fff;overflow:hidden;touch-action:none;user-select:none;font-family:Roboto,sans-serif}
+#top{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;font-size:15px;color:#9e9e9e}
+#board{display:grid;grid-template-columns:repeat(9,1fr);margin:0 auto;border:2px solid #33b5e5;background:#33b5e5;gap:1px}
+.c{background:#171c21;display:flex;align-items:center;justify-content:center;font-size:22px;position:relative;aspect-ratio:1}
+.c.given{color:#e0e0e0;font-weight:500}.c.mine{color:#33b5e5}.c.bad{color:#ff4444}
+.c.peer{background:#1d252c}.c.same{background:#21384a}.c.sel{background:#0e5a80}
+.c.br{margin-right:1px}.c.bb{margin-bottom:1px}
+.notes{position:absolute;inset:2px;display:grid;grid-template-columns:repeat(3,1fr);font-size:10px;color:#9e9e9e;line-height:1}
+.notes span{display:flex;align-items:center;justify-content:center}
+#pad{display:grid;grid-template-columns:repeat(9,1fr);gap:6px;margin:14px auto 0}
+#pad button,#tools button{background:#262d33;color:#fff;border:0;border-radius:2px;font:400 22px Roboto,sans-serif;padding:10px 0}
+#pad button:active,#tools button:active{background:#33b5e5}
+#tools{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px auto 0}
+#tools button{font-size:14px;text-transform:uppercase}
+#tools button.on{background:#0099cc}
+</style>
+</head>
+<body>
+<div id="top"><span id="lvl">Easy</span><span id="mist">Mistakes 0</span><span id="time">0:00</span></div>
+<div id="board"></div>
+<div id="pad"></div>
+<div id="tools"><button id="pencil">Pencil</button><button id="erase">Erase</button><button id="hint">Hint</button></div>
+<script>
+// Sudoku: a solved grid from a shuffled backtracking fill, then cells removed while the puzzle keeps one solution.
+const HOLES = { Easy: 38, Medium: 47, Hard: 54 }
+const $ = (id) => document.getElementById(id)
+droid.system.orientation('portrait').catch(() => {})
+const buzz = (ms) => droid.system.vibrate(ms).catch(() => {})
+// ask for vibration once at launch, not in the middle of a game
+buzz(1)
+let level = 'Easy', sol, puz, cur, notes, sel = -1, pencil = false, mistakes = 0, t0 = 0, done = false
+
+const ok = (b, i, v) => { const r = Math.floor(i / 9), c = i % 9, br = r - r % 3, bc = c - c % 3; for (let k = 0; k < 9; k++) { if (b[r * 9 + k] === v || b[k * 9 + c] === v || b[(br + Math.floor(k / 3)) * 9 + bc + k % 3] === v) return false } return true }
+function fill(b) {
+  const i = b.indexOf(0); if (i < 0) return true
+  for (const v of [1, 2, 3, 4, 5, 6, 7, 8, 9].sort(() => Math.random() - 0.5)) if (ok(b, i, v)) { b[i] = v; if (fill(b)) return true; b[i] = 0 }
+  return false
+}
+function count(b, limit = 2) {
+  const i = b.indexOf(0); if (i < 0) return 1
+  let n = 0
+  for (let v = 1; v <= 9 && n < limit; v++) if (ok(b, i, v)) { b[i] = v; n += count(b, limit - n); b[i] = 0 }
+  return n
+}
+function generate() {
+  sol = Array(81).fill(0); fill(sol)
+  puz = sol.slice(); let holes = 0
+  for (const i of [...Array(81).keys()].sort(() => Math.random() - 0.5)) {
+    if (holes >= HOLES[level]) break
+    const keep = puz[i]; puz[i] = 0
+    if (count(puz.slice()) !== 1) puz[i] = keep; else holes++
+  }
+}
+function newGame() {
+  generate(); cur = puz.slice(); notes = Array.from({ length: 81 }, () => new Set()); sel = -1; mistakes = 0; t0 = performance.now(); done = false
+  $('lvl').textContent = level; droid.actionbar.title('Sudoku · ' + level).catch(() => {}); render()
+}
+function render() {
+  const s = Math.min(innerWidth - 16, innerHeight - 260)
+  $('board').style.width = s + 'px'; $('pad').style.width = s + 'px'; $('tools').style.width = s + 'px'
+  const b = $('board'); b.innerHTML = ''
+  const sr = Math.floor(sel / 9), sc = sel % 9, sv = sel >= 0 ? cur[sel] : 0
+  for (let i = 0; i < 81; i++) {
+    const r = Math.floor(i / 9), c = i % 9, d = document.createElement('div')
+    d.className = 'c' + (c % 3 === 2 && c < 8 ? ' br' : '') + (r % 3 === 2 && r < 8 ? ' bb' : '')
+    if (puz[i]) d.classList.add('given'); else if (cur[i]) d.classList.add(cur[i] === sol[i] ? 'mine' : 'bad')
+    if (sel >= 0 && (r === sr || c === sc || (Math.floor(r / 3) === Math.floor(sr / 3) && Math.floor(c / 3) === Math.floor(sc / 3)))) d.classList.add('peer')
+    if (sv && cur[i] === sv) d.classList.add('same')
+    if (i === sel) d.classList.add('sel')
+    if (cur[i]) d.textContent = cur[i]
+    else if (notes[i].size) { const n = document.createElement('div'); n.className = 'notes'; for (let v = 1; v <= 9; v++) { const sp = document.createElement('span'); sp.textContent = notes[i].has(v) ? v : ''; n.append(sp) } d.append(n) }
+    d.onpointerdown = () => { sel = i; render() }
+    b.append(d)
+  }
+  $('mist').textContent = 'Mistakes ' + mistakes
+  $('pencil').classList.toggle('on', pencil)
+}
+function put(v) {
+  if (sel < 0 || puz[sel] || done) return
+  if (pencil) { notes[sel].has(v) ? notes[sel].delete(v) : notes[sel].add(v); render(); return }
+  cur[sel] = v; notes[sel].clear()
+  if (v !== sol[sel]) { mistakes++; buzz(80) }
+  else {
+    // clear the number from notes around it
+    const r = Math.floor(sel / 9), c = sel % 9
+    for (let k = 0; k < 81; k++) { const kr = Math.floor(k / 9), kc = k % 9; if (kr === r || kc === c || (Math.floor(kr / 3) === Math.floor(r / 3) && Math.floor(kc / 3) === Math.floor(c / 3))) notes[k].delete(v) }
+  }
+  render()
+  if (cur.every((x, i) => x === sol[i])) win()
+}
+async function win() {
+  done = true; buzz(60); droid.prefs.remove('game')
+  const t = (performance.now() - t0) / 1000, key = 'best-' + level, b = +(await droid.prefs.get(key)) || Infinity
+  if (t < b) droid.prefs.set(key, t)
+  const r = await droid.dialog({ title: 'Solved!', message: `${level} in ${fmt(t)}${t < b ? ' (new best)' : ''}, ${mistakes} mistake${mistakes === 1 ? '' : 's'}.`, ok: 'New puzzle', cancel: 'Close' })
+  if (r?.button === 'ok') newGame()
+}
+const fmt = (s) => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0')
+setInterval(() => { if (!done && t0) $('time').textContent = fmt((performance.now() - t0) / 1000) }, 500)
+for (let v = 1; v <= 9; v++) { const btn = document.createElement('button'); btn.textContent = v; btn.onclick = () => put(v); $('pad').append(btn) }
+$('pencil').onclick = () => { pencil = !pencil; render() }
+$('erase').onclick = () => { if (sel >= 0 && !puz[sel]) { cur[sel] = 0; notes[sel].clear(); render() } }
+$('hint').onclick = () => {
+  const empty = [...Array(81).keys()].filter((i) => cur[i] !== sol[i])
+  if (!empty.length) return
+  const i = sel >= 0 && cur[sel] !== sol[sel] && !puz[sel] ? sel : empty[Math.floor(Math.random() * empty.length)]
+  sel = i; const p = pencil; pencil = false; put(sol[i]); pencil = p; mistakes = Math.max(0, mistakes)
+}
+addEventListener('keydown', (e) => { if (/^[1-9]$/.test(e.key)) put(+e.key); if (e.key === 'Backspace') $('erase').onclick() })
+addEventListener('resize', render)
+droid.actionbar.menu([{ id: 'Easy', title: 'New easy' }, { id: 'Medium', title: 'New medium' }, { id: 'Hard', title: 'New hard' }]).catch(() => {})
+droid.on('menu', ({ id }) => { if (HOLES[id]) { level = id; droid.prefs.set('level', id); newGame() } })
+// a puzzle in progress survives the app being closed
+droid.on('pause', () => { if (!done && sol) droid.prefs.set('game', JSON.stringify({ level, sol, puz, cur, notes: notes.map((n) => [...n]), mistakes, t: performance.now() - t0 })); return null })
+droid.prefs.get('game').then((s) => {
+  try {
+    const o = JSON.parse(s || 'null')
+    if (o && o.cur.some((x, i) => x !== o.sol[i])) { level = o.level; sol = o.sol; puz = o.puz; cur = o.cur; notes = o.notes.map((n) => new Set(n)); mistakes = o.mistakes; t0 = performance.now() - o.t; $('lvl').textContent = level; render(); return }
+  } catch {}
+  droid.prefs.get('level').then((v) => { if (HOLES[v]) level = v; newGame() })
+})
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+ "id": "com.droid.gemshift",
+ "name": "Gem Shift",
+ "author": "droid games",
+ "category": "games",
+ "icon": "icon.svg",
+ "dpk": "repo:public/games/gemshift.dpk",
+ "description": "Swap neighbouring gems to line up three or more. Ninety seconds, chains score double."
+}

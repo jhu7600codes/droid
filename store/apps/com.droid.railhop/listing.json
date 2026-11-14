@@ -1,0 +1,9 @@
+{
+ "id": "com.droid.railhop",
+ "name": "Rail Hop",
+ "author": "droid games",
+ "category": "games",
+ "icon": "icon.svg",
+ "dpk": "repo:public/games/railhop.dpk",
+ "description": "Endless runner on three rail lanes. Swipe left and right to switch lanes, swipe up to hop over barriers, grab the bolts."
+}
