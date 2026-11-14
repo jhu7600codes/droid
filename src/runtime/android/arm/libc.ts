@@ -145,6 +145,12 @@ export function installLibc(nat: Native) {
   // wide chars (wchar_t is 32-bit)
   const wch = (re: RegExp) => () => (re.test(String.fromCodePoint(R(0) & 0x1fffff)) ? 1 : 0)
   def('iswalpha', wch(/\p{L}/u)); def('iswdigit', wch(/[0-9]/)); def('iswspace', wch(/\s/)); def('iswupper', wch(/\p{Lu}/u)); def('iswlower', wch(/\p{Ll}/u))
+  // wctype(name) -> a class number, iswctype(c, class): the same classes as the isw* functions
+  const WCLASS: Record<string, RegExp> = { alnum: /\p{L}|\p{N}/u, alpha: /\p{L}/u, blank: /[ \t]/, cntrl: /\p{Cc}/u, digit: /[0-9]/, graph: /[^\p{C}\s]/u, lower: /\p{Ll}/u, print: /[^\p{C}]/u, punct: /\p{P}|\p{S}/u, space: /\s/, upper: /\p{Lu}/u, xdigit: /[0-9a-fA-F]/ }
+  const WNAMES = Object.keys(WCLASS)
+  def('wctype', () => WNAMES.indexOf(m.cstr(R(0))) + 1)
+  def('iswctype', () => { const re = WCLASS[WNAMES[R(1) - 1]]; return re && re.test(String.fromCodePoint(R(0) & 0x1fffff)) ? 1 : 0 })
+  def('iswblank', wch(/[ \t]/)); def('iswgraph', wch(/[^\p{C}\s]/u))
   def('iswpunct', wch(/\p{P}|\p{S}/u)); def('iswcntrl', wch(/\p{Cc}/u)); def('iswprint', wch(/[^\p{C}]/u)); def('iswxdigit', wch(/[0-9a-fA-F]/)); def('iswalnum', wch(/\p{L}|\p{N}/u))
   def('towlower', () => String.fromCodePoint(R(0)).toLowerCase().codePointAt(0)!)
   def('towupper', () => String.fromCodePoint(R(0)).toUpperCase().codePointAt(0)!)
@@ -461,6 +467,8 @@ export function installLibc(nat: Native) {
   // ---------- time ----------
   const t0 = performance.now()
   def('time', () => { const t = Math.floor(Date.now() / 1000); if (R(0)) m.w32(R(0), t); return t })
+  // ftime(struct timeb *): seconds, milliseconds, timezone (minutes west), dst flag
+  def('ftime', () => { const t = Date.now(), p = R(0); if (p) { m.w32(p, Math.floor(t / 1000)); m.w16(p + 4, t % 1000); m.w16(p + 6, new Date().getTimezoneOffset() & 0xffff); m.w16(p + 8, 0) } return 0 })
   def('gettimeofday', () => { const t = Date.now(); if (R(0)) { m.w32(R(0), Math.floor(t / 1000)); m.w32(R(0) + 4, (t % 1000) * 1000) } if (R(1)) { m.w32(R(1), 0); m.w32(R(1) + 4, 0) } return 0 })
   // CLOCK_REALTIME 0, MONOTONIC 1, PROCESS / THREAD cputime 2 / 3, MONOTONIC_RAW 4, BOOTTIME 7
   def('clock_gettime', () => {

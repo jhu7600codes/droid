@@ -1,6 +1,6 @@
 // more of java.lang / java.util / java.io that android's own framework code calls: a real seeded
 // Random, Character code points, binary searches, PrintStream on any stream, small number parsers.
-import { VM, JObject, JavaThrow, type NativeFn } from './dalvik.ts'
+import { VM, JObject, JavaThrow, type JArray, type NativeFn } from './dalvik.ts'
 import { jstr } from './java.ts'
 
 export function registerJavaExtra(vm: VM) {
@@ -170,6 +170,24 @@ export function registerJavaExtra(vm: VM) {
     'setIn(Ljava/io/InputStream;)V': (v, s, [p]) => { vm.cls('Ljava/lang/System;').staticValues.in = p },
   })
 
+  // ---------- java.lang.Enum (name and ordinal kept beside the enum's own fields) ----------
+  def('Ljava/lang/Enum;', 'Ljava/lang/Object;', {
+    '<init>(Ljava/lang/String;I)V': (v, s, [n, o]) => { s.f.$name = n; s.f.$ordinal = o },
+    'name()Ljava/lang/String;': (v, s) => s.f.$name, 'ordinal()I': (v, s) => s.f.$ordinal,
+    'toString()Ljava/lang/String;': (v, s) => s.f.$name,
+    'hashCode()I': (v, s) => s.f.$ordinal * 31 + 7,
+    'equals(Ljava/lang/Object;)Z': (v, s, [o]) => (o === s ? 1 : 0),
+    'compareTo(Ljava/lang/Enum;)I': (v, s, [o]) => s.f.$ordinal - o.f.$ordinal,
+    'compareTo(Ljava/lang/Object;)I': (v, s, [o]) => s.f.$ordinal - o.f.$ordinal,
+    'getDeclaringClass()Ljava/lang/Class;': (v, s) => { let c = s.cls; while (c.super && c.super.name !== 'Ljava/lang/Enum;') c = c.super; return vm.classObject(c) },
+    'valueOf(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;': (v, s, [cls, n]) => {
+      const c = cls.f.of, vals = vm.callStatic(c.name, `values()[${c.name}`) as JArray
+      const hit = [...(vals.data as any[])].find((x) => x.f.$name === jstr(vm, n))
+      if (!hit) throw vm.error('Ljava/lang/IllegalArgumentException;', `${jstr(vm, n)} is not a constant in ${c.name}`)
+      return hit
+    },
+  })
+
   // ---------- odds and ends ----------
   def('Ljava/io/ByteArrayOutputStream;', 'Ljava/io/OutputStream;', {
     'writeTo(Ljava/io/OutputStream;)V': (v, s, [o]) => { const b: Uint8Array = s.f.buf, a = vm.newArray('[B', b.length); (a.data as Int8Array).set(new Int8Array(b.buffer, b.byteOffset, b.length)); vm.callVirtual(o, 'write([BII)V', [a, 0, b.length]) },
@@ -186,4 +204,84 @@ export function registerJavaExtra(vm: VM) {
     'getDisplayName(Ljava/util/Locale;)Ljava/lang/String;': (v, s) => vm.callVirtual(s, 'getDisplayName()Ljava/lang/String;', []),
   })
   def('Ljava/util/TimeZone;', OBJ, { 'getDisplayName(ZI)Ljava/lang/String;': (v, s) => vm.callVirtual(s, 'getDisplayName()Ljava/lang/String;', []) })
+
+  // ---------- java.util.logging: loggers that go to the console (sdks log through it) ----------
+  const LG = 'Ljava/util/logging/Logger;', LV = 'Ljava/util/logging/Level;'
+  const loggers = new Map<string, JObject>()
+  const levels = new Map<string, JObject>()
+  const level = (n: string, v: number) => { let l = levels.get(n); if (!l) { l = new JObject(vm.cls(LV)); l.f.$name = n; l.f.$v = v; levels.set(n, l) } return l }
+  const LEVELS: [string, number][] = [['OFF', 2147483647], ['SEVERE', 1000], ['WARNING', 900], ['INFO', 800], ['CONFIG', 700], ['FINE', 500], ['FINER', 400], ['FINEST', 300], ['ALL', -2147483648]]
+  def(LV, OBJ, {
+    'intValue()I': (v, s) => s.f.$v, 'getName()Ljava/lang/String;': (v, s) => s.f.$name, 'toString()Ljava/lang/String;': (v, s) => s.f.$name,
+    'parse(Ljava/lang/String;)Ljava/util/logging/Level;': (v, s, [n]) => level(text(n).toUpperCase(), LEVELS.find((x) => x[0] === text(n).toUpperCase())?.[1] ?? 800),
+  })
+  { const lv = vm.shims.get(LV)!, st: Record<string, any> = { ...(lv.statics || {}) }; for (const [n, val] of LEVELS) Object.defineProperty(st, n, { get: () => level(n, val), enumerable: true }); vm.shim(LV, { ...lv, statics: st }) }
+  const getLogger = (n: any) => { const k = n == null ? '' : text(n); let l = loggers.get(k); if (!l) { l = new JObject(vm.cls(LG)); l.f.$name = k; l.f.$level = 800; loggers.set(k, l) } return l }
+  const out = (s: JObject, lv: number, m: any) => { if (lv >= (s.f.$level ?? 800)) (lv >= 900 ? console.warn : console.log)(`${lv >= 1000 ? 'E' : lv >= 900 ? 'W' : 'I'}/${s.f.$name || 'global'}: ${text(m)}`) }
+  const at = (lv: number): NativeFn => (v, s, [m]) => out(s, lv, m)
+  const lvOf = (l: any) => (l ? l.f.$v ?? 800 : 800)
+  def(LG, OBJ, {
+    'getLogger(Ljava/lang/String;)Ljava/util/logging/Logger;': (v, s, [n]) => getLogger(n),
+    'getLogger(Ljava/lang/String;Ljava/lang/String;)Ljava/util/logging/Logger;': (v, s, [n]) => getLogger(n),
+    'getAnonymousLogger()Ljava/util/logging/Logger;': () => getLogger(null),
+    'getGlobal()Ljava/util/logging/Logger;': () => getLogger('global'),
+    'getName()Ljava/lang/String;': (v, s) => s.f.$name,
+    'severe(Ljava/lang/String;)V': at(1000), 'warning(Ljava/lang/String;)V': at(900), 'info(Ljava/lang/String;)V': at(800), 'config(Ljava/lang/String;)V': at(700),
+    'fine(Ljava/lang/String;)V': at(500), 'finer(Ljava/lang/String;)V': at(400), 'finest(Ljava/lang/String;)V': at(300),
+    'log(Ljava/util/logging/Level;Ljava/lang/String;)V': (v, s, [l, m]) => out(s, lvOf(l), m),
+    'log(Ljava/util/logging/Level;Ljava/lang/String;Ljava/lang/Throwable;)V': (v, s, [l, m]) => out(s, lvOf(l), m),
+    'log(Ljava/util/logging/Level;Ljava/lang/String;Ljava/lang/Object;)V': (v, s, [l, m]) => out(s, lvOf(l), m),
+    'log(Ljava/util/logging/Level;Ljava/lang/String;[Ljava/lang/Object;)V': (v, s, [l, m]) => out(s, lvOf(l), m),
+    'isLoggable(Ljava/util/logging/Level;)Z': (v, s, [l]) => (lvOf(l) >= (s.f.$level ?? 800) ? 1 : 0),
+    'setLevel(Ljava/util/logging/Level;)V': (v, s, [l]) => { s.f.$level = l ? lvOf(l) : 800 },
+    'getLevel()Ljava/util/logging/Level;': () => null,
+    'addHandler(Ljava/util/logging/Handler;)V': noop, 'removeHandler(Ljava/util/logging/Handler;)V': noop, 'setUseParentHandlers(Z)V': noop,
+    'entering(Ljava/lang/String;Ljava/lang/String;)V': noop, 'exiting(Ljava/lang/String;Ljava/lang/String;)V': noop,
+  })
+
+  // ---------- java.math.BigInteger on js bigint ----------
+  const BI = 'Ljava/math/BigInteger;'
+  const big = (x: bigint) => { const o = new JObject(vm.cls(BI)); o.f.$v = x; return o }
+  const bv = (o: any): bigint => (o ? o.f.$v ?? 0n : 0n)
+  const bop = (f: (a: bigint, b: bigint) => bigint): NativeFn => (v, s, [o]) => { if (bv(o) === 0n && f === div) throw vm.error('Ljava/lang/ArithmeticException;', 'BigInteger divide by zero'); return big(f(bv(s), bv(o))) }
+  const div = (a: bigint, b: bigint) => a / b
+  const parse = (str: string, radix: number) => {
+    const t = str.trim(), neg = t.startsWith('-'), d = neg || t.startsWith('+') ? t.slice(1) : t
+    if (!d || ![...d.toLowerCase()].every((c) => { const n = Number.parseInt(c, 36); return !isNaN(n) && n < radix })) throw vm.error('Ljava/lang/NumberFormatException;', 'Invalid BigInteger: ' + str)
+    let r = 0n; const R = BigInt(radix); for (const c of d.toLowerCase()) r = r * R + BigInt(Number.parseInt(c, 36))
+    return neg ? -r : r
+  }
+  def(BI, 'Ljava/lang/Number;', {
+    '<init>(Ljava/lang/String;)V': (v, s, [t]) => { s.f.$v = parse(text(t), 10) },
+    '<init>(Ljava/lang/String;I)V': (v, s, [t, r]) => { s.f.$v = parse(text(t), r) },
+    '<init>([B)V': (v, s, [b]) => { let r = 0n; for (const x of b.data) r = (r << 8n) | BigInt(x & 255); const n = b.data.length * 8; s.f.$v = n && b.data[0] < 0 ? r - (1n << BigInt(n)) : r },
+    '<init>(I[B)V': (v, s, [sg, b]) => { let r = 0n; for (const x of b.data) r = (r << 8n) | BigInt(x & 255); s.f.$v = sg < 0 ? -r : r },
+    'valueOf(J)Ljava/math/BigInteger;': (v, s, [x]) => big(BigInt(x)),
+    'add(Ljava/math/BigInteger;)Ljava/math/BigInteger;': bop((a, b) => a + b),
+    'subtract(Ljava/math/BigInteger;)Ljava/math/BigInteger;': bop((a, b) => a - b),
+    'multiply(Ljava/math/BigInteger;)Ljava/math/BigInteger;': bop((a, b) => a * b),
+    'divide(Ljava/math/BigInteger;)Ljava/math/BigInteger;': bop(div),
+    'mod(Ljava/math/BigInteger;)Ljava/math/BigInteger;': bop((a, b) => ((a % b) + b) % b),
+    'remainder(Ljava/math/BigInteger;)Ljava/math/BigInteger;': bop((a, b) => a % b),
+    'and(Ljava/math/BigInteger;)Ljava/math/BigInteger;': bop((a, b) => a & b), 'or(Ljava/math/BigInteger;)Ljava/math/BigInteger;': bop((a, b) => a | b),
+    'xor(Ljava/math/BigInteger;)Ljava/math/BigInteger;': bop((a, b) => a ^ b),
+    'pow(I)Ljava/math/BigInteger;': (v, s, [e]) => big(bv(s) ** BigInt(e)),
+    'negate()Ljava/math/BigInteger;': (v, s) => big(-bv(s)), 'abs()Ljava/math/BigInteger;': (v, s) => big(bv(s) < 0n ? -bv(s) : bv(s)),
+    'shiftLeft(I)Ljava/math/BigInteger;': (v, s, [n]) => big(bv(s) << BigInt(n)), 'shiftRight(I)Ljava/math/BigInteger;': (v, s, [n]) => big(bv(s) >> BigInt(n)),
+    'modPow(Ljava/math/BigInteger;Ljava/math/BigInteger;)Ljava/math/BigInteger;': (v, s, [e, m]) => { let b = ((bv(s) % bv(m)) + bv(m)) % bv(m), x = bv(e), r = 1n; const M = bv(m); while (x > 0n) { if (x & 1n) r = (r * b) % M; b = (b * b) % M; x >>= 1n } return big(r) },
+    'signum()I': (v, s) => (bv(s) > 0n ? 1 : bv(s) < 0n ? -1 : 0),
+    'compareTo(Ljava/math/BigInteger;)I': (v, s, [o]) => (bv(s) > bv(o) ? 1 : bv(s) < bv(o) ? -1 : 0),
+    'compareTo(Ljava/lang/Object;)I': (v, s, [o]) => (bv(s) > bv(o) ? 1 : bv(s) < bv(o) ? -1 : 0),
+    'equals(Ljava/lang/Object;)Z': (v, s, [o]) => (o?.cls === s.cls && bv(o) === bv(s) ? 1 : 0),
+    'hashCode()I': (v, s) => Number(BigInt.asIntN(32, bv(s))),
+    'toString()Ljava/lang/String;': (v, s) => bv(s).toString(),
+    'toString(I)Ljava/lang/String;': (v, s, [r]) => bv(s).toString(r),
+    'intValue()I': (v, s) => Number(BigInt.asIntN(32, bv(s))), 'longValue()J': (v, s) => BigInt.asIntN(64, bv(s)),
+    'doubleValue()D': (v, s) => Number(bv(s)), 'floatValue()F': (v, s) => Math.fround(Number(bv(s))),
+    'bitLength()I': (v, s) => { let x = bv(s); if (x < 0n) x = -x - 1n; return x.toString(2).length - (x === 0n ? 1 : 0) },
+    'testBit(I)Z': (v, s, [n]) => ((bv(s) >> BigInt(n)) & 1n ? 1 : 0),
+    'toByteArray()[B': (v, s) => { const x = bv(s); let n = 1; while (BigInt.asIntN(n * 8, x) !== x) n++; const a = vm.newArray('[B', n) as JArray; for (let i = 0; i < n; i++) a.data[n - 1 - i] = Number(BigInt.asIntN(8, x >> BigInt(i * 8))); return a },
+  })
+  const bis = vm.shims.get(BI)!
+  vm.shim(BI, { ...bis, statics: { ...(bis.statics || {}), get ZERO() { return big(0n) }, get ONE() { return big(1n) }, get TEN() { return big(10n) } } })
 }

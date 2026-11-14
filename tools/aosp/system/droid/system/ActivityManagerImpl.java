@@ -120,6 +120,15 @@ public class ActivityManagerImpl extends droid.defaults.DefaultIActivityManager 
         l.add(p);
         return l;
     }
+    // what the device offers: a touchscreen, no keyboard or d-pad, OpenGL ES 2.0 (games check this)
+    @Override public android.content.pm.ConfigurationInfo getDeviceConfigurationInfo() {
+        android.content.pm.ConfigurationInfo c = new android.content.pm.ConfigurationInfo();
+        c.reqTouchScreen = android.content.res.Configuration.TOUCHSCREEN_FINGER;
+        c.reqKeyboardType = android.content.res.Configuration.KEYBOARD_NOKEYS;
+        c.reqNavigation = android.content.res.Configuration.NAVIGATION_NONAV;
+        c.reqGlEsVersion = 0x20000;
+        return c;
+    }
     @Override public void getMemoryInfo(ActivityManager.MemoryInfo out) { out.availMem = 512L << 20; out.totalMem = 1024L << 20; out.threshold = 64L << 20; out.lowMemory = false; }
     @Override public int getFrontActivityScreenCompatMode() { return ActivityManager.COMPAT_MODE_NEVER; }
     @Override public ComponentName getCallingActivity(IBinder token) { Rec r = find(token); return r != null && r.caller != null ? new ComponentName(Pkg.app.packageName, r.caller.info.name) : null; }

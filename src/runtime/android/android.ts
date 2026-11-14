@@ -156,7 +156,23 @@ export function registerAndroid(vm: VM, env: Env) {
   })
   def('Landroid/widget/LinearLayout;', 'Landroid/view/ViewGroup;', { 'setOrientation(I)V': (v, s, [o]) => { el(s).style.flexDirection = o === 1 ? 'column' : 'row' } })
   def('Landroid/widget/FrameLayout;', 'Landroid/view/ViewGroup;', {})
-  def('Landroid/widget/RelativeLayout;', 'Landroid/view/ViewGroup;', {})
+  // android.gesture: stored gestures load but never match (no gesture recognition in the classic runtime)
+  def('Landroid/gesture/GestureStore;', 'Ljava/lang/Object;', {
+    '<init>()V': () => {}, 'load(Ljava/io/InputStream;)V': () => {}, 'load(Ljava/io/InputStream;Z)V': () => {},
+    'save(Ljava/io/OutputStream;)V': () => {}, 'save(Ljava/io/OutputStream;Z)V': () => {},
+    'setOrientationStyle(I)V': () => {}, 'setSequenceType(I)V': () => {}, 'hasChanged()Z': () => 0,
+    'addGesture(Ljava/lang/String;Landroid/gesture/Gesture;)V': () => {}, 'removeEntry(Ljava/lang/String;)V': () => {},
+    'getGestureEntries()Ljava/util/Set;': () => vm.newObject('Ljava/util/HashSet;'),
+    'getGestures(Ljava/lang/String;)Ljava/util/ArrayList;': () => null,
+    'recognize(Landroid/gesture/Gesture;)Ljava/util/ArrayList;': () => vm.newObject('Ljava/util/ArrayList;'),
+  })
+  const gnoop = Object.fromEntries(['setGestureStrokeType(I)V', 'setGestureColor(I)V', 'setUncertainGestureColor(I)V', 'setGestureStrokeWidth(F)V', 'setFadeOffset(J)V', 'setFadeEnabled(Z)V',
+    'setEventsInterceptionEnabled(Z)V', 'setGestureVisible(Z)V', 'setOrientation(I)V', 'setGestureStrokeLengthThreshold(F)V', 'setGestureStrokeSquarenessTreshold(F)V', 'setGestureStrokeAngleThreshold(F)V',
+    'addOnGestureListener(Landroid/gesture/GestureOverlayView$OnGestureListener;)V', 'addOnGesturePerformedListener(Landroid/gesture/GestureOverlayView$OnGesturePerformedListener;)V',
+    'addOnGesturingListener(Landroid/gesture/GestureOverlayView$OnGesturingListener;)V', 'removeAllOnGestureListeners()V', 'removeAllOnGesturePerformedListeners()V', 'removeAllOnGesturingListeners()V',
+    'clear(Z)V', 'cancelClearAnimation()V', 'cancelGesture()V'].map((k) => [k, () => {}]))
+  def('Landroid/gesture/GestureOverlayView;', 'Landroid/widget/FrameLayout;', { ...gnoop, 'isGesturing()Z': () => 0, 'getGesture()Landroid/gesture/Gesture;': () => null })
+  def('Landroid/widget/RelativeLayout;', 'Landroid/view/ViewGroup;', { 'setGravity(I)V': (v, s, [g]) => { s.f.gravity = g }, 'getGravity()I': (v, s) => s.f.gravity ?? 0x33, 'setHorizontalGravity(I)V': () => {}, 'setVerticalGravity(I)V': () => {}, 'setIgnoreGravity(I)V': () => {} })
   def('Landroid/widget/ScrollView;', 'Landroid/widget/FrameLayout;', {})
   const textOf = (v: any) => (v == null ? '' : jstr(vm, v))
   def('Landroid/widget/TextView;', 'Landroid/view/View;', {
@@ -572,6 +588,7 @@ export function registerAndroid(vm: VM, env: Env) {
     // where things live on a phone (backed by the in-memory file system)
     'getFilesDir()Ljava/io/File;': () => dirFile(`/data/data/${env.pkg}/files`),
     'getCacheDir()Ljava/io/File;': () => dirFile(`/data/data/${env.pkg}/cache`),
+    'getDatabasePath(Ljava/lang/String;)Ljava/io/File;': (v, s, [n]) => { dirFile(`/data/data/${env.pkg}/databases`); return fileObj(`/data/data/${env.pkg}/databases/${jstr(vm, n)}`) },
     'getDir(Ljava/lang/String;I)Ljava/io/File;': (v, s, [n]) => dirFile(`/data/data/${env.pkg}/app_${n}`),
     'getExternalFilesDir(Ljava/lang/String;)Ljava/io/File;': (v, s, [t]) => dirFile(`/sdcard/Android/data/${env.pkg}/files` + (t ? '/' + t : '')),
     'getExternalCacheDir()Ljava/io/File;': () => dirFile(`/sdcard/Android/data/${env.pkg}/cache`),
@@ -583,6 +600,8 @@ export function registerAndroid(vm: VM, env: Env) {
     'openFileOutput(Ljava/lang/String;I)Ljava/io/FileOutputStream;': (v, s, [n, mode]) => { const f = new JObject(vm.cls('Ljava/io/FileOutputStream;')); vm.callVirtual(f, '<init>(Ljava/lang/String;Z)V', [`/data/data/${env.pkg}/files/${n}`, mode & 0x8792 ? 1 : 0]); return f },
     'getApplicationContext()Landroid/content/Context;': (v, s) => appObj ?? s,
     'getSharedPreferences(Ljava/lang/String;I)Landroid/content/SharedPreferences;': (v, s, [name]) => prefsFor(name),
+    // an activity's own preferences: named after its class, like android
+    'getPreferences(I)Landroid/content/SharedPreferences;': (v, s) => prefsFor(s.cls.name.slice(1, -1).split('/').pop()!),
     'getSystemService(Ljava/lang/String;)Ljava/lang/Object;': (v, s, [name]) => { if (name === 'vibrator') return new JObject(vm.cls('Landroid/os/Vibrator;')); if (name === 'layout_inflater') return new JObject(vm.cls('Landroid/view/LayoutInflater;')); if (name === 'audio') return new JObject(vm.cls('Landroid/media/AudioManager;')); if (name === 'notification') return new JObject(vm.cls('Landroid/app/NotificationManager;')); vm.missing.add('system service ' + name); return null },
     'startActivity(Landroid/content/Intent;)V': (v, s, [i]) => startActivity(i),
     'getMainLooper()Landroid/os/Looper;': () => new JObject(vm.cls('Landroid/os/Looper;')),
@@ -609,6 +628,11 @@ export function registerAndroid(vm: VM, env: Env) {
     'onActivityResult(IILandroid/content/Intent;)V': noop,
     'setContentView(I)V': (v, s, [id]) => setContent(inflateId(id, null)),
     'setContentView(Landroid/view/View;)V': (v, s, [view]) => setContent(view),
+    'addContentView(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V': (v, s, [view, lp]) => {
+      if (!contentFrame) return setContent(view)
+      vm.callVirtual(contentFrame, 'addView(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V', [view, lp])
+      el(view).style.position = 'absolute'; el(view).style.inset = '0'
+    },
     'findViewById(I)Landroid/view/View;': (v, s, [id]) => views.get(id) ?? null,
     'getIntent()Landroid/content/Intent;': () => currentIntent,
     'setIntent(Landroid/content/Intent;)V': (v, s, [i]) => { currentIntent = i },
@@ -848,6 +872,7 @@ export function registerAndroid(vm: VM, env: Env) {
   }, { statics: { LENGTH_SHORT: 0, LENGTH_LONG: 1 } })
   const log = (lvl: string): NativeFn => (v, s, [tag, msg]) => { console.log(`${lvl}/${tag}: ${msg}`); return 0 }
   def('Landroid/util/Log;', OBJ, {
+    'isLoggable(Ljava/lang/String;I)Z': (v, s, [, level]) => (level >= 4 ? 1 : 0), // info and up, like a release phone
     'd(Ljava/lang/String;Ljava/lang/String;)I': log('D'), 'i(Ljava/lang/String;Ljava/lang/String;)I': log('I'), 'v(Ljava/lang/String;Ljava/lang/String;)I': log('V'),
     'w(Ljava/lang/String;Ljava/lang/String;)I': log('W'), 'e(Ljava/lang/String;Ljava/lang/String;)I': log('E'),
     'e(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I': log('E'), 'w(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I': log('W'),

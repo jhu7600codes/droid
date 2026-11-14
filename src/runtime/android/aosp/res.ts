@@ -3,6 +3,7 @@
 // themes, bags, arrays), XmlBlock (android's binary xml as a pull parser) and StringBlock.
 // strings from resource tables go into one shared pool (string block 0, asset cookie 1); strings
 // from an xml file stay in that file's own pool (asset cookie -1), as on android.
+import { fdFor } from './fds.ts'
 import type { VM, JObject, JArray } from '../dalvik.ts'
 import { jstr } from '../java.ts'
 
@@ -286,6 +287,13 @@ export function registerAospRes(vm: VM) {
   }
   const isNullish = (v: Val | null | undefined) => !v || v.type === TYPE.NULL || (v.type === TYPE.REFERENCE && v.data === 0)
 
+  const assetFd = (b: Uint8Array | null | undefined, name: string, out: any) => {
+    if (!b) throw vm.error('Ljava/io/FileNotFoundException;', name)
+    const fd = vm.newObject('Ljava/io/FileDescriptor;') as any
+    fd.f.descriptor = fdFor(b)
+    if (out?.data) { out.data[0] = 0n; out.data[1] = BigInt(b.length) }
+    return vm.newObject('Landroid/os/ParcelFileDescriptor;', '<init>(Ljava/io/FileDescriptor;)V', [fd])
+  }
   vm.registerNatives('Landroid/content/res/AssetManager;', {
     // like android's addDefaultAssets: every asset manager starts with the framework's resources
     'init()V': (v, s) => { const h = next++; const a = new Assets(pool); a.add('/system/framework/framework-res.apk'); ams.set(h, a); s.f.mObject = h },
@@ -412,6 +420,9 @@ export function registerAospRes(vm: VM) {
       return strArray([...names])
     },
     'openAsset(Ljava/lang/String;I)I': (v, s, [name]) => { const b = A(s).file(0, 'assets/' + text(name).replace(/^\/+/, '')); if (!b) throw vm.error('Ljava/io/FileNotFoundException;', text(name)); const h = next++; assets.set(h, { b, pos: 0 }); return h },
+    // openFd(): a FileDescriptor over the asset's bytes (fds.ts), offset 0, its length
+    'openAssetFd(Ljava/lang/String;[J)Landroid/os/ParcelFileDescriptor;': (v, s, [name, out]) => assetFd(A(s).file(0, 'assets/' + text(name).replace(/^\/+/, '')), text(name), out),
+    'openNonAssetFdNative(ILjava/lang/String;[J)Landroid/os/ParcelFileDescriptor;': (v, s, [cookie, name, out]) => assetFd(A(s).file(cookie, text(name)), text(name), out),
     'openNonAssetNative(ILjava/lang/String;I)I': (v, s, [cookie, name]) => { const b = A(s).file(cookie, text(name)); if (!b) throw vm.error('Ljava/io/FileNotFoundException;', text(name)); const h = next++; assets.set(h, { b, pos: 0 }); return h },
     'destroyAsset(I)V': (v, s, [h]) => { assets.delete(h) },
     'readAssetChar(I)I': (v, s, [h]) => { const a = assets.get(h)!; return a.pos < a.b.length ? a.b[a.pos++] : -1 },

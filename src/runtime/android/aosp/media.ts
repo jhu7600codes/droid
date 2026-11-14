@@ -1,9 +1,9 @@
 // android.media.MediaPlayer on a browser <video>: android's own MediaPlayer/VideoView code runs,
 // the decoding and drawing are the browser's. the video sits over the SurfaceView's window.
 import type { VM, JObject, JMethod } from '../dalvik.ts'
-import { Block } from '../threads.ts'
 import { jstr } from '../java.ts'
 import type { Vfs } from '../javaio.ts'
+import { fdBytes } from './fds.ts'
 
 export interface MediaHost {
   later: (m: JMethod, self: JObject | null, args: any[]) => void
@@ -14,7 +14,7 @@ export interface MediaHost {
   mediaUrl?: (url: string) => Promise<string>
 }
 
-interface P { el: HTMLVideoElement | null; ref: any; prepared: boolean; failed: boolean; url: string; blob: string }
+interface P { el: HTMLVideoElement | null; ref: any; prepared: boolean; failed: boolean; url: string; blob: string; loading?: boolean; wantPlay?: boolean }
 
 export function registerAospMedia(vm: VM, vfs: Vfs, host: MediaHost) {
   const players = new Map<number, P>()
@@ -58,24 +58,50 @@ export function registerAospMedia(vm: VM, vfs: Vfs, host: MediaHost) {
     _release: (v, s) => { const p = P(s); if (p?.el) { p.el.pause(); p.el.removeAttribute('src'); p.el.load(); p.el.remove() } if (p?.blob) URL.revokeObjectURL(p.blob); players.delete(s.f.mNativeContext) },
     _reset: (v, s) => { const p = P(s); if (!p) return; p.el?.pause(); p.prepared = false; p.url = '' },
     '_setDataSource(Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;)V': (v, s, [path]) => { const p = P(s); if (p) source(p, jstr(vm, path)) },
-    '_setDataSource(Ljava/io/FileDescriptor;JJ)V': (v, s, [fd]) => { const p = P(s); if (p) source(p, fd?.f.path ?? '') },
+    '_setDataSource(Ljava/io/FileDescriptor;JJ)V': (v, s, [fd, off, len]) => {
+      const p = P(s); if (!p) return
+      // an asset's file descriptor (AssetManager.openFd): a blob of its bytes
+      const b = fdBytes(fd)
+      if (b && typeof Blob !== 'undefined') {
+        if (p.blob) URL.revokeObjectURL(p.blob)
+        const part = b.subarray(Number(off), Number(off) + (Number(len) > 0 ? Number(len) : b.length))
+        p.blob = URL.createObjectURL(new Blob([part.slice()])); p.url = p.blob; p.prepared = false; p.failed = false
+      } else source(p, fd?.f.path ?? '')
+    },
     prepareAsync: (v, s) => {
       const p = P(s); if (!p) return
       const el = make(p)
       if (!el) { p.prepared = true; post(p, 5); post(p, 1); return }
       const url = p.url
-      Promise.resolve(/^http:/i.test(url) && host.mediaUrl ? host.mediaUrl(url).catch(() => url) : url).then((u) => { if (p.url === url) { el.src = u; el.load() } })
+      p.loading = true
+      Promise.resolve(/^http:/i.test(url) && host.mediaUrl ? host.mediaUrl(url).catch(() => url) : url).then((u) => {
+        if (p.url !== url) return
+        el.src = u; el.load(); p.loading = false
+        if (p.wantPlay) { p.wantPlay = false; el.play().catch(() => post(p, 100, 1, -38)) }
+      })
     },
+    // prepare() (the blocking one) returns at once: waiting for the browser to load the file inside a
+    // call from native code would hold the page's only thread, so it could never load. it loads behind
+    // and start() plays as soon as it can; a file that fails reports MEDIA_ERROR then
     prepare: (v, s) => {
       const p = P(s); if (!p) return
       const el = make(p)
-      if (!el) { p.prepared = true; return }
+      p.prepared = true
+      if (!el) return
       const url = p.url
-      Promise.resolve(/^http:/i.test(url) && host.mediaUrl ? host.mediaUrl(url).catch(() => url) : url).then((u) => { if (p.url === url) { el.src = u; el.load() } })
-      throw new Block(() => p.prepared || p.failed, Date.now() + 60000, 'media prepare').then(() => { if (p.failed) throw vm.error('Ljava/io/IOException;', 'Prepare failed.: status=0x1') })
+      p.loading = true
+      Promise.resolve(/^http:/i.test(url) && host.mediaUrl ? host.mediaUrl(url).catch(() => url) : url).then((u) => {
+        if (p.url !== url) return
+        el.src = u; el.load(); p.loading = false
+        if (p.wantPlay) { p.wantPlay = false; el.play().catch(() => post(p, 100, 1, -38)) }
+      })
     },
-    _start: (v, s) => { const p = P(s); p?.el?.play().catch(() => post(p!, 100, 1, -38)) },
-    _pause: (v, s) => { P(s)?.el?.pause() },
+    _start: (v, s) => {
+      const p = P(s); if (!p?.el) return
+      if (p.loading) { p.wantPlay = true; return }
+      p.el.play().catch(() => post(p, 100, 1, -38))
+    },
+    _pause: (v, s) => { const p = P(s); if (p) p.wantPlay = false; p?.el?.pause() },
     _stop: (v, s) => { const p = P(s); if (p?.el) { p.el.pause(); p.el.currentTime = 0 } },
     isPlaying: (v, s) => { const e = P(s)?.el; return e && !e.paused && !e.ended ? 1 : 0 },
     seekTo: (v, s, [t]) => { const p = P(s); if (p?.el) p.el.currentTime = t / 1000; else if (p) post(p, 4) },

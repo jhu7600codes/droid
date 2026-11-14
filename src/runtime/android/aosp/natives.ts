@@ -66,6 +66,14 @@ export function registerAospNatives(vm: VM, opts: { redraw?: () => void; vfs?: V
   vm.registerNatives('Landroid/hardware/SystemSensorManager$BaseEventQueue;', {
     nativeInitBaseEventQueue: () => 1, nativeEnableSensor: () => -1, nativeDisableSensor: () => 0, nativeDestroySensorEventQueue: () => {}, nativeFlushSensor: () => -1,
   })
+  // AudioSystem: one speaker output, nothing playing elsewhere
+  vm.registerNatives('Landroid/media/AudioSystem;', {
+    isStreamActive: () => 0, isStreamActiveRemotely: () => 0, isSourceActive: () => 0, isMicrophoneMuted: () => 0, muteMicrophone: () => 0,
+    getMasterVolume: () => 1, getMasterMute: () => 0, setMasterVolume: () => 0, setMasterMute: () => 0, getDevicesForStream: () => 2,
+    getPrimaryOutputSamplingRate: () => 44100, getPrimaryOutputFrameCount: () => 1024, getOutputLatency: () => 50, checkAudioFlinger: () => 0,
+    setParameters: () => 0, getParameters: () => '', setForceUse: () => 0, getForceUse: () => 0, getDeviceConnectionState: () => 0, setDeviceConnectionState: () => 0,
+    setPhoneState: () => 0, initStreamVolume: () => 0, setStreamVolumeIndex: () => 0, getStreamVolumeIndex: () => 7, setLowRamDevice: () => 0,
+  })
   vm.registerNatives('Landroid/util/FloatMath;', {
     floor: (v, s, [x]) => f32(Math.floor(x)), ceil: (v, s, [x]) => f32(Math.ceil(x)), sin: (v, s, [x]) => f32(Math.sin(x)), cos: (v, s, [x]) => f32(Math.cos(x)),
     sqrt: (v, s, [x]) => f32(Math.sqrt(x)), exp: (v, s, [x]) => f32(Math.exp(x)), pow: (v, s, [x, y]) => f32(Math.pow(x, y)), hypot: (v, s, [x, y]) => f32(Math.hypot(x, y)),

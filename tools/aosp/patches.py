@@ -28,4 +28,6 @@ PATCHES = [
         final String rawPath;''', '''    public static String getStorageState(File path) {
         if (path != null) return Environment.MEDIA_MOUNTED;
         final String rawPath;'''),
+    # no chromium: droid's own WebView provider (tools/aosp/system/droid/system/WebViewFactoryImpl.java)
+    ('android/webkit/WebViewFactory.java', '"com.android.webview.chromium.WebViewChromiumFactoryProvider"', '"droid.system.WebViewFactoryImpl"'),
 ]

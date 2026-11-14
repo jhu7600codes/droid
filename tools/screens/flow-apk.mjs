@@ -2,7 +2,7 @@
 // RUN_MS: how long to watch. never commit the apks themselves.
 export default async ({ page, shot, base }) => {
   const apk = process.env.APK || 'test.apk'
-  page.on('console', (m) => { const t = m.text(); if (/gl calls|gl fps|missing|crash|stopped|exception|error|java stack|stack:|died|warn/i.test(t) && !/GL Driver|favicon/.test(t)) console.log('console:', t.slice(0, 600)) })
+  page.on('console', (m) => { const t = m.text(); if (/swap on|gl calls|gl fps|missing|crash|stopped|exception|error|java stack|stack:|died|warn/i.test(t) && !/GL Driver|favicon/.test(t)) console.log('console:', t.slice(0, 600)) })
   page.on('pageerror', (e) => console.log('pageerror', e.message.slice(0, 300)))
   if (process.env.AOSP) await page.addInitScript(() => { window.__aosp = true })
   if (process.env.NOJIT) await page.addInitScript(() => { window.__nojit = true })
@@ -17,7 +17,7 @@ export default async ({ page, shot, base }) => {
   await page.click('.window.visible .pi-buttons .h-btn-borderless:last-child'); await page.waitForTimeout(3000)
   await page.click('.window.visible .pi-buttons .h-btn-borderless:last-child').catch(() => {})
   await page.waitForTimeout(Number(process.env.RUN_MS || 15000))
-  await shot('apk-01-run')
+  if (!process.env.NOSHOT) await shot('apk-01-run')
   // STEPS='tap:32,356;wait:2000;back;shot' : taps (page px), waits, the back key, screenshots
   let n = 2
   for (const st of (process.env.STEPS || '').split(';').filter(Boolean)) {
@@ -26,6 +26,16 @@ export default async ({ page, shot, base }) => {
     else if (k === 'drag') { const [x0, y0, x1, y1] = a.split(',').map(Number); await page.mouse.move(x0, y0); await page.mouse.down(); for (let i = 1; i <= 10; i++) { await page.mouse.move(x0 + ((x1 - x0) * i) / 10, y0 + ((y1 - y0) * i) / 10); await page.waitForTimeout(30) } await page.mouse.up(); await page.waitForTimeout(1500) }
     else if (k === 'wait') await page.waitForTimeout(Number(a))
     else if (k === 'keys') { for (const ch of a) { await page.locator('#ime .ime-key', { hasText: new RegExp('^' + ch.replace(/[?.]/g, '\\$&') + '$', 'i') }).first().click(); await page.waitForTimeout(250) } } // keys:abc on droid's keyboard
+    else if (k === 'threads') { for (const f of page.frames()) { const t = await f.evaluate(() => window.__threads?.()).catch(() => null); if (t) for (const l of t) console.log('  thread', l) } }
+    else if (k === 'stack') { // stack: pause the page wherever it is and print the js stack (stuck pages)
+      const cdp = await page.context().newCDPSession(page)
+      await cdp.send('Debugger.enable')
+      const got = new Promise((ok) => cdp.once('Debugger.paused', ok))
+      await cdp.send('Debugger.pause')
+      const ev = await got
+      for (const f of ev.callFrames.slice(0, 30)) console.log('  at', f.functionName || '(anon)', (f.url || '').split('/').pop() + ':' + (f.location.lineNumber + 1))
+      await cdp.send('Debugger.resume'); await cdp.send('Debugger.disable')
+    }
     else if (k === 'prof') { // prof:ms -> top js functions by self time
       const cdp = await page.context().newCDPSession(page)
       await cdp.send('Profiler.enable'); await cdp.send('Profiler.start')
