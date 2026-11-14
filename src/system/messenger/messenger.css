@@ -40,17 +40,3 @@
 .ms-sim-row { font-size: 14px; color: #444; }
 .ms-hint { color: #777; font-size: 13px; line-height: 1.4; }
 
-.mc { background: #0b1016; color: #fff; display: flex; flex-direction: column; align-items: center; --carrier: #33b5e5; }
-.mc-top { width: 100%; padding: 24px 16px 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--carrier) 35%, #0b1016), #0b1016); text-align: center; }
-.mc-label { font-size: 12px; letter-spacing: 2px; color: var(--carrier); font-weight: 500; }
-.mc-name { font-size: 30px; font-weight: 300; margin-top: 8px; }
-.mc-num { font-size: 15px; color: #aaa; margin-top: 2px; }
-.mc-status { font-size: 16px; color: #ddd; margin-top: 12px; }
-.mc-pic { flex: 1; display: flex; align-items: center; }
-.mc-pic img { width: 160px; height: 160px; opacity: .85; border-radius: 50%; box-shadow: 0 0 0 6px color-mix(in srgb, var(--carrier) 40%, transparent); }
-.mc-btns { display: flex; gap: 20px; padding: 24px 16px 40px; }
-.mc-btn { border: 0; color: #fff; font: 500 16px Roboto, sans-serif; border-radius: 40px; padding: 18px 26px; min-width: 120px; background: #37474f; }
-.mc-btn.answer { background: #2e7d32; }
-.mc-btn.decline { background: #c62828; }
-.mc-btn.small { min-width: 96px; padding: 14px 20px; }
-.mc-btn.on { background: var(--carrier); }

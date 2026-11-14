@@ -10,6 +10,7 @@ import { wm } from '../../shell/wm'
 import { notifications } from '../../shell/notify'
 import { signedIn, backendUrl } from '../../shell/danen-remote'
 import { vte, vteHooks, startVte, carrier, carrierOfNumber, fmtNumber, dollars, digits, CARRIERS, type Sim, type Vms } from '../../shell/vte'
+import { placeCall } from '../phone'
 import './messenger.css'
 
 const M = 'apps/mms'
@@ -106,10 +107,8 @@ function messenger(ctx: ActivityContext): Activity {
     const sim = await pickSim('Call from')
     if (sim) startCall(sim.number, to)
   }
-  const startCall = (mine: string, peer: string) => {
-    const sim = vte.sims().find((s) => s.number === mine)
-    if (sim) wm.start({ package: PKG, activity: 'call', extras: { carrier: sim.carrier, to: peer } })
-  }
+  // calls are the Phone app's (kitkat's in-call screen)
+  const startCall = (mine: string, peer: string) => { placeCall(peer, vte.sims().find((s) => s.number === mine)) }
 
   // ---------- one conversation ----------
   function openThread(mine: string, peer: string) {
@@ -214,125 +213,6 @@ function messenger(ctx: ActivityContext): Activity {
   }
 }
 
-// ---------- the call screen ----------
-const ICE = [{ urls: 'stun:stun.cloudflare.com:3478' }]
-function callScreen(ctx: ActivityContext): Activity {
-  const e = (ctx.intent.extras || {}) as Record<string, string>
-  const incoming = !!e.id && !e.to
-  let id = e.id || '', peer = e.to || e.from || '', carrierId = e.carrier || ''
-  let pc: RTCPeerConnection | null = null, mic: MediaStream | null = null, poll = 0, ticker = 0, ring: (() => void) | null = null
-  let state = incoming ? 'ringing-in' : 'dialing', answeredAt = 0, closed = false
-  const audio = h('audio', { autoplay: true }) as HTMLAudioElement
-  const status = h('div.mc-status')
-  const name = h('div.mc-name')
-  const num = h('div.mc-num')
-  const btns = h('div.mc-btns')
-  const root = h('div.app.mc', {}, h('div.mc-top', {}, h('div.mc-label', {}, 'VoVTE'), name, num, status), h('div.mc-pic', {}, h('img', { src: img(M, 'ic_contact_picture') })), btns, audio)
-  ctx.root.append(root)
-  const show = () => {
-    name.textContent = vte.nameOf(peer); num.textContent = vte.names[peer] ? fmtNumber(peer) : ''
-    const c = carrier(carrierId)
-    if (c) root.style.setProperty('--carrier', c.color)
-    const secs = answeredAt ? Math.floor((Date.now() - answeredAt) / 1000) : 0
-    status.textContent = { dialing: 'Calling…', 'ringing-in': 'Incoming call', connecting: 'Connecting…', active: `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`, ended: 'Call ended', declined: 'Call declined', missed: 'No answer', busy: 'Busy', failed: 'Call failed' }[state] || state
-    btns.innerHTML = ''
-    if (state === 'ringing-in') btns.append(pressable(h('button.mc-btn.decline', { onclick: () => hangup() }, 'Decline')), pressable(h('button.mc-btn.answer', { onclick: () => answer() }, 'Answer')))
-    else if (['dialing', 'connecting', 'active'].includes(state)) {
-      const t = mic?.getAudioTracks()[0]
-      btns.append(pressable(h('button.mc-btn.small' + (t && !t.enabled ? '.on' : ''), { onclick: () => { if (t) { t.enabled = !t.enabled; show() } } }, t && !t.enabled ? 'Unmute' : 'Mute')), pressable(h('button.mc-btn.decline', { onclick: () => hangup() }, 'End')))
-    } else btns.append(pressable(h('button.mc-btn.small', { onclick: () => ctx.finish() }, 'Close')))
-  }
-  const iceDone = (p: RTCPeerConnection) => new Promise<void>((ok) => {
-    if (p.iceGatheringState === 'complete') return ok()
-    const t = setTimeout(ok, 2500)
-    p.addEventListener('icegatheringstatechange', () => { if (p.iceGatheringState === 'complete') { clearTimeout(t); ok() } })
-  })
-  const fail = (m: string) => { toast(m); state = 'failed'; cleanup(); show() }
-  async function media() {
-    mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
-    pc = new RTCPeerConnection({ iceServers: ICE })
-    for (const t of mic.getTracks()) pc.addTrack(t, mic)
-    pc.ontrack = (ev) => { audio.srcObject = ev.streams[0]; audio.play().catch(() => {}) }
-    pc.onconnectionstatechange = () => { if (pc?.connectionState === 'connected' && state !== 'active') { state = 'active'; answeredAt = answeredAt || Date.now(); show() } if (pc?.connectionState === 'failed') fail('The call could not connect (the networks in between may block it)') }
-  }
-  async function dial() {
-    try {
-      await media()
-      const offer = await pc!.createOffer(); await pc!.setLocalDescription(offer); await iceDone(pc!)
-      const r = await vte.callStart(carrierId, peer, pc!.localDescription!.toJSON())
-      id = r.call.id
-      if (r.call.state === 'busy') { state = 'busy'; cleanup(); return show() }
-      ring = tone('back')
-      watch()
-    } catch (er) { fail((er as Error).message || 'Microphone not allowed') }
-  }
-  async function answer() {
-    ring?.(); ring = null
-    state = 'connecting'; show()
-    try {
-      const r = await vte.callGet(id)
-      if (r.call.state !== 'ringing' || !r.call.offer) { state = r.call.state; cleanup(); return show() }
-      carrierId = carrierOfNumber(r.call.to_number)?.id || carrierId
-      await media()
-      await pc!.setRemoteDescription(r.call.offer)
-      const ans = await pc!.createAnswer(); await pc!.setLocalDescription(ans); await iceDone(pc!)
-      await vte.callAnswer(id, pc!.localDescription!.toJSON())
-      answeredAt = Date.now()
-      watch()
-    } catch (er) { fail((er as Error).message || 'Microphone not allowed') }
-  }
-  // the other side's answer, hang-ups, timeouts
-  function watch() {
-    clearInterval(poll)
-    poll = window.setInterval(async () => {
-      try {
-        const r = await vte.callGet(id)
-        if (r.call.answer && pc && !pc.currentRemoteDescription) { ring?.(); ring = null; state = 'connecting'; answeredAt = Date.now(); await pc.setRemoteDescription(r.call.answer); show() }
-        if (['ended', 'declined', 'missed', 'busy'].includes(r.call.state)) { state = r.call.state; cleanup(); show() }
-      } catch { /* keep trying */ }
-    }, 1000)
-  }
-  function cleanup() {
-    if (closed) return
-    closed = true
-    clearInterval(poll); clearInterval(ticker); ring?.(); ring = null
-    pc?.close(); mic?.getTracks().forEach((t) => t.stop())
-    notifications.cancel(PKG, 'call')
-    setTimeout(() => { if (!document.hidden) ctx.finish() }, 2500)
-  }
-  async function hangup() {
-    if (id) vte.callEnd(id).catch(() => {})
-    state = state === 'ringing-in' ? 'declined' : 'ended'
-    cleanup(); show()
-  }
-  ticker = window.setInterval(() => { if (state === 'active') show() }, 1000)
-  if (incoming) {
-    vte.callGet(id).then((r) => { peer = r.call.from_number; carrierId = carrierOfNumber(r.call.to_number)?.id || ''; show() }).catch(() => {})
-    ring = tone('ring')
-    watch()
-  } else dial()
-  show()
-  notifications.post({ id: 'call', pkg: PKG, title: 'VoVTE call', text: fmtNumber(peer), icon: img(M, 'ic_menu_call'), ongoing: true, silent: true, onclick: () => wm.start({ package: PKG, activity: 'call' }) })
-  return { back: () => true, destroy: () => { if (!closed) hangup() } }
-}
-
-// ring tones from web audio: 'ring' for incoming, 'back' (ringback) while dialing. returns stop()
-function tone(kind: 'ring' | 'back') {
-  const C = (window as any).AudioContext || (window as any).webkitAudioContext
-  if (!C) return () => {}
-  const a: AudioContext = new C(), g = a.createGain()
-  g.connect(a.destination); g.gain.value = 0
-  const o1 = a.createOscillator(), o2 = a.createOscillator()
-  o1.frequency.value = kind === 'ring' ? 480 : 440; o2.frequency.value = kind === 'ring' ? 620 : 480
-  o1.connect(g); o2.connect(g); o1.start(); o2.start()
-  const vol = kind === 'ring' ? 0.12 : 0.05
-  let on = true
-  const beat = () => { if (!on) return; const t = a.currentTime; g.gain.setValueAtTime(vol, t); g.gain.setValueAtTime(0, t + (kind === 'ring' ? 1.2 : 2)); if (kind === 'ring') navigator.vibrate?.([800, 400]) }
-  beat()
-  const iv = setInterval(beat, kind === 'ring' ? 2000 : 4000)
-  return () => { on = false; clearInterval(iv); try { o1.stop(); o2.stop(); a.close() } catch { /* gone */ } }
-}
-
 // ---------- background: sync, notifications, incoming calls, push ----------
 async function service() {
   vteHooks({
@@ -341,7 +221,7 @@ async function service() {
       notifications.post({ id: 'vms-' + m.from_number, pkg: PKG, title: n, text: m.body, ticker: `${n}: ${m.body}`, icon: img(M, 'ic_launcher_smsmms'),
         onclick: () => { notifications.cancel(PKG, 'vms-' + m.from_number); wm.start({ package: PKG, action: 'main', extras: { mine: m.to_number, peer: m.from_number } }) } })
     },
-    ringing(c) { wm.start({ package: PKG, activity: 'call', extras: { id: c.id, from: c.from_number } }) },
+    ringing(c) { wm.start({ package: 'droid.phone', activity: 'call', extras: { id: c.id, from: c.from_number } }) },
   })
   startVte()
   // offline delivery: web push for this app (once per device)
@@ -353,11 +233,11 @@ async function service() {
 const app: SystemApp = {
   manifest: {
     id: PKG, name: 'Messaging', version: '4.4', versioncode: 19, type: 'web', main: 'list',
-    activities: { list: { label: 'Messaging', launcher: true, 'launch-mode': 'single-top' }, call: { label: 'VoVTE call', 'launch-mode': 'single-top' } }, system: true, supports: ['phone', 'tablet', 'desktop'],
+    activities: { list: { label: 'Messaging', launcher: true, 'launch-mode': 'single-top' } }, system: true, supports: ['phone', 'tablet', 'desktop'],
   },
   icon: '',
   iconRef: [M, 'ic_launcher_smsmms'],
-  activities: { list: messenger, call: callScreen },
+  activities: { list: messenger },
   service,
 }
 export default app
