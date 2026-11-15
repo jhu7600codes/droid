@@ -64,6 +64,7 @@ droid.on('create', async (saved: any) => {
     registerJava(vm)
     registerCollections(vm)
     const vfs = new Vfs()
+    await vfs.persist(map.pkg, droid.files)
     registerJavaIo(vm, vfs)
     registerReflect(vm)
     registerConcurrent(vm)

@@ -24,12 +24,52 @@ export class Vfs {
     return '/' + out.join('/')
   }
   text(p: string, s: string) { this.write(p, enc.encode(s)) }
-  write(p: string, b: Uint8Array) { p = this.norm(p); this.mkdirs(p.slice(0, p.lastIndexOf('/')) || '/'); this.files.set(p, b) }
+  write(p: string, b: Uint8Array) { p = this.norm(p); this.mkdirs(p.slice(0, p.lastIndexOf('/')) || '/'); this.files.set(p, b); this.changed(p) }
   read(p: string) { return this.files.get(this.norm(p)) ?? null }
   exists(p: string) { p = this.norm(p); return this.files.has(p) || this.dirs.has(p) }
   isDir(p: string) { return this.dirs.has(this.norm(p)) }
   mkdirs(p: string) { p = this.norm(p); const parts = p.split('/').filter(Boolean); let cur = ''; for (const s of parts) { cur += '/' + s; this.dirs.add(cur) } this.dirs.add('/') ; return true }
-  remove(p: string) { p = this.norm(p); return this.files.delete(p) || this.dirs.delete(p) }
+  remove(p: string) { p = this.norm(p); const r = this.files.delete(p) || this.dirs.delete(p); if (r) this.changed(p); return r }
+
+  // ---------- keeping an app's own files between runs (droid's private app storage, so clear data
+  // and uninstall wipe them): its data dir (minus lib/ and cache/) and the sdcard, i.e. game saves,
+  // shared prefs, databases. each changed file is written a moment after its last change
+  private keep: { files: any; roots: string[]; dirty: Set<string>; timer: any } | null = null
+  private kept(p: string) { return !!this.keep && this.keep.roots.some((r) => p.startsWith(r + '/')) && !/^\/data\/data\/[^/]+\/(lib|cache|code_cache)\//.test(p) }
+  private changed(p: string) {
+    if (!this.keep || !this.kept(p)) return
+    this.keep.dirty.add(p)
+    clearTimeout(this.keep.timer)
+    this.keep.timer = setTimeout(() => void this.save(), 400)
+  }
+  async save() {
+    const k = this.keep; if (!k) return
+    clearTimeout(k.timer); k.timer = null
+    const dirty = [...k.dirty]; k.dirty.clear()
+    for (const p of dirty) {
+      const b = this.files.get(p)
+      try { await (b ? k.files.write('vfs' + p, b.slice(), { type: 'application/octet-stream' }) : k.files.delete('vfs' + p)) }
+      catch (e) { console.warn('droid: could not save', p, e) }
+    }
+  }
+  // load what the app saved before (files: the droid sdk's files api); from then on its changes are kept
+  async persist(pkg: string, files: any) {
+    if (!files?.list) return
+    this.keep = { files, roots: ['/data/data/' + pkg, '/sdcard'], dirty: new Set(), timer: null }
+    try {
+      const names: string[] = await files.list('vfs/')
+      await Promise.all(names.map(async (n) => {
+        const b = await files.read('vfs/' + n, { as: 'bytes' })
+        if (!b) return
+        const p = '/' + n.replace(/^\/+/, '')
+        this.mkdirs(p.slice(0, p.lastIndexOf('/')) || '/')
+        this.files.set(p, b instanceof Uint8Array ? b : new Uint8Array(b instanceof ArrayBuffer ? b : await new Blob([b]).arrayBuffer()))
+      }))
+    } catch (e) { console.warn('droid: could not load app files', e) }
+    const flush = () => { if (this.keep?.timer) void this.save() }
+    globalThis.addEventListener?.('pagehide', flush)
+    globalThis.addEventListener?.('visibilitychange', () => { if (typeof document !== 'undefined' && document.visibilityState === 'hidden') flush() })
+  }
   list(p: string) {
     p = this.norm(p)
     const pre = p === '/' ? '/' : p + '/'
