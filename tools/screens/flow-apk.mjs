@@ -21,11 +21,12 @@ export default async ({ page, shot, base }) => {
   // STEPS='tap:32,356;wait:2000;back;shot' : taps (page px), waits, the back key, screenshots
   let n = 2
   for (const st of (process.env.STEPS || '').split(';').filter(Boolean)) {
-    const [k, a] = st.split(':')
+    const i = st.indexOf(':'), k = i < 0 ? st : st.slice(0, i), a = i < 0 ? undefined : st.slice(i + 1)
     if (k === 'tap') { const [x, y] = a.split(',').map(Number); await page.mouse.click(x, y); await page.waitForTimeout(1500) }
     else if (k === 'drag') { const [x0, y0, x1, y1] = a.split(',').map(Number); await page.mouse.move(x0, y0); await page.mouse.down(); for (let i = 1; i <= 10; i++) { await page.mouse.move(x0 + ((x1 - x0) * i) / 10, y0 + ((y1 - y0) * i) / 10); await page.waitForTimeout(30) } await page.mouse.up(); await page.waitForTimeout(1500) }
     else if (k === 'wait') await page.waitForTimeout(Number(a))
     else if (k === 'keys') { for (const ch of a) { await page.locator('#ime .ime-key', { hasText: new RegExp('^' + ch.replace(/[?.]/g, '\\$&') + '$', 'i') }).first().click(); await page.waitForTimeout(250) } } // keys:abc on droid's keyboard
+    else if (k === 'eval') console.log('eval', JSON.stringify(await page.evaluate(a)))
     else if (k === 'threads') { for (const f of page.frames()) { const t = await f.evaluate(() => window.__threads?.()).catch(() => null); if (t) for (const l of t) console.log('  thread', l) } }
     else if (k === 'stack') { // stack: pause the page wherever it is and print the js stack (stuck pages)
       const cdp = await page.context().newCDPSession(page)

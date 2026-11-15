@@ -26,9 +26,30 @@ public class ActivityManagerImpl extends droid.defaults.DefaultIActivityManager 
     private IApplicationThread thread;
     private final ArrayList<Rec> stack = new ArrayList<Rec>();
     private int ident;
+    private static ActivityManagerImpl me;
+    private boolean paused, stopped;
+
+    // droid's window manager moved the app's window: to the background (pause, then stop) or back to the front
+    public static void host(String what) { if (me != null) me.onHost(what); }
+    private void onHost(String what) {
+        if (thread == null || stack.isEmpty()) return;
+        Rec top = stack.get(stack.size() - 1);
+        try {
+            if (what.equals("pause") && !paused) { paused = true; thread.schedulePauseActivity(top.token, false, true, 0); }
+            else if (what.equals("stop") && !stopped) {
+                if (!paused) { paused = true; thread.schedulePauseActivity(top.token, false, true, 0); }
+                stopped = true; thread.scheduleStopActivity(top.token, false, 0);
+            } else if (what.equals("resume") && paused) {
+                paused = false; stopped = false;
+                thread.scheduleWindowVisibility(top.token, true);
+                thread.scheduleResumeActivity(top.token, 2, false);
+            }
+        } catch (android.os.RemoteException e) { }
+    }
 
     @Override public void attachApplication(IApplicationThread app) {
         thread = app;
+        me = this;
         try {
             thread.bindApplication(Pkg.app.packageName, Pkg.app, Pkg.providers(), null, null, null, false, null, null, null, 0, false, false, false,
                     Pkg.config(), CompatibilityInfo.DEFAULT_COMPATIBILITY_INFO, null, new Bundle());

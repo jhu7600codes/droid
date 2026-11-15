@@ -28,6 +28,7 @@ export async function startAosp(o: { droid: any; root: HTMLElement; pkg: string;
   const { droid, root, files } = o
   const vm = new VM()
   const vfs = new Vfs()
+  await vfs.persist(o.pkg, droid.files)
   registerJava(vm); registerCollections(vm); registerJavaIo(vm, vfs); registerReflect(vm); registerConcurrent(vm)
 
   // the screen in device pixels; density from the display (2x -> xhdpi)
@@ -144,6 +145,16 @@ export async function startAosp(o: { droid: any; root: HTMLElement; pkg: string;
   })
   droid.on('back', () => { sys.key(0, 4); sys.key(1, 4); return true })
   droid.on('menu', () => { sys.key(0, 82); sys.key(1, 82) })
+  // the window going to the background / coming back: the activity pauses and stops like on a phone
+  // (games save their progress there), and the app's files are written out
+  const amHost = (what: string) => {
+    const m = vm.findMethod(vm.cls('Ldroid/system/ActivityManagerImpl;'), 'host(Ljava/lang/String;)V')
+    if (m) sys.later(m, null, [what])
+  }
+  droid.on('pause', () => { amHost('pause'); setTimeout(() => void vfs.save(), 1500) })
+  droid.on('stop', () => { amHost('stop'); setTimeout(() => void vfs.save(), 1500) })
+  droid.on('resume', () => amHost('resume'))
+  droid.on('destroy', () => { amHost('stop'); void vfs.save() })
 
   // android's main thread: droid's system services, then ActivityThread.main
   const boot = vm.findMethod(vm.cls('Ldroid/system/Boot;'), 'main([Ljava/lang/String;)V')!
